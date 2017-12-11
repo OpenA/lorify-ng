@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<title>lorify Options</title>
+		<style>
+			#resetSettings, .apply-anim:after { position: absolute; right: 0; }
+			#loriform { display: table; min-width: 360px; margin: 0 auto; }
+			.tab-row  { display: table-row; }
+			.tab-cell { display: table-cell;
+				position: relative;
+				max-width: 180px;
+				padding: 4px 2px;
+				vertical-align: middle;
+			}
+			.apply-anim:after {
+				content: 'Настройки сохранены.';
+				-webkit-animation: apply 2s linear 1;
+				animation: apply 2s linear 1;
+				color: red;
+			}
+			@keyframes apply {
+				0% { opacity: .1; }
+				50% { opacity: 1; }
+				100% { opacity: 0; }
+			}
+			@-webkit-keyframes apply {
+				0% { opacity: .1; }
+				50% { opacity: 1; }
+				100% { opacity: 0; }
+			}
+		</style>
+	</head>
+	<body>
+		<form id="loriform">
+			<div class="tab-row">
+				<span class="tab-cell">Автоподгрузка комментариев:</span>
+				<span class="tab-cell" id="applymsg">
+					<input type="checkbox" id="Realtime Loader">
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Задержка появления превью:</span>
+				<span class="tab-cell">
+					<input type="number" id="Delay Open Preview" min="0" step="10">
+				мс
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Задержка исчезания превью:</span>
+				<span class="tab-cell">
+					<input type="number" id="Delay Close Preview" min="0" step="10">
+				мс
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Оповещения на рабочий стол:</span>
+				<span class="tab-cell">
+					<input type="checkbox" id="Desktop Notification">
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">CSS анимация:</span>
+				<span class="tab-cell">
+					<input type="checkbox" id="CSS3 Animation">
+					<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
+				</span>
+			</div>
+		</form>
+		<script type="text/javascript" src="settings.js"></script>
+	</body>
+</html>
