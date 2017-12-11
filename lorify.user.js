@@ -6,8 +6,10 @@
 // @include     http://www.linux.org.ru/*
 // @version     2.0.6
 // @grant       none
-// @require     https://rawgit.com/tommoor/tinycon/master/tinycon.min.js
-// @icon        http://icons.iconarchive.com/icons/icons8/christmas-flat-color/32/penguin-icon.png
+// @homepage    https://www.linux.org.ru/forum/talks/12371302
+// @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify.user.js
+// @require     https://rawgit.com/OpenA/lorify-ng/master/tinycon.mod.js
+// @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-32.png
 // @run-at      document-start
 // ==/UserScript==
 
