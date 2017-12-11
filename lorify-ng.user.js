@@ -7,7 +7,7 @@
 // @version     2.0.6
 // @grant       none
 // @homepage    https://www.linux.org.ru/forum/talks/12371302
-// @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify.user.js
+// @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
 // @require     https://rawgit.com/OpenA/lorify-ng/master/tinycon.mod.js
 // @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-32.png
 // @run-at      document-start

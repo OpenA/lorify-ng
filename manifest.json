@@ -29,7 +29,7 @@
     ],
     "js": [
       "tinycon.mod.js",
-      "lorify.user.js"
+      "lorify-ng.user.js"
     ]
   }],
   "permissions": ["notifications", "storage", "tabs"]
