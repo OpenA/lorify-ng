@@ -34,7 +34,12 @@ function atInit(request, sender) {
 }
 
 function atWork(request, sender, sendResponse) {
-	notes && sendResponse(notes);
+	if (request.action === 'lorify-ng checkNow') {
+		clearTimeout(timr);
+		getNotifications();
+	} else
+	if (notes)
+		sendResponse(notes);
 }
 
 function getNotifications() {
@@ -68,7 +73,7 @@ function getNotifications() {
 				});
 			default:
 				clearTimeout(timr);
-				timr = setTimeout(getNotifications, delay < 18e4 ? (delay += 2e4) : delay);
+				timr = setTimeout(getNotifications, delay < 6e4 ? (delay += 12e3) : delay);
 		}
 	}
 	xhr.send(null);

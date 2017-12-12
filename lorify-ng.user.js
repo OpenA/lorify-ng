@@ -4,12 +4,12 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.0.6
+// @version     2.1.0
 // @grant       none
 // @homepage    https://www.linux.org.ru/forum/talks/12371302
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
 // @require     https://rawgit.com/OpenA/lorify-ng/master/tinycon.mod.js
-// @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-32.png
+// @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-64.png
 // @run-at      document-start
 // ==/UserScript==
 
@@ -26,6 +26,7 @@ const ResponsesMap  = new Object;
 const CommentsCache = new Object;
 const LoaderSTB     = _setup('div', { html: '<div class="page-loader"></div>' });
 const LOR           = parseLORUrl(location.pathname);
+const anonymous     = { innerText: 'anonymous' }
 const [,TOKEN = ''] = document.cookie.match(/CSRF_TOKEN="?([^;"]*)/);
 const Timer         = {
 	// clear timer by name
@@ -169,7 +170,9 @@ _setup(document, null, {
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
 		this.getElementById('start-rws').remove();
 		
-		appInit();
+		App.init();
+		
+		LOR.user = ( this.getElementById('loginGreating') || anonymous ).innerText;
 		
 		if (!LOR.topic) {
 			return;
@@ -204,12 +207,15 @@ function onWSData({ detail }) {
 		response => {
 			if (response.ok) {
 				const { page } = parseLORUrl(response.url);
-				const  topic   = document.getElementById('topic-'+ LOR.topic);
 				response.text().then(html => {
 					
-					const comms = getCommentsContent(html);
+					const comms = getCommentsContent(html),
+					      reply = comms.ownerDocument.evaluate('//article[@id="comment-'+
+					        detail.join('" or @id="comment-') +'"]/*[@class="title" and contains(., "'+
+					        LOR.user +'")]', comms, null, 3, null);
 					
-					comms.querySelectorAll('a[itemprop="replyToUrl"]').forEach(a => { a.onclick = toggleForm });
+					if (reply.booleanValue)
+						App.checkNow();
 					
 					if (page in pagesCache) {
 					
@@ -224,8 +230,6 @@ function onWSData({ detail }) {
 									msg['edit_comment']    = cand.querySelector('.reply a[href^="/edit_comment"]');
 									msg['response_block'] && cand.querySelector('.reply > ul')
 										.appendChild(msg['response_block']);
-									
-									_setup(cand.querySelector('a[itemprop="replyToUrl"]'), { onclick: toggleForm })
 									
 									for (var R = msg.children.length; 0 < (R--);) {
 										parent.replaceChild(cand.children[R], parent.children[R]);
@@ -354,7 +358,7 @@ function addToCommentsCache(els) {
 				ResponsesMap[num] = new Array(0);
 			}
 			ResponsesMap[num].push({
-				text: (el.querySelector('a[itemprop="creator"]') || { textContent: 'anonymous' }).textContent,
+				text: ( el.querySelector('a[itemprop="creator"]') || anonymous ).innerText,
 				href: url.stringValue,
 				cid : cid
 			});
@@ -420,9 +424,11 @@ function getCommentsContent(html) {
 	    comms = doc.getElementById('comments');
 	// Remove banner scripts
 	comms.querySelectorAll('script').forEach(s => s.remove());
+	// Add reply button action
+	comms.querySelectorAll('a[itemprop="replyToUrl"]').forEach(a => { a.onclick = toggleForm });
 	// Replace topic if modifed
 	if (old.textContent !== topic.textContent) {
-		tpc.parentNode.replaceChild(topic, old);
+		old.parentNode.replaceChild(topic, old);
 		topic_memories_form_setup(0, true, LOR.topic, TOKEN);
 		topic_memories_form_setup(0, false, LOR.topic, TOKEN);
 		_setup(topic.querySelector('a[href="comment-message.jsp?topic='+ LOR.topic +'"]'), { onclick: toggleForm })
@@ -640,65 +646,76 @@ function toggleForm(e) {
 	} else {
 		parent.className = 'slide-up';
 		parent.addEventListener('animationend', function(e, _) {
-			_setup(this, { class: _, style: 'display: none;'}, { remove: { animationend: arguments.callee }});
+			_setup(parent, { class: _, style: 'display: none;'}, { remove: { animationend: arguments.callee }});
 		});
 	}
 	e.preventDefault();
 }
 
-const appInit = (ext => {
+const App = (_app_ => {
 	
-	if (ext && ext.storage) {
-		ext.storage.sync.get(USER_SETTINGS, items => {
+	var main_events_count;
+		
+	if (_app_ && _app_.storage) {
+		_app_.storage.sync.get(USER_SETTINGS, items => {
 			for (let name in items) {
 				USER_SETTINGS[name] = items[name];
 			}
 		});
-		ext.storage.onChanged.addListener(items => {
+		_app_.storage.onChanged.addListener(items => {
 			for (let name in items) {
 				USER_SETTINGS[name] = items[name].newValue;
 			}
 			sessionStorage['rtload'] = +USER_SETTINGS['Realtime Loader'];
 		});
-		let port = ext.runtime.connect({ name: location.href });
-		return function() {
-			var main_events_count = document.getElementById('main_events_count'),
-				onResponseHandler = main_events_count ? text => {
-					main_events_count.textContent = text;
-				} : () => void 0;
-			// We can't show notification from the content script directly,
-			// so let's send a corresponding message to the background script
-			ext.runtime.sendMessage({ action: 'lorify-ng init' }, onResponseHandler);
-			port.onMessage.addListener(onResponseHandler);
-		};
-	} else {
-		var main_events_count,
-		    sendNotify = () => void 0,
-		    defaults   = Object.assign({}, USER_SETTINGS),
-		    delay      = 2e4;
-		    start      = () => {
-				const xhr = new XMLHttpRequest;
-				xhr.open('GET', location.origin +'/notifications-count', true);
-				xhr.onload = function() {
-					switch (this.status) {
-						case 403:
-							break;
-						case 200:
-							var text = '';
-							if (this.response != '0') {
-								text = '('+ this.response +')';
-								if (USER_SETTINGS['Desktop Notification'] && localStorage['notes'] != this.response) {
-									sendNotify( (localStorage['notes'] = this.response) );
-									delay = 0;
-								}
-							}
-							main_events_count.textContent = lorynotify.textContent = text;
-						default:
-							setTimeout(start, delay < 18e4 ? (delay += 2e4) : delay);
-					}
-				}
-				xhr.send(null);
+		let port = _app_.runtime.connect({ name: location.href });
+		return {
+			checkNow: () => void 0,
+			init: function() {
+				const onResponseHandler = (
+				      main_events_count = document.getElementById('main_events_count')
+				  ) ? text => {
+				      main_events_count.textContent = text;
+				  } : (  ) => void 0;
+				// We can't show notification from the content script directly,
+				// so let's send a corresponding message to the background script
+				port.onMessage.addListener(onResponseHandler);
+				_app_.runtime.sendMessage({ action: 'lorify-ng init' }, onResponseHandler);
+				this.checkNow = () => _app_.runtime.sendMessage({ action: 'lorify-ng checkNow' }, onResponseHandler);
 			}
+		}
+	} else {
+		const defaults   = Object.assign({}, USER_SETTINGS);
+		const startWatch = () => {
+			const xhr = new XMLHttpRequest;
+			xhr.open('GET', location.origin +'/notifications-count', true);
+			xhr.onload = function() {
+				switch (this.status) {
+					case 403:
+						break;
+					case 200:
+						var text = '';
+						if (this.response != '0') {
+							text = '('+ this.response +')';
+							if (USER_SETTINGS['Desktop Notification'] && localStorage['notes'] != this.response) {
+								sendNotify( (localStorage['notes'] = this.response) );
+								delay = 0;
+							}
+						}
+						main_events_count.textContent = lorynotify.textContent = text;
+					default:
+						Timer.set('Check Notifications', startWatch, delay < 6e4 ? (delay += 12e3) : delay);
+				}
+			}
+			xhr.send(null);
+		}
+		
+		var delay      = 12e3;
+		var sendNotify = count => new Notification('loryfy-ng', {
+				icon: '//github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true',
+				body: 'Уведомлений: '+ count
+			}).onclick = () => window.focus();
+		
 			
 		if (localStorage['lorify-ng']) {
 			let storData = JSON.parse(localStorage.getItem('lorify-ng'));
@@ -819,32 +836,32 @@ const appInit = (ext => {
 			</style>`}, {
 				click: () => { lorytoggle.classList.toggle('pinet') ? document.body.appendChild(loryform) : loryform.remove() }
 			});
-		if (Notification.permission === 'granted') {
-			// Если разрешено то создаем уведомлений
-			sendNotify = count => new Notification('loryfy-ng', {
-				icon: '//icons.iconarchive.com/icons/icons8/christmas-flat-color/64/penguin-icon.png',
-				body: 'Уведомлений: '+ count
-			}).onclick = () => window.focus();
-		} else
-		if (Notification.permission !== 'denied') {
-			Notification.requestPermission(function(permission) {
-				// Если пользователь разрешил, то создаем уведомление 
-				if (permission === 'granted') {
-					sendNotify = count => new Notification('loryfy-ng', {
-						icon: '//icons.iconarchive.com/icons/icons8/christmas-flat-color/64/penguin-icon.png',
-						body: 'Уведомлений: '+ count
-					}).onclick = () => window.focus();
-				}
-			});
-		}
-		return function() {
-			if ( (main_events_count = document.getElementById('main_events_count')) ) {
-				localStorage['notes'] = (
-					lorynotify.textContent = main_events_count.textContent
-				).replace(/\d+/, '$1');
-				setTimeout(start, delay);
+			// Определяем статус оповещений:
+			switch (Notification.permission) {
+				case 'granted': // - разрешены
+					break;
+				case 'denied':  // - отклонены
+					sendNotify = () => void 0;
+					break;
+				case 'default': // - требуется подтверждение
+					Notification.requestPermission(granted => {
+						if (granted !== 'granted')
+							sendNotify = () => void 0;
+					});
 			}
-			document.body.append(lorynotify, lorytoggle);
-		};
+		return {
+			checkNow: () => void 0,
+			init: function() {
+				if ( (main_events_count = document.getElementById('main_events_count')) ) {
+					localStorage['notes'] = (
+						lorynotify.textContent = main_events_count.textContent
+					).replace(/\d+/, '$1');
+					(this.checkNow = function(ms) {
+						Timer.set('Check Notifications', startWatch, ms);
+					})(delay);
+				}
+				document.body.append(lorynotify, lorytoggle);
+			}
+		}
 	}
-})(window.chrome || window.browser);
+})(window.browser || window.chrome);
