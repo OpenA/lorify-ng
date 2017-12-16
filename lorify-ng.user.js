@@ -231,8 +231,6 @@ _setup(document, null, {
 			
 			(LOR.form = this.forms['commentForm']).elements['csrf'].value = TOKEN;
 			
-			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL);
-			
 		}
 		
 		if (!LOR.topic) {
