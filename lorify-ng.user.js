@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.1.0
+// @version     2.2.5
 // @grant       none
 // @homepage    https://www.linux.org.ru/forum/talks/12371302
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -21,7 +21,7 @@ const USER_SETTINGS = {
 	'Desktop Notification': true
 }
 
-const pagesCache    = new Object;
+const pagesCache    = new Map;
 const ResponsesMap  = new Object;
 const CommentsCache = new Object;
 const LoaderSTB     = _setup('div', { html: '<div class="page-loader"></div>' });
@@ -40,15 +40,16 @@ const Timer         = {
 	}
 }
 document.documentElement.append(
-	_setup('script', { text: '('+ startRWS.toString() +')(window)', id: 'start-rws'}),
+	_setup('script', { text: 'Object.defineProperty(window,"startRealtimeWS",{value:function(){}});', id: 'start-rws'}),
 	_setup('style' , { text: `
 		.newadded  { border: 1px solid #006880; }
 		.msg-error { color: red; font-weight: bold; }
 		.broken    { color: inherit !important; cursor: default; }
+		.select-break::selection { background: rgba(99,99,99,.3); }
 		.response-block, .response-block > a { padding: 0 3px !important; }
-		.pushed { position: relative; }
-		.pushed:after {
-			content: attr(push);
+		.page-number { position: relative; }
+		.page-number[cnt-new]:not(.broken):after {
+			content: attr(cnt-new);
 			position: absolute;
 			font-size: 12px;
 			top: -6px;
@@ -93,12 +94,23 @@ document.documentElement.append(
 			overflow-y: hidden;
 			animation: slideUp 1s ease-out;
 		}
+		#lorcode-markup-panel {
+			margin-left: 2.3em;
+			display: inline-block;
+		}
+		#lorcode-markup-panel > .btn {
+			font-size: smaller!important;
+			padding: 3px 10px!important;
+		}
 		
 		@-webkit-keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
 		@keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
 		
 		@-webkit-keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
 		@keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
+		
+		@-webkit-keyframes toShow { from { opacity: 0; } to { opacity: 1; } }
+		@keyframes toShow { from { opacity: 0; } to { opacity: 1; } }
 		
 		@-webkit-keyframes toHide { from { opacity: 1; } to { opacity: 0; } }
 		@keyframes toHide { from { opacity: 1; } to { opacity: 0; } }
@@ -119,19 +131,74 @@ const Navigation = {
 	
 	bar: _setup('div', { class: 'nav', html: `
 		<a class="page-number prev" href="#prev">←</a>
+		<a id="page_0" class="page-number" href="${ LOR.path }#comments">1</a>
 		<a class="page-number next" href="#next">→</a>
 	`, onclick: navBarHandle }),
+	
+	get lastId () {
+		let last = pagesCache.get(this.pagesCount - 1).querySelector('.msg[id^="comment-"]:last-child');
+		return LOR.topic + (last ? ' '+ last.id.replace('comment-', '') : '');
+	},
+	
+	get page () {
+		return LOR.page;
+	},
+	
+	set page (num) {
+		var comments = pagesCache.get(LOR.page);
+		var reverse  = num > LOR.page;
+		var content;
+		
+		if (pagesCache.has(num)) {
+			swapAnimateTo(comments, (
+				content = pagesCache.get(num)
+			), reverse );
+		} else {
+			comments.parentNode.replaceChild((
+				content = LoaderSTB
+			), comments );
+	 		getDataResponse(LOR.path +'/page'+ num,
+	 			({ response }) => { // => OK
+					let comms = getCommentsContent(response);
+					
+					pagesCache.set(num, comms);
+					pagesCache.set(comms, num);
+					
+					addToCommentsCache(
+						comms.querySelectorAll('.msg[id^="comment-"]')
+					);
+					
+					_setup(comms.querySelector('.nav'), {
+						html: Navigation.bar.innerHTML, onclick: navBarHandle
+					});
+					swapAnimateTo(content, comms, reverse);
+	 			});
+		}
+		
+		this.bar.querySelectorAll('.broken').forEach(lnk => lnk.classList.remove('broken'));
+		
+		if (num <= 0) {
+			// set prev button to inactive
+			this.bar.firstElementChild.classList.add('broken');
+		} else
+		if (num >= this.pagesCount - 1) {
+			// set next button to inactive
+			this.bar.lastElementChild.classList.add('broken');
+		}
+		this.bar.children['page_'+ (LOR.page = num)].classList.add('broken');
+		
+		_setup(content.querySelector('.nav'), { html: this.bar.innerHTML, onclick: navBarHandle });
+	},
 	
 	addToBar: function(pNumEls) {
 		
 		this.pagesCount = pNumEls.length - 2;
 		
-		var i = this.bar.children.length - 1;
+		var i = this.bar.children.length - 2;
 		var pageLinks = '';
 		
-		for (; i <= this.pagesCount; i++) {
-			let lp = pNumEls[i].pathname || LOR.path +'#comments';
-			pageLinks += '\t\t<a id="page_'+ (i - 1) +'" class="page-number" href="'+ lp +'">'+ i +'</a>\n';
+		for (; i < this.pagesCount; i++) {
+			pageLinks += `<a id="page_${ i }" class="page-number" href="${ LOR.path }/page${ i }#comments">${ i + 1 }</a>\n`;
 		}
 		this.bar.lastElementChild.insertAdjacentHTML('beforebegin', pageLinks);
 		
@@ -149,20 +216,6 @@ const Navigation = {
 	}
 }
 
-function navBarHandle(e) {
-	e.target.classList.contains('broken') && e.preventDefault();
-}
-
-_setup(window, null, {
-	dblclick: () => {
-		var newadded = document.querySelectorAll('.newadded');
-		newadded.forEach(nwc => nwc.classList.remove('newadded'));
-		Tinycon.setBubble(
-			(Tinycon.index -= newadded.length)
-		);
-	}
-});
-
 _setup(document, null, {
 	
 	'DOMContentLoaded': function onDOMReady() {
@@ -174,12 +227,19 @@ _setup(document, null, {
 		
 		LOR.user = ( this.getElementById('loginGreating') || anonymous ).innerText;
 		
+		if ('commentForm' in this.forms) {
+			
+			(LOR.form = this.forms['commentForm']).elements['csrf'].value = TOKEN;
+			
+			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL);
+			
+		}
+		
 		if (!LOR.topic) {
 			return;
 		}
 		
 		Tinycon.index = 0;
-		sessionStorage['rtload'] = +USER_SETTINGS['Realtime Loader'];
 		
 		const pagesElements = this.querySelectorAll('.messages > .nav > .page-number');
 		const comments      = this.getElementById('comments');
@@ -193,145 +253,212 @@ _setup(document, null, {
 			
 			_setup(comments.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
 		}
-		pagesCache[LOR.page] = comments;
 		
-		addToCommentsCache( comments.querySelectorAll('.msg[id^="comment-"]') );
-	},
-	
-	'webSocketData': onWSData
+		pagesCache.set(LOR.page, comments);
+		pagesCache.set(comments, LOR.page);
+		
+		addToCommentsCache(
+			comments.querySelectorAll('.msg[id^="comment-"]')
+		);
+		
+		const lastPage = Navigation.pagesCount - 1;
+		const topicArc = this.evaluate(
+			'//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема перемещена в архив")]', this.body, null, 3, null
+		);
+		const topicDel = this.evaluate(
+			'//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема удалена")]', this.body, null, 3, null
+		);
+		
+		if (topicDel.booleanValue) {
+			Tinycon.setBubble('\u2013', '#F00');
+		} else
+		if (!topicArc.booleanValue) {
+			if (lastPage > LOR.page) {
+				getDataResponse(LOR.path +'/page'+ lastPage,
+					({ response }) => { // => OK
+						let lastComms = getCommentsContent(response);
+					
+						pagesCache.set(lastPage, lastComms);
+						pagesCache.set(lastComms, lastPage);
+					
+						addToCommentsCache(
+							lastComms.querySelectorAll('.msg[id^="comment-"]')
+						);
+						RealtimeWatcher.start();
+					});
+			} else {
+				RealtimeWatcher.start();
+			}
+		}
+		
+		window.addEventListener('dblclick', () => {
+			var newadded = document.querySelectorAll('.newadded');
+			newadded.forEach(nwc => nwc.classList.remove('newadded'));
+			document.querySelectorAll('#page_'+ LOR.page).forEach(pg => pg.removeAttribute('cnt-new'));
+			Tinycon.setBubble(
+				(Tinycon.index -= newadded.length)
+			);
+		});
+	}
 });
 
-function onWSData({ detail }) {
-	// Get an HTML containing the comment
-	fetch(detail.path +'?cid='+ detail[0] +'&skipdeleted=true', { credentials: 'same-origin' }).then(
-		response => {
-			if (response.ok) {
-				const { page } = parseLORUrl(response.url);
-				response.text().then(html => {
-					
-					const comms = getCommentsContent(html),
-					      reply = comms.ownerDocument.evaluate('//article[@id="comment-'+
-					        detail.join('" or @id="comment-') +'"]/*[@class="title" and contains(., "'+
-					        LOR.user +'")]', comms, null, 3, null);
-					
-					if (reply.booleanValue)
-						App.checkNow();
-					
-					if (page in pagesCache) {
-					
-						let parent = pagesCache[page];
-						
-						parent.querySelectorAll('.msg[id^="comment-"]').forEach(msg => {
-							if (msg.id in comms.children) {
-								var cand = comms.children[msg.id],
-								    sign = cand.querySelector('.sign_more > time');
-								if (sign && sign.dateTime !== (msg['last_modifed'] || {}).dateTime) {
-									msg['last_modifed']    = sign;
-									msg['edit_comment']    = cand.querySelector('.reply a[href^="/edit_comment"]');
-									msg['response_block'] && cand.querySelector('.reply > ul')
-										.appendChild(msg['response_block']);
-									
-									for (var R = msg.children.length; 0 < (R--);) {
-										parent.replaceChild(cand.children[R], parent.children[R]);
-									}
-								} else if (msg['edit_comment']) {
-									msg['edit_comment'].hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
-								}
-							} else {
-								_setup(msg, { id: undefined, class: 'msg deleted' });
-							}
-						});
-						
-						for (var i = 0, arr = []; i < detail.length; i++) {
-						
-							let comment = _setup(comms.children['comment-'+ detail[i]], { class: 'msg newadded' });
-							
-							if (!comment) {
-								detail.splice(0, i);
-								onWSData({ detail });
-								break;
-							}
-							arr.push( parent.appendChild(comment) );
-						}
-						Tinycon.index += i;
-						if (LOR.page !== page) {
-							let push = i + (
-								Number ( Navigation.bar.children['page_'+ page].getAttribute('push') ) || 0
-							);
-							
-							_setup(      Navigation.bar.children['page_'+ page], { class: 'page-number pushed', push: push });
-							_setup( parent.querySelector('.nav > #page_'+ page), { class: 'page-number pushed', push: push });
-						}
-						addToCommentsCache( arr );
+const RealtimeWatcher = (() => {
+	var wS, dbCiD = new Array(0);
+	return class {
+		static start() {
+			var realtime = document.getElementById('realtime');
+			wS = new WebSocket('wss://www.linux.org.ru:9000/ws');
+			wS.onmessage =  e => {
+				dbCiD.push( e.data );
+				Timer.set('WebSocket Data', () => {
+					if (USER_SETTINGS['Realtime Loader']) {
+						onWSData(dbCiD);
+						dbCiD = new Array(0);
+						realtime.style.display = 'none';
 					} else {
-						pagesCache[page] = comms;
-						let nav = comms.querySelector('.nav');
-						let bar = Navigation.addToBar(nav.children);
-						let msg = comms.querySelectorAll('.msg[id^="comment-"]');
-						
-						bar.children['page_'+ page].setAttribute('push', msg.length);
-						bar.children['page_'+ page].classList.add('pushed');
-						if (!bar.parentNode) {
-							let rt = document.getElementById('realtime');
-							rt.parentNode.insertBefore(bar, rt.nextSibling);
-							pagesCache[LOR.page].insertBefore(_setup(bar.cloneNode(true), { onclick: navBarHandle }),
-								pagesCache[LOR.page].firstElementChild.nextSibling);
-						} else {
-							_setup(pagesCache[LOR.page].querySelector('.nav'), {
-								html: bar.innerHTML, onclick: navBarHandle });
-						}
-						addToCommentsCache( msg );
-						Tinycon.index += msg.length;
+						realtime.innerHTML = 'Был добавлен новый комментарий.\n<a href="'+
+							LOR.path + '?cid=' + e.data +'">Обновить.</a>';
+						realtime.style.display = null;
 					}
-					Tinycon.setBubble(Tinycon.index);
-					history.replaceState(null, document.title, location.pathname);
-				});
-			} else {
-				
+				}, 2e3);
 			}
-		});
+			wS.onopen = e => {
+				console.info(e);
+				wS.send( Navigation.lastId );
+			}
+			wS.onclose = e => {
+				console.warn(`Соединение c wss://www.linux.org.ru было прервано ${ e.reason || 'по неизвестной причине' } [код: ${e.code}]`);
+				if(!e.wasClean) {
+					Timer.set('WebSocket Data', RealtimeWatcher.start, 5e3);
+				}
+			}
+			wS.onerror = e => console.error(e);
+		}
+		static terminate(reason) {
+			wS.close(1000, reason);
+			Tinycon.setBubble('\u2013', '#F00');
+		}
+	}
+})();
+
+function swapAnimateTo(comments, content, reverse) {
+	
+	if (USER_SETTINGS['CSS3 Animation']) {
+		
+		content.addEventListener('animationend', function(e) {
+			this.removeEventListener(e.type, arguments.callee, true);
+			this.style['animation-name'] = null;
+			this.classList.remove('terminate');
+		}, true);
+		
+		content.classList.add('terminate');
+		content.style['animation-name'] = 'slideToShow'+ (reverse ? '-reverse' : '');
+	}
+
+	comments.parentNode.replaceChild(content, comments);
 }
 
-function startRWS(win) {
-	if ('WebSocket' in win || 'MozWebSocket' in win && (win.WebSocket = MozWebSocket)) {
-		var timer, detail = new Array(0);
-		Object.defineProperty(win, 'startRealtimeWS', {
-			value: function(topic, path, cid, wss) {
-				var wS = new WebSocket(wss +'ws'),
-				    qA = false;
-				wS.onmessage = function(e) {
-					detail.push( (cid = e.data) );
-					clearTimeout( timer );
-					timer = setTimeout(function() {
-						var realtime = document.getElementById('realtime');
-						if (sessionStorage['rtload'] == '1') {
-							detail.path = path;
-							document.dispatchEvent(
-								new CustomEvent('webSocketData', { detail })
-							);
-							detail = new Array(0);
-							realtime.style.display = 'none';
-						} else {
-							realtime.innerHTML = 'Был добавлен новый комментарий.\n<a href="'+
-								path + '?cid=' + cid +'">Обновить.</a>';
-							realtime.style.display = null;
-						}
-					}, 2e3);
-				}
-				wS.onopen = function(e) {
-					wS.send(topic + (cid == 0 ? '' : ' '+ cid));
-				}
-				wS.onclose = function(e) {
-					setTimeout(function() {
-						startRealtimeWS(topic, path, cid, wss)
-					}, 5e3);
-				}
+function navBarHandle(e) {
+	let cL = e.target.classList;
+	if (cL[0] === 'page-number') {
+		e.preventDefault();
+		if (!cL.contains('broken')) {
+			switch (cL[1]) {
+				case 'prev': Navigation.page--; break;
+				case 'next': Navigation.page++; break;
+				default    : Navigation.page = Number(e.target.id.substring(5));
 			}
-		});
+		}
 	}
 }
 
-function addToCommentsCache(els) {
+function onWSData(dbCiD) {
+	// Get an HTML containing the comment
+	getDataResponse(LOR.path +'?cid='+ dbCiD[0] +'&skipdeleted=true',
+		({ response, responseURL }) => { // => OK
+			const { page } = parseLORUrl(responseURL);
+			
+			const comms = getCommentsContent(response),
+			      reply = comms.ownerDocument.evaluate('//article[@id="comment-'+
+			         dbCiD.join('" or @id="comment-') +'"]/*[@class="title" and contains(., "'+
+			         LOR.user +'")]', comms, null, 3, null);
+				
+			if (reply.booleanValue)
+				App.checkNow();
+			
+			if (pagesCache.has(page)) {
+			
+				let parent = pagesCache.get(page);
+				
+				parent.querySelectorAll('.msg[id^="comment-"]').forEach(msg => {
+					if (msg.id in comms.children) {
+						var cand = comms.children[msg.id],
+						    sign = cand.querySelector('.sign_more > time');
+						if (sign && sign.dateTime !== (msg['last_modifed'] || {}).dateTime) {
+							msg['last_modifed']    = sign;
+							msg['edit_comment']    = cand.querySelector('.reply a[href^="/edit_comment"]');
+							msg['response_block'] && cand.querySelector('.reply > ul')
+								.appendChild(msg['response_block']);
+							
+							let form = msg.querySelector('#commentForm');
+							for (var R = cand.children.length; 0 < (R--);) {
+								msg.replaceChild(cand.children[R], msg.children[R]);
+							}
+							form && msg.querySelector('.msg_body').appendChild(form.parentNode).firstElementChild.elements['msg'].focus();
+							
+						} else if (msg['edit_comment']) {
+							msg['edit_comment'].hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
+						}
+					} else {
+						_setup(msg, { id: undefined, class: 'msg deleted' });
+					}
+				});
+				
+				for (var i = 0; i < dbCiD.length; i++) {
+				
+					let comment = comms.children['comment-'+ dbCiD[i]];
+					
+					if (!comment) {
+						onWSData( dbCiD.splice(i) );
+						break;
+					}
+					dbCiD[i] = parent.appendChild(comment);
+				}
+				addToCommentsCache( dbCiD, { class: 'msg newadded' } );
+				let cnt_new = i + (
+					Number ( Navigation.bar.children['page_'+ page].getAttribute('cnt-new') ) || 0
+				);
+				_setup(           Navigation.bar.children['page_'+ page], { 'cnt-new': cnt_new });
+				_setup( document.querySelector('#comments #page_'+ page), { 'cnt-new': cnt_new });
+				Tinycon.index += i;
+			} else {
+				
+				pagesCache.set(page, comms);
+				pagesCache.set(comms, page);
+				
+				let nav = comms.querySelector('.nav');
+				let bar = Navigation.addToBar(nav.children);
+				let msg = comms.querySelectorAll('.msg[id^="comment-"]');
+				let parent = pagesCache.get(LOR.page);
+				
+				bar.children['page_'+ page].setAttribute('cnt-new', msg.length);
+				if (!bar.parentNode) {
+					let rt = document.getElementById('realtime');
+					rt.parentNode.insertBefore(bar, rt.nextSibling);
+					parent.insertBefore(_setup(bar.cloneNode(true), { onclick: navBarHandle }),
+						parent.firstElementChild.nextSibling);
+				} else {
+					_setup(parent.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
+				}
+				addToCommentsCache( msg, { class: 'msg newadded' } );
+				Tinycon.index += msg.length;
+			}
+			Tinycon.setBubble(Tinycon.index);
+			history.replaceState(null, document.title, location.pathname);
+		});
+}
+
+function addToCommentsCache(els, attrs) {
 	
 	for (var i = 0; i < els.length; i++) {
 		
@@ -342,7 +469,7 @@ function addToCommentsCache(els) {
 		el['edit_comment'] = el.querySelector('.reply a[href^="/edit_comment"]');
 		
 		addPreviewHandler(
-			(CommentsCache[cid] = el)
+			(CommentsCache[cid] = el), attrs
 		);
 		
 		let acid = el.querySelector('.title > a[href*="cid="]');
@@ -386,54 +513,94 @@ function addToCommentsCache(els) {
 	}
 }
 
-function addPreviewHandler(comment) {
-	
-	comment.addEventListener('mouseover', function(e) {
-		switch (e.target.classList[0]) {
-			case 'link-pref':
+function addPreviewHandler(comment, attrs) {
+	_setup(comment, attrs, {
+		mouseover: function(e) {
+			if (e.target.classList[0] === 'link-pref') {
 				Timer.clear('Close Preview');
 				Timer.set('Open Preview', () => showPreview(e));
 				e.preventDefault();
-		}
-	});
-	
-	comment.addEventListener('mouseout', function(e) {
-		switch (e.target.classList[0]) {
-			case 'link-pref':
+			}
+		}, mouseout: function(e) {
+			if (e.target.classList[0] === 'link-pref') {
 				Timer.clear('Open Preview');
-		}
-	});
-	
-	comment.addEventListener('click', function(e) {
-		switch (e.target.classList[0]) {
-			case 'link-pref':
-				let view = document.getElementById('comment-'+ e.target.getAttribute('cid'));
+			}
+		}, click: function(e) {
+			if (e.target.classList[0] === 'link-pref') {
+				var cid  = e.target.getAttribute('cid'),
+					view = document.getElementById('comment-'+ cid);
 				if (view) {
 					view.scrollIntoView({ block: 'start', behavior: 'smooth' });
-					e.preventDefault();
+				} else {
+					view = CommentsCache[cid];
+					Navigation.page = pagesCache.get(view.parentNode);
+					setTimeout(() => view.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300);
 				}
+				e.preventDefault();
+			}
 		}
 	});
 }
 
 function getCommentsContent(html) {
 	// Create new DOM tree
-	const old = document.getElementById('topic-'+ LOR.topic);
+	const old = document.getElementById('topic-'+ LOR.topic),
+	      fav = old.querySelector('.fav-buttons');
 	const doc = new DOMParser().parseFromString(html, 'text/html'),
 	    topic = doc.getElementById('topic-'+ LOR.topic),
-	    comms = doc.getElementById('comments');
+	    newfv = topic.querySelector('.fav-buttons'),
+	    comms = doc.getElementById('comments'),
+	    isDel = doc.evaluate('//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема удалена")]', doc.body, null, 3, null);
 	// Remove banner scripts
 	comms.querySelectorAll('script').forEach(s => s.remove());
 	// Add reply button action
 	comms.querySelectorAll('a[itemprop="replyToUrl"]').forEach(a => { a.onclick = toggleForm });
+	// update favorites and memories counter
+	fav.children[  'favs_count'  ].textContent = newfv.children[  'favs_count'  ].textContent;
+	fav.children['memories_count'].textContent = newfv.children['memories_count'].textContent;
+	// stop watch if topic deleted
+	if (isDel.booleanValue)
+		RealtimeWatcher.terminate('"Тема удалена."');
 	// Replace topic if modifed
 	if (old.textContent !== topic.textContent) {
-		old.parentNode.replaceChild(topic, old);
-		topic_memories_form_setup(0, true, LOR.topic, TOKEN);
-		topic_memories_form_setup(0, false, LOR.topic, TOKEN);
-		_setup(topic.querySelector('a[href="comment-message.jsp?topic='+ LOR.topic +'"]'), { onclick: toggleForm })
+		let form = old.querySelector('#commentForm');
+		form && topic.querySelector('.msg_body').appendChild(form.parentNode).firstElementChild.elements['msg'].focus();
+		_setup(newfv.children['memories_button'], { onclick: topMemories, watch: '&add=add&watch=true&msgid='+ LOR.topic, 
+			class: fav.children['memories_button'].className });
+		_setup(newfv.children['favs_button'], { onclick: topMemories, watch: '&add=add&watch=false&msgid='+ LOR.topic,
+			class: fav.children['favs_button'].className });
+		_setup(topic.querySelector('a[href="comment-message.jsp?topic='+ LOR.topic +'"]'), { onclick: toggleForm });
 	}
 	return comms;
+}
+
+function topMemories(e) {
+	(// приостановка действий по клику на кнопку до окончания текущего запроса
+		this.onclick = o => o.preventDefault()
+	)(e);
+	
+	const $this = this;
+	const watch = this.id === 'memories_button';
+	
+	fetch('/memories.jsp?csrf='+ encodeURIComponent(TOKEN) + this.getAttribute('watch'), {
+		credentials : 'same-origin',
+		method      : 'POST'
+	}).then(response => {
+		if (response.ok) {
+			response.json().then(data => {
+				if (data.id) {
+					$this.setAttribute('watch', '&id='+ data.id +'&remove=remove&watch='+ watch);
+					$this.classList.add('selected');
+					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data.count;
+				} else {
+					$this.setAttribute('watch', '&add=add&watch='+ watch +'&msgid='+ LOR.topic );
+					$this.classList.remove('selected');
+					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data;
+				}
+			})
+		}
+		$this.onclick = topMemories;
+	});
 }
 
 function showPreview(e) {
@@ -456,30 +623,29 @@ function showPreview(e) {
 		// Add Loading Process stub
 		commentEl = _setup('article', { class: 'msg preview', text: 'Загрузка...'});
 		// Get an HTML containing the comment
-		fetch(e.target.href, { credentials: 'same-origin' }).then(
-			response => {
-				if (response.ok) {
-					const { page } = parseLORUrl(response.url);
-					response.text().then(html => {
-						pagesCache[page] = getCommentsContent(html);
-						
-						addToCommentsCache(
-							pagesCache[page].querySelectorAll('.msg[id^="comment-"]')
-						);
-						
-						if (commentEl.parentNode) {
-							commentEl.remove();
-							showCommentInternal(
-								pagesCache[page].children['comment-'+ commentID].cloneNode((e.isNew = true)),
-								commentID,
-								e
-							);
-						}
-					})
-				} else {
-					commentEl.textContent = response.status +' '+ response.statusText;
-					commentEl.classList.add('msg-error');
+		getDataResponse(e.target.pathname + e.target.search,
+			({ response, responseURL }) => { // => OK
+				const { page } = parseLORUrl(responseURL);
+				const comms    = getCommentsContent(response);
+				
+				pagesCache.set(page, comms);
+				pagesCache.set(comms, page);
+				
+				addToCommentsCache(
+					comms.querySelectorAll('.msg[id^="comment-"]')
+				);
+				
+				if (commentEl.parentNode) {
+					commentEl.remove();
+					showCommentInternal(
+						comms.children['comment-'+ commentID].cloneNode((e.isNew = true)),
+						commentID,
+						e
+					);
 				}
+			}, ({ status, statusText }) => { // => Error
+				commentEl.textContent = status +' '+ statusText;
+				commentEl.classList.add('msg-error');
 			});
 	}
 	showCommentInternal(
@@ -510,7 +676,7 @@ function showCommentInternal(commentElement, commentID, e) {
 	const offsetX       = pageXOffset + left + hoveredLink.offsetWidth / 2;
 	const offsetY       = pageYOffset + bottom + 10;
 	
-	let postproc = () => {
+	const postproc = () => {
 		
 		commentElement.style['left'] = Math.max(
 			offsetX - (
@@ -530,10 +696,13 @@ function showCommentInternal(commentElement, commentID, e) {
 	};
 	
 	if (e.isNew) {
-		
-		commentElement.setAttribute(
-			'style',
-				'animation-name: toShow; '+
+		// If this comment contains link to another comment,
+		// set the 'mouseover' hook to that 'a' tag
+		addPreviewHandler( commentElement, {
+		// Avoid duplicated IDs when the original comment was found on the same page
+			id: 'preview-'+ commentID, 
+			class: 'msg preview',
+			style: 'animation-name: toShow; '+
 				// There are no limitations for the 'z-index' in the CSS standard,
 				// so it depends on the browser. Let's just set it to 300
 				'max-width:'+ parentBlock.offsetWidth +
@@ -545,15 +714,7 @@ function showCommentInternal(commentElement, commentID, e) {
 				( top < visibleHeight
 				      ? offsetY
 				      : 0 ) +'px;'
-		);
-		
-		// Avoid duplicated IDs when the original comment was found on the same page
-		commentElement.id = 'preview-'+ commentID;
-		commentElement.classList.add('preview');
-	
-		// If this comment contains link to another comment,
-		// set the 'mouseover' hook to that 'a' tag
-		addPreviewHandler( commentElement );
+		});
 		
 		commentElement.addEventListener('animationstart', postproc, true);
 	} else {
@@ -616,7 +777,7 @@ function _setup(el, _Attrs, _Events) {
 
 function parseLORUrl(uri) {
 	const out = new Object;
-	var m = uri.match(/^(?:https?:\/\/www\.linux\.org\.ru)?(\/\w+\/(?!archive)\w+\/(\d+))(?:\/page(\d+))?/);
+	var m = uri.match(/^(?:https?:\/\/www\.linux\.org\.ru)?(\/[^\/]+\/(?!archive)[^\/]+\/(\d+))(?:\/page(\d+))?/);
 	if (m) {
 		out.path  = m[1];
 		out.topic = m[2];
@@ -625,24 +786,30 @@ function parseLORUrl(uri) {
 	return out;
 }
 
-function toggleForm(e) {
-	const form = document.forms['commentForm'], parent = form.parentNode;
-	const [, topic, replyto = 0 ] = this.href.match(/jsp\?topic=(\d+)(?:&replyto=(\d+))?$/);
-	if (!form.elements['csrf'].value) {
-		form.elements['csrf'].value = TOKEN;
+function getDataResponse(uri, resolve, reject = () => void 0) {
+	const xhr = new XMLHttpRequest;
+	xhr.open('GET', location.origin + uri, true);
+	xhr.onload = () => {
+		xhr.status === 200 ? resolve(xhr) : reject(xhr)
 	}
-	if (form.elements['replyto'].value != replyto) {
+	xhr.send(null);
+}
+
+function toggleForm(e) {
+	const parent = LOR.form.parentNode;
+	const [, topic, replyto = 0 ] = this.href.match(/jsp\?topic=(\d+)(?:&replyto=(\d+))?$/);
+	if (LOR.form.elements['replyto'].value != replyto) {
 		parent.style['display'] = 'none';
 	}
 	if (parent.style['display'] == 'none') {
 		parent.className = 'slide-down';
 		parent.addEventListener('animationend', function(e, _) {
 			_setup(parent, { class: _ }, { remove: { animationend: arguments.callee }});
-			form.elements['msg'].focus();
+			LOR.form.elements['msg'].focus();
 		});
 		this.parentNode.parentNode.parentNode.parentNode.appendChild(parent).style['display'] = null;
-		form.elements['replyto'].value = replyto;
-		form.elements[ 'topic' ].value = topic;
+		LOR.form.elements['replyto'].value = replyto;
+		LOR.form.elements[ 'topic' ].value = topic;
 	} else {
 		parent.className = 'slide-up';
 		parent.addEventListener('animationend', function(e, _) {
@@ -686,30 +853,20 @@ const App = (_app_ => {
 		}
 	} else {
 		const defaults   = Object.assign({}, USER_SETTINGS);
-		const startWatch = () => {
-			const xhr = new XMLHttpRequest;
-			xhr.open('GET', location.origin +'/notifications-count', true);
-			xhr.onload = function() {
-				switch (this.status) {
-					case 403:
-						break;
-					case 200:
-						var text = '';
-						if (this.response != '0') {
-							text = '('+ this.response +')';
-							if (USER_SETTINGS['Desktop Notification'] && localStorage['notes'] != this.response) {
-								sendNotify( (localStorage['notes'] = this.response) );
-								delay = 0;
-							}
-						}
-						main_events_count.textContent = lorynotify.textContent = text;
-					default:
-						Timer.set('Check Notifications', startWatch, delay < 6e4 ? (delay += 12e3) : delay);
+		const startWatch = getDataResponse.bind(null, '/notifications-count',
+			({ response }) => {
+				var text = '';
+				if (response != '0') {
+					text = '('+ response +')';
+					if (USER_SETTINGS['Desktop Notification'] && localStorage['notes'] != response) {
+						sendNotify( (localStorage['notes'] = response) );
+						delay = 0;
+					}
 				}
-			}
-			xhr.send(null);
-		}
-		
+				main_events_count.textContent = lorynotify.textContent = text;
+				Timer.set('Check Notifications', startWatch, delay < 6e4 ? (delay += 12e3) : delay);
+			});
+			
 		var delay      = 12e3;
 		var sendNotify = count => new Notification('loryfy-ng', {
 				icon: '//github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true',
@@ -803,7 +960,7 @@ const App = (_app_ => {
 					right: 5px;
 					cursor: pointer;
 					opacity: .5;
-					background: url(//icons.iconarchive.com/icons/icons8/christmas-flat-color/32/penguin-icon.png) center / 100%;
+					background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
 				}
 				#loryform {
 					display: table;

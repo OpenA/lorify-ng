@@ -118,7 +118,6 @@
     }
 
     var context = getCanvas().getContext("2d");
-    var color = color || '#000000';
     var src = getCurrentFavicon();
 
     faviconImage = document.createElement('img');
@@ -179,7 +178,7 @@
 	
     // webkit seems to render fonts lighter than firefox
     context.font = 'bold '+ fontPix +'px arial';
-    context.fillStyle = '#48de3d';
+    context.fillStyle = color || '#48de3d';
     context.strokeStyle = 'rgba(0,0,0,0.2)';
 	
     // bubble
@@ -235,7 +234,7 @@
     return this;
   };
 
-  Tinycon.reset = function(){
+  Tinycon.reset = function() {
     currentFavicon = originalFavicon;
     setFaviconTag(originalFavicon);
   };
