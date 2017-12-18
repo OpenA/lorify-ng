@@ -6,7 +6,7 @@
 // @include     http://www.linux.org.ru/*
 // @version     2.3.8
 // @grant       none
-// @homepage    https://github.com/OpenA/lorify-ng
+// @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
 // @require     https://rawgit.com/OpenA/lorify-ng/master/tinycon.mod.js
 // @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-64.png
