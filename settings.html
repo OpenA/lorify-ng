@@ -19,6 +19,19 @@
 				animation: apply 2s linear 1;
 				color: red;
 			}
+			#notifications {
+				border-bottom: 1px dashed #bbb;
+				text-align: center;
+				padding-bottom: 4px;
+			}
+			#notifications > *, .apply-anim {
+				font-style: italic;
+				text-decoration: none;
+				font-family: georgian;
+			}
+			#notifications > *:before {
+				content: 'Уведомлений: ';
+			}
 			@keyframes apply {
 				0% { opacity: .1; }
 				50% { opacity: 1; }
@@ -32,6 +45,9 @@
 		</style>
 	</head>
 	<body>
+		<div id="notifications" hidden>
+			<a style="color: #68b;" href="javascript:void(0)"></a>
+		</div>
 		<form id="loriform">
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
@@ -42,15 +58,22 @@
 			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
 				<span class="tab-cell">
-					<input type="number" id="Delay Open Preview" min="0" step="10">
+					<input type="number" id="Delay Open Preview" min="50" step="25">
 				мс
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка исчезания превью:</span>
 				<span class="tab-cell">
-					<input type="number" id="Delay Close Preview" min="0" step="10">
+					<input type="number" id="Delay Close Preview" min="50" step="25">
 				мс
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Предзагружаемых страниц:</span>
+				<span class="tab-cell">
+					<input type="number" id="Preloaded Pages Count" min="1" step="1">
+				ст
 				</span>
 			</div>
 			<div class="tab-row">

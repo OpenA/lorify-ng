@@ -1,10 +1,12 @@
 
 const openPorts = [];
 
-var notes, timr, delay = 0;
+var delay = 0;
+var timr  = null;
+var color = '#3d96ab';
+var text  = '';
 
-chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
-
+//chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
 chrome.runtime.onMessage.addListener(atInit);
 chrome.runtime.onConnect.addListener(port => {
 	let pix = openPorts.push(port);
@@ -18,16 +20,20 @@ chrome.runtime.onConnect.addListener(port => {
 	});
 });
 
-chrome.notifications.onClicked.addListener(function() {
-	chrome.tabs.create({ url: 'https://www.linux.org.ru/notifications' }, function() {
-		openPorts.forEach(port => chrome.browserAction.setBadgeText({ text : '', tabId: port.sender.tab.id }));
+chrome.notifications.onClicked.addListener(openTab);
+
+function openTab() {
+	text = '';
+	chrome.tabs.create({ url: 'https://www.linux.org.ru/notifications' }, () => {
+		chrome.browserAction.setBadgeText({ text });
+		openPorts.forEach(port => port.postMessage( text ));
 	});
-});
+}
 
 function atInit(request, sender) {
 	if (request.action === 'lorify-ng init') {
 		clearTimeout(timr);
-		timr = setTimeout(getNotifications, 2e3);
+		timr = setTimeout(getNotifications, 5e3);
 		chrome.runtime.onMessage.removeListener(atInit);
 		chrome.runtime.onMessage.addListener(atWork);
 	}
@@ -38,8 +44,8 @@ function atWork(request, sender, sendResponse) {
 		clearTimeout(timr);
 		getNotifications();
 	} else
-	if (notes)
-		sendResponse(notes);
+	if (text)
+		sendResponse('('+ text +')');
 }
 
 function getNotifications() {
@@ -50,27 +56,22 @@ function getNotifications() {
 			case 403:
 				break;
 			case 200:
-				var text = '';
+				var notes = '';
 				if (this.response != '0') {
-					text = '('+ this.response +')';
-					if (notes !== this.response) {
+					notes = '('+ this.response +')';
+					if (text !== this.response) {
 						chrome.notifications.create('lorify-ng notification', {
 							type    : 'basic',
 							title   : 'www.Linux.Org.Ru',
-							message : 'Уведомлений: '+ (notes = this.response),
+							message : 'Уведомлений: '+ (text = this.response),
 							iconUrl : './icons/penguin-64.png'
 						});
 						delay = 0;
+						chrome.browserAction.setBadgeBackgroundColor({ color });
+						chrome.browserAction.setBadgeText({ text });
 					}
 				}
-				openPorts.forEach(port => {
-					chrome.browserAction.setBadgeBackgroundColor({
-						color: '#3d96ab',
-						tabId: port.sender.tab.id
-					});
-					chrome.browserAction.setBadgeText({ text, tabId: port.sender.tab.id })
-					port.postMessage(text);
-				});
+				openPorts.forEach(port => port.postMessage( notes ));
 			default:
 				clearTimeout(timr);
 				timr = setTimeout(getNotifications, delay < 6e4 ? (delay += 12e3) : delay);

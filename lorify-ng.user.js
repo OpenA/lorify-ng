@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name        lorify-ng
-// @description Юзерскрипт для сайта linux.org.ru поддерживающий загрузку комментариев через технологию WebSocket, а так же уведомления об ответах через системные оповещения.
+// @description Юзерскрипт для сайта linux.org.ru поддерживающий загрузку комментариев через технологию WebSocket, а так же уведомления об ответах через системные оповещения и многое другое.
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.2.5
+// @version     2.3.8
 // @grant       none
-// @homepage    https://www.linux.org.ru/forum/talks/12371302
+// @homepage    https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
 // @require     https://rawgit.com/OpenA/lorify-ng/master/tinycon.mod.js
 // @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-64.png
@@ -16,9 +16,10 @@
 const USER_SETTINGS = {
 	'Realtime Loader': true,
 	'CSS3 Animation' : true,
-	'Delay Open Preview': 0,
+	'Delay Open Preview': 50,
 	'Delay Close Preview': 800,
-	'Desktop Notification': true
+	'Desktop Notification': true,
+	'Preloaded Pages Count': 1
 }
 
 const pagesCache    = new Map;
@@ -84,6 +85,9 @@ document.documentElement.append(
 			z-index: 300;
 			border: 1px solid grey;
 		}
+		.preview #commentForm {
+			display: none;
+		}
 		.slide-down {
 			max-height: 9999px;
 			overflow-y: hidden;
@@ -136,7 +140,7 @@ const Navigation = {
 	`, onclick: navBarHandle }),
 	
 	get lastId () {
-		let last = pagesCache.get(this.pagesCount - 1).querySelector('.msg[id^="comment-"]:last-child');
+		const last = pagesCache.get(this.pagesCount - 1).querySelector('.msg[id^="comment-"]:last-child');
 		return LOR.topic + (last ? ' '+ last.id.replace('comment-', '') : '');
 	},
 	
@@ -157,22 +161,13 @@ const Navigation = {
 			comments.parentNode.replaceChild((
 				content = LoaderSTB
 			), comments );
-	 		getDataResponse(LOR.path +'/page'+ num,
-	 			({ response }) => { // => OK
-					let comms = getCommentsContent(response);
-					
-					pagesCache.set(num, comms);
-					pagesCache.set(comms, num);
-					
-					addToCommentsCache(
-						comms.querySelectorAll('.msg[id^="comment-"]')
-					);
-					
-					_setup(comms.querySelector('.nav'), {
-						html: Navigation.bar.innerHTML, onclick: navBarHandle
-					});
-					swapAnimateTo(content, comms, reverse);
-	 			});
+			
+			pagesPreload(num).then(comms => {
+				_setup(comms.querySelector('.nav'), {
+					html: Navigation.bar.innerHTML, onclick: navBarHandle
+				});
+				swapAnimateTo(content, comms, reverse);
+			});
 		}
 		
 		this.bar.querySelectorAll('.broken').forEach(lnk => lnk.classList.remove('broken'));
@@ -216,6 +211,23 @@ const Navigation = {
 	}
 }
 
+const LORCODE_BUTTONS_PANEL = _setup('div', {
+	id: 'lorcode-markup-panel',
+	html: `
+		<input class="btn btn-default" type="button" value="b">
+		<input class="btn btn-default" type="button" value="i">
+		<input class="btn btn-default" type="button" value="u">
+		<input class="btn btn-default" type="button" value="s">
+		<input class="btn btn-default" type="button" value="em">
+		<input class="btn btn-default" type="button" value="strong">
+		<input class="btn btn-default" type="button" value="pre">
+		<input class="btn btn-default" type="button" value="user">
+		<input class="btn btn-default" type="button" value="code">
+		<input class="btn btn-default" type="button" value="inline">
+		<input class="btn btn-default" type="button" value="quote">
+		<input class="btn btn-default" type="button" value="url">
+`});
+
 _setup(document, null, {
 	
 	'DOMContentLoaded': function onDOMReady() {
@@ -223,14 +235,28 @@ _setup(document, null, {
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
 		this.getElementById('start-rws').remove();
 		
-		App.init();
+		const init = App.init();
 		
 		LOR.user = ( this.getElementById('loginGreating') || anonymous ).innerText;
 		
-		if ('commentForm' in this.forms) {
+		if ((LOR.form = this.forms['commentForm'] || this.forms['messageForm'])) {
 			
-			(LOR.form = this.forms['commentForm']).elements['csrf'].value = TOKEN;
+			LOR.form.elements['csrf'].value = TOKEN;
 			
+			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL);
+			
+			LOR._markup = lorcodeMarkup.bind(LOR.form.elements['msg']);
+			
+			LORCODE_BUTTONS_PANEL.addEventListener('click', e => {
+				e.stopPropagation();
+				e.preventDefault();
+				if (e.target.type === 'button') {
+					const tag = e.target.value;
+					const sel = window.getSelection();
+					LOR._markup('['+ tag +']', '[/'+ tag +']', ( sel.type !== 'None' && /quote|user/.test(tag) && sel.toString() ));
+				}
+			});
+			window.addEventListener('keypress', winKeyHandler);
 		}
 		
 		if (!LOR.topic) {
@@ -244,8 +270,8 @@ _setup(document, null, {
 		
 		if (pagesElements.length) {
 			
-			let bar = Navigation.addToBar(pagesElements);
-			let nav = pagesElements[0].parentNode;
+			const bar = Navigation.addToBar(pagesElements);
+			const nav = pagesElements[0].parentNode;
 			
 			nav.parentNode.replaceChild(bar, nav);
 			
@@ -259,7 +285,7 @@ _setup(document, null, {
 			comments.querySelectorAll('.msg[id^="comment-"]')
 		);
 		
-		const lastPage = Navigation.pagesCount - 1;
+		var   lastPage = Navigation.pagesCount;
 		const topicArc = this.evaluate(
 			'//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема перемещена в архив")]', this.body, null, 3, null
 		);
@@ -271,23 +297,25 @@ _setup(document, null, {
 			Tinycon.setBubble('\u2013', '#F00');
 		} else
 		if (!topicArc.booleanValue) {
-			if (lastPage > LOR.page) {
-				getDataResponse(LOR.path +'/page'+ lastPage,
-					({ response }) => { // => OK
-						let lastComms = getCommentsContent(response);
-					
-						pagesCache.set(lastPage, lastComms);
-						pagesCache.set(lastComms, lastPage);
-					
-						addToCommentsCache(
-							lastComms.querySelectorAll('.msg[id^="comment-"]')
-						);
-						RealtimeWatcher.start();
-					});
+			if ((lastPage -= 1) > LOR.page) {
+				pagesPreload(lastPage).then(RealtimeWatcher.start);
 			} else {
 				RealtimeWatcher.start();
 			}
 		}
+		
+		init.then(() => {
+			for (var g = 1, num = LOR.page + 1; (g++) < USER_SETTINGS['Preloaded Pages Count']; num++) {
+				if (num >= lastPage)
+					break;
+				pagesPreload(num);
+			}
+			for (num = LOR.page - 1; (g++) < USER_SETTINGS['Preloaded Pages Count']; num--) {
+				if (num < 0)
+					break;
+				pagesPreload(num);
+			}
+		});
 		
 		window.addEventListener('dblclick', () => {
 			var newadded = document.querySelectorAll('.newadded');
@@ -321,11 +349,12 @@ const RealtimeWatcher = (() => {
 				}, 2e3);
 			}
 			wS.onopen = e => {
-				console.info(e);
+				console.info('Установлено соединение c '+ wS.url);
 				wS.send( Navigation.lastId );
 			}
 			wS.onclose = e => {
-				console.warn(`Соединение c wss://www.linux.org.ru было прервано ${ e.reason || 'по неизвестной причине' } [код: ${e.code}]`);
+				console.warn(`Соединение c ${ wS.url } было прервано "${ e.reason }" [код: ${ e.code }]`);
+				console.info(e);
 				if(!e.wasClean) {
 					Timer.set('WebSocket Data', RealtimeWatcher.start, 5e3);
 				}
@@ -338,6 +367,152 @@ const RealtimeWatcher = (() => {
 		}
 	}
 })();
+
+const isInsideATag = (str, sp, ep) => (str.split(sp).length - 1) > (str.split(ep).length - 1);
+var _char_ = '';
+var _sign_ = false;
+
+function winKeyHandler(e) {
+	
+	var txtArea = LOR.form.elements['msg'];
+	var key     = e.key || String.fromCharCode(e.charCode);
+	var exit    = true;
+	
+	if (e.target !== txtArea) {
+		
+		const wSelect = window.getSelection().toString();
+		
+		if (!wSelect.length) {
+			return;
+		} else if (key === '>') {
+			LOR._markup('>', '\n>', wSelect);
+		} else if (key === '@') {
+			LOR._markup('[user]', '[/user]', wSelect);
+		}
+		
+	} else {
+		
+		var end = txtArea.selectionEnd,
+		  start = txtArea.selectionStart,
+		  part0 = txtArea.value.substring(0, start);
+	
+		if (isInsideATag(part0, /\[code(?:=[^\]]*)?\]/, '[/code]')) {
+			const C = '{[(\'"'.indexOf(key);
+		
+			if (C >= 0 && !_sign_) {
+				_char_ = '}])\'"'[C];
+				_sign_ = true;
+				LOR._markup(key, _char_);
+			} else {
+				switch (e.keyCode) {
+					case 13:
+						var ln = part0.split('\n').pop();
+							ln = '\n'+ ln.replace(/^([\s]*).*/, '$1');
+						
+						start += ln.length;
+						
+						if (_sign_) {
+							ln    += '   '+ ln;
+							start += 3;
+						}
+						
+						txtArea.value = part0 + ln + txtArea.value.substring(end);
+						txtArea.setSelectionRange(start, start);
+						break;
+					case 9:
+						LOR._markup('   ', '\n   ');
+						break;
+					case 8:
+						if (_sign_) {
+							txtArea.value = txtArea.value.slice(0, (start -= 1)) + txtArea.value.slice(end + 1);
+							txtArea.setSelectionRange(start, start);
+							break;
+						}
+					default:
+						if (key === _char_) {
+							txtArea.setSelectionRange((start += 1), start);
+						} else
+							exit = false;
+				}
+				_char_ = '';
+				_sign_ = false;
+			}
+		} else if (key === '*') {
+			LOR._markup('[*]', '[/*]');
+		} else if (key === '@') {
+			LOR._markup('[user]', '[/user]');
+		} else if (key === '>') {
+			LOR._markup('>', '\n>');
+		} else
+			exit = false;
+	}
+	
+	if (exit)
+		return e.preventDefault();
+	
+	if (txtArea.classList.contains('select-break') && e.keyCode != 8) {
+		txtArea.setSelectionRange(end, end);
+		txtArea.classList.remove('select-break');
+	}
+}
+
+function lorcodeMarkup(open, close, blur) {
+	
+	var val    = this.value;
+	var end    = this.selectionEnd;
+	var start  = this.selectionStart;
+	
+	var wins, lorcText, select;
+	var pins = start === end;
+	
+	if (blur) {
+		select = blur;
+		
+		switch (open) {
+			case '>':
+				if ((wins = pins) && val.length) {
+					start = end = val.length;
+					open  = close;
+				}
+				break;
+			default:
+				pins = false;
+		}
+	} else {
+		select = val.substring(start, end);
+	}
+	
+	switch (open) {
+		case '\n   ': case '   ': case '\n>': case '>':
+			select = select.replace(/\n/gm, close);
+			close = '';
+			break;
+		case '[*]':
+			select = select.replace(/\[\/?\*\]/g, '').replace(/\n/gm, '\n'+ open);
+			break;
+		case '[url]':
+			const [ uri ] = /(?:ht|f)tps?:\/\/[^\s]+/.exec(select) || '';
+			if (uri) {
+				open = `[url=${ uri }]`;
+				select = select.replace(uri, '');
+			}
+	}
+	
+	this.value = val.substring(0, start) + (lorcText = open + select + close) + val.substring(end);
+	if (wins) {
+		this.selectionStart = this.selectionEnd = this.value.length;
+	} else {
+		var offsetS = 0, offsetE = lorcText.length;
+		
+		if (pins) {
+			offsetS = open.length;
+			offsetE = open.length + select.length;
+		}
+		this.setSelectionRange(start + offsetS, start + offsetE);
+		this.classList.add('select-break');
+		this.focus();
+	}
+}
 
 function swapAnimateTo(comments, content, reverse) {
 	
@@ -357,7 +532,7 @@ function swapAnimateTo(comments, content, reverse) {
 }
 
 function navBarHandle(e) {
-	let cL = e.target.classList;
+	const cL = e.target.classList;
 	if (cL[0] === 'page-number') {
 		e.preventDefault();
 		if (!cL.contains('broken')) {
@@ -386,7 +561,7 @@ function onWSData(dbCiD) {
 			
 			if (pagesCache.has(page)) {
 			
-				let parent = pagesCache.get(page);
+				const parent = pagesCache.get(page);
 				
 				parent.querySelectorAll('.msg[id^="comment-"]').forEach(msg => {
 					if (msg.id in comms.children) {
@@ -398,17 +573,17 @@ function onWSData(dbCiD) {
 							msg['response_block'] && cand.querySelector('.reply > ul')
 								.appendChild(msg['response_block']);
 							
-							let form = msg.querySelector('#commentForm');
+							const form = msg.querySelector('#commentForm');
 							for (var R = cand.children.length; 0 < (R--);) {
 								msg.replaceChild(cand.children[R], msg.children[R]);
 							}
-							form && msg.querySelector('.msg_body').appendChild(form.parentNode).firstElementChild.elements['msg'].focus();
+							form && msg.querySelector('.msg_body').appendChild( form.parentNode ).firstElementChild.elements['msg'].focus();
 							
 						} else if (msg['edit_comment']) {
 							msg['edit_comment'].hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
 						}
 					} else {
-						_setup(msg, { id: undefined, class: 'msg deleted' });
+						_setup(msg, { id: 'deleted'+ msg.id.substring(7), class: 'msg deleted' });
 					}
 				});
 				
@@ -434,10 +609,10 @@ function onWSData(dbCiD) {
 				pagesCache.set(page, comms);
 				pagesCache.set(comms, page);
 				
-				let nav = comms.querySelector('.nav');
-				let bar = Navigation.addToBar(nav.children);
-				let msg = comms.querySelectorAll('.msg[id^="comment-"]');
-				let parent = pagesCache.get(LOR.page);
+				const nav = comms.querySelector('.nav');
+				const bar = Navigation.addToBar(nav.children);
+				const msg = comms.querySelectorAll('.msg[id^="comment-"]');
+				const parent = pagesCache.get(LOR.page);
 				
 				bar.children['page_'+ page].setAttribute('cnt-new', msg.length);
 				if (!bar.parentNode) {
@@ -558,11 +733,12 @@ function getCommentsContent(html) {
 	fav.children['memories_count'].textContent = newfv.children['memories_count'].textContent;
 	// stop watch if topic deleted
 	if (isDel.booleanValue)
-		RealtimeWatcher.terminate('"Тема удалена."');
+		RealtimeWatcher.terminate('Тема удалена');
 	// Replace topic if modifed
 	if (old.textContent !== topic.textContent) {
-		let form = old.querySelector('#commentForm');
-		form && topic.querySelector('.msg_body').appendChild(form.parentNode).firstElementChild.elements['msg'].focus();
+		const form = old.querySelector('#commentForm');
+		old.parentNode.replaceChild(topic, old);
+		form && topic.querySelector('.msg_body').appendChild( form.parentNode ).firstElementChild.elements['msg'].focus();
 		_setup(newfv.children['memories_button'], { onclick: topMemories, watch: '&add=add&watch=true&msgid='+ LOR.topic, 
 			class: fav.children['memories_button'].className });
 		_setup(newfv.children['favs_button'], { onclick: topMemories, watch: '&add=add&watch=false&msgid='+ LOR.topic,
@@ -773,6 +949,28 @@ function _setup(el, _Attrs, _Events) {
 	return el;
 }
 
+function pagesPreload(num) {
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest;
+		xhr.open('GET', location.origin + LOR.path +'/page'+ num, true);
+		xhr.onload = () => {
+			if (xhr.status === 200) {
+				const comms = getCommentsContent(xhr.response);
+				
+				pagesCache.set(num, comms);
+				pagesCache.set(comms, num);
+				
+				addToCommentsCache(
+					comms.querySelectorAll('.msg[id^="comment-"]')
+				);
+				resolve(comms);
+			} else
+				reject(xhr);
+		}
+		xhr.send(null);
+	});
+}
+
 function parseLORUrl(uri) {
 	const out = new Object;
 	var m = uri.match(/^(?:https?:\/\/www\.linux\.org\.ru)?(\/[^\/]+\/(?!archive)[^\/]+\/(\d+))(?:\/page(\d+))?/);
@@ -817,23 +1015,26 @@ function toggleForm(e) {
 	e.preventDefault();
 }
 
-const App = (_app_ => {
+const App = (() => {
 	
 	var main_events_count;
+	
+	if (typeof chrome !== 'undefined') {
 		
-	if (_app_ && _app_.storage) {
-		_app_.storage.sync.get(USER_SETTINGS, items => {
-			for (let name in items) {
-				USER_SETTINGS[name] = items[name];
-			}
+		const port = chrome.runtime.connect({ name: location.href });
+		const sync = new Promise((resolve, reject) => {
+			chrome.storage.sync.get(USER_SETTINGS, items => {
+				for (let name in items) {
+					USER_SETTINGS[name] = items[name];
+				}
+				resolve();
+			});
 		});
-		_app_.storage.onChanged.addListener(items => {
+		chrome.storage.onChanged.addListener(items => {
 			for (let name in items) {
 				USER_SETTINGS[name] = items[name].newValue;
 			}
-			sessionStorage['rtload'] = +USER_SETTINGS['Realtime Loader'];
 		});
-		let port = _app_.runtime.connect({ name: location.href });
 		return {
 			checkNow: () => void 0,
 			init: function() {
@@ -845,8 +1046,9 @@ const App = (_app_ => {
 				// We can't show notification from the content script directly,
 				// so let's send a corresponding message to the background script
 				port.onMessage.addListener(onResponseHandler);
-				_app_.runtime.sendMessage({ action: 'lorify-ng init' }, onResponseHandler);
-				this.checkNow = () => _app_.runtime.sendMessage({ action: 'lorify-ng checkNow' }, onResponseHandler);
+				chrome.runtime.sendMessage({ action: 'lorify-ng init' }, onResponseHandler);
+				this.checkNow = () => chrome.runtime.sendMessage({ action: 'lorify-ng checkNow' }, onResponseHandler);
+				return sync;
 			}
 		}
 	} else {
@@ -873,7 +1075,7 @@ const App = (_app_ => {
 		
 			
 		if (localStorage['lorify-ng']) {
-			let storData = JSON.parse(localStorage.getItem('lorify-ng'));
+			const storData = JSON.parse(localStorage.getItem('lorify-ng'));
 			for (let name in storData) {
 				USER_SETTINGS[name] = storData[name];
 			}
@@ -886,12 +1088,12 @@ const App = (_app_ => {
 					USER_SETTINGS[target.id] = target.checked;
 					break;
 				case 'number':
-					USER_SETTINGS[target.id] = target.valueAsNumber >= 0 ? target.valueAsNumber : (target.value = 0);
+					const min = Number (target.min);
+					USER_SETTINGS[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
 			}
 			localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
 			applymsg.classList.add('apply-anim');
 			Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
-			sessionStorage['rtload'] = +USER_SETTINGS['Realtime Loader'];
 		}
 		
 		const loryform = _setup('form', { id: 'loryform', html: `
@@ -902,16 +1104,23 @@ const App = (_app_ => {
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
-				<span class="tab-cell"><input type="number" id="Delay Open Preview" min="0" step="10" value="${
+				<span class="tab-cell"><input type="number" id="Delay Open Preview" min="50" step="25" value="${
 					USER_SETTINGS['Delay Open Preview'] }">
 				мс
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка исчезания превью:</span>
-				<span class="tab-cell"><input type="number" id="Delay Close Preview" min="0" step="10" value="${
+				<span class="tab-cell"><input type="number" id="Delay Close Preview" min="50" step="25" value="${
 					USER_SETTINGS['Delay Close Preview'] }">
 				мс
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Предзагружаемых страниц:</span>
+				<span class="tab-cell"><input type="number" id="Preloaded Pages Count" min="1" step="1" value="${
+					USER_SETTINGS['Preloaded Pages Count'] }">
+				ст
 				</span>
 			</div>
 			<div class="tab-row">
@@ -942,7 +1151,6 @@ const App = (_app_ => {
 				localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
 				applymsg.classList.add('apply-anim');
 				Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
-				sessionStorage['rtload'] = +USER_SETTINGS['Realtime Loader'];
 			}
 			const lorynotify = _setup( 'a' , { id: 'lorynotify', class: 'lory-btn', href: 'notifications' });
 			const lorytoggle = _setup('div', { id: 'lorytoggle', class: 'lory-btn', html: `<style>
@@ -1016,7 +1224,8 @@ const App = (_app_ => {
 					})(delay);
 				}
 				document.body.append(lorynotify, lorytoggle);
+				return { then: c => c() }
 			}
 		}
 	}
-})(window.browser || window.chrome);
+})();
