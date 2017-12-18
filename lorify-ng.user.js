@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.3.8
+// @version     2.3.9
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -244,6 +244,7 @@ _setup(document, null, {
 			LOR.form.elements['csrf'].value = TOKEN;
 			
 			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL);
+			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
 			
 			LOR._markup = lorcodeMarkup.bind(LOR.form.elements['msg']);
 			
@@ -1177,6 +1178,7 @@ const App = (() => {
 					top: 40px;
 					background: #eee;
 					border-radius: 5px;
+					box-shadow: -1px 2px 8px rgba(0,0,0,.3);
 				}
 				#lorytoggle:hover, #lorytoggle.pinet { opacity: 1; }
 				.lory-btn { position: fixed; top: 5px; }
