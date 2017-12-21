@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.3.9
+// @version     2.4.0
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -99,8 +99,7 @@ document.documentElement.append(
 			animation: slideUp 1s ease-out;
 		}
 		#lorcode-markup-panel {
-			margin-left: 2.3em;
-			display: inline-block;
+			margin-left: 1.1em;
 		}
 		#lorcode-markup-panel > .btn {
 			font-size: smaller!important;
@@ -183,6 +182,8 @@ const Navigation = {
 		this.bar.children['page_'+ (LOR.page = num)].classList.add('broken');
 		
 		_setup(content.querySelector('.nav'), { html: this.bar.innerHTML, onclick: navBarHandle });
+		
+		history.replaceState(null, document.title, LOR.path + (num ? '/page'+ num : ''));
 	},
 	
 	addToBar: function(pNumEls) {
@@ -219,6 +220,8 @@ const LORCODE_BUTTONS_PANEL = _setup('div', {
 		<input class="btn btn-default" type="button" value="u">
 		<input class="btn btn-default" type="button" value="s">
 		<input class="btn btn-default" type="button" value="em">
+		<input class="btn btn-default" type="button" value="cut">
+		<input class="btn btn-default" type="button" value="list">
 		<input class="btn btn-default" type="button" value="strong">
 		<input class="btn btn-default" type="button" value="pre">
 		<input class="btn btn-default" type="button" value="user">
@@ -243,10 +246,8 @@ _setup(document, null, {
 			
 			LOR.form.elements['csrf'].value = TOKEN;
 			
-			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL);
+			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL).previousSibling.remove();
 			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
-			
-			LOR._markup = lorcodeMarkup.bind(LOR.form.elements['msg']);
 			
 			LORCODE_BUTTONS_PANEL.addEventListener('click', e => {
 				e.stopPropagation();
@@ -254,7 +255,11 @@ _setup(document, null, {
 				if (e.target.type === 'button') {
 					const tag = e.target.value;
 					const sel = window.getSelection();
-					LOR._markup('['+ tag +']', '[/'+ tag +']', ( sel.type !== 'None' && /quote|user/.test(tag) && sel.toString() ));
+					lorcodeMarkup.call(
+						LOR.form.elements['msg'],
+						'['+ tag +']', '[/'+ tag +']',
+						( sel.type !== 'None' && /quote|user/.test(tag) && sel.toString() )
+					);
 				}
 			});
 			window.addEventListener('keypress', winKeyHandler);
@@ -344,7 +349,7 @@ const RealtimeWatcher = (() => {
 						realtime.style.display = 'none';
 					} else {
 						realtime.innerHTML = 'Был добавлен новый комментарий.\n<a href="'+
-							LOR.path + '?cid=' + e.data +'">Обновить.</a>';
+							LOR.path + '?cid=' + dbCiD[0] +'">Обновить.</a>';
 						realtime.style.display = null;
 					}
 				}, 2e3);
@@ -355,7 +360,6 @@ const RealtimeWatcher = (() => {
 			}
 			wS.onclose = e => {
 				console.warn(`Соединение c ${ wS.url } было прервано "${ e.reason }" [код: ${ e.code }]`);
-				console.info(e);
 				if(!e.wasClean) {
 					Timer.set('WebSocket Data', RealtimeWatcher.start, 5e3);
 				}
@@ -372,38 +376,41 @@ const RealtimeWatcher = (() => {
 const isInsideATag = (str, sp, ep) => (str.split(sp).length - 1) > (str.split(ep).length - 1);
 var _char_ = '';
 var _sign_ = false;
+var _tags_ = {
+	'@': ['[user]', '[/user]'],
+	'>': ['>', '\n>']
+}
 
 function winKeyHandler(e) {
 	
 	var txtArea = LOR.form.elements['msg'];
 	var key     = e.key || String.fromCharCode(e.charCode);
-	var exit    = true;
 	
 	if (e.target !== txtArea) {
 		
 		const wSelect = window.getSelection().toString();
 		
-		if (!wSelect.length) {
-			return;
-		} else if (key === '>') {
-			LOR._markup('>', '\n>', wSelect);
-		} else if (key === '@') {
-			LOR._markup('[user]', '[/user]', wSelect);
+		if (wSelect.length && key in _tags_) {
+			lorcodeMarkup.apply(txtArea, _tags_[key].concat(wSelect));
+			e.preventDefault();
 		}
 		
 	} else {
+
+		var exit = true;
+		var tags = Object.assign({'*': ['[*]', '[/*]']}, _tags_);
 		
 		var end = txtArea.selectionEnd,
 		  start = txtArea.selectionStart,
 		  part0 = txtArea.value.substring(0, start);
-	
+		
 		if (isInsideATag(part0, /\[code(?:=[^\]]*)?\]/, '[/code]')) {
 			const C = '{[(\'"'.indexOf(key);
 		
 			if (C >= 0 && !_sign_) {
 				_char_ = '}])\'"'[C];
 				_sign_ = true;
-				LOR._markup(key, _char_);
+				lorcodeMarkup.call(txtArea, key, _char_);
 			} else {
 				switch (e.keyCode) {
 					case 13:
@@ -421,7 +428,7 @@ function winKeyHandler(e) {
 						txtArea.setSelectionRange(start, start);
 						break;
 					case 9:
-						LOR._markup('   ', '\n   ');
+						lorcodeMarkup.call(txtArea, '   ', '\n   ');
 						break;
 					case 8:
 						if (_sign_) {
@@ -438,22 +445,18 @@ function winKeyHandler(e) {
 				_char_ = '';
 				_sign_ = false;
 			}
-		} else if (key === '*') {
-			LOR._markup('[*]', '[/*]');
-		} else if (key === '@') {
-			LOR._markup('[user]', '[/user]');
-		} else if (key === '>') {
-			LOR._markup('>', '\n>');
+		} else if (end !== start && key in tags) {
+			lorcodeMarkup.apply(txtArea, tags[key]);
 		} else
 			exit = false;
-	}
-	
-	if (exit)
-		return e.preventDefault();
-	
-	if (txtArea.classList.contains('select-break') && e.keyCode != 8) {
-		txtArea.setSelectionRange(end, end);
-		txtArea.classList.remove('select-break');
+			
+		if (exit)
+			return e.preventDefault();
+		
+		if (txtArea.classList.contains('select-break') && e.keyCode != 8) {
+			txtArea.setSelectionRange(end, end);
+			txtArea.classList.remove('select-break');
+		}
 	}
 }
 
@@ -687,35 +690,6 @@ function addToCommentsCache(els, attrs) {
 	}
 }
 
-function addPreviewHandler(comment, attrs) {
-	_setup(comment, attrs, {
-		mouseover: function(e) {
-			if (e.target.classList[0] === 'link-pref') {
-				Timer.clear('Close Preview');
-				Timer.set('Open Preview', () => showPreview(e));
-				e.preventDefault();
-			}
-		}, mouseout: function(e) {
-			if (e.target.classList[0] === 'link-pref') {
-				Timer.clear('Open Preview');
-			}
-		}, click: function(e) {
-			if (e.target.classList[0] === 'link-pref') {
-				var cid  = e.target.getAttribute('cid'),
-					view = document.getElementById('comment-'+ cid);
-				if (view) {
-					view.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				} else {
-					view = CommentsCache[cid];
-					Navigation.page = pagesCache.get(view.parentNode);
-					setTimeout(() => view.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300);
-				}
-				e.preventDefault();
-			}
-		}
-	});
-}
-
 function getCommentsContent(html) {
 	// Create new DOM tree
 	const old = document.getElementById('topic-'+ LOR.topic),
@@ -749,32 +723,46 @@ function getCommentsContent(html) {
 	return comms;
 }
 
-function topMemories(e) {
-	(// приостановка действий по клику на кнопку до окончания текущего запроса
-		this.onclick = o => o.preventDefault()
-	)(e);
-	
-	const $this = this;
-	const watch = this.id === 'memories_button';
-	
-	fetch('/memories.jsp?csrf='+ encodeURIComponent(TOKEN) + this.getAttribute('watch'), {
-		credentials : 'same-origin',
-		method      : 'POST'
-	}).then(response => {
-		if (response.ok) {
-			response.json().then(data => {
-				if (data.id) {
-					$this.setAttribute('watch', '&id='+ data.id +'&remove=remove&watch='+ watch);
-					$this.classList.add('selected');
-					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data.count;
+const openPreviews = document.getElementsByClassName('preview');
+var _offset_ = 1;
+
+function removePreviews(comment) {
+	var c = openPreviews.length - _offset_;
+	while (openPreviews[c] !== comment) {
+		openPreviews[c--].remove();
+	}
+}
+
+function addPreviewHandler(comment, attrs) {
+	_setup(comment, attrs, {
+		mouseover: function(e) {
+			if (e.target.classList[0] === 'link-pref') {
+				Timer.clear(e.target.href);
+				Timer.set('Open Preview', () => {
+					_offset_ = 2;
+					showPreview(e);
+				});
+				e.preventDefault();
+			}
+		}, mouseout: function(e) {
+			if (e.target.classList[0] === 'link-pref') {
+				_offset_ = 1;
+				Timer.clear('Open Preview');
+			}
+		}, click: function(e) {
+			if (e.target.classList[0] === 'link-pref') {
+				var cid  = e.target.getAttribute('cid'),
+					view = document.getElementById('comment-'+ cid);
+				if (view) {
+					view.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				} else {
-					$this.setAttribute('watch', '&add=add&watch='+ watch +'&msgid='+ LOR.topic );
-					$this.classList.remove('selected');
-					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data;
+					view = CommentsCache[cid];
+					Navigation.page = pagesCache.get(view.parentNode);
+					setTimeout(() => view.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300);
 				}
-			})
+				e.preventDefault();
+			}
 		}
-		$this.onclick = topMemories;
 	});
 }
 
@@ -828,15 +816,6 @@ function showPreview(e) {
 		commentID,
 		e
 	);
-}
-
-const openPreviews = document.getElementsByClassName('preview');
-
-function removePreviews(comment) {
-	var c = openPreviews.length - 1;
-	while (openPreviews[c] !== comment) {
-		openPreviews[c--].remove();
-	}
 }
 
 function showCommentInternal(commentElement, commentID, e) {
@@ -902,11 +881,12 @@ function showCommentInternal(commentElement, commentID, e) {
 	};
 	commentElement.onmouseenter = () => {
 		// remove all preview's after this one
+		Timer.clear(hoveredLink.href);
 		Timer.set('Close Preview', () => removePreviews(commentElement));
 	};
 	hoveredLink.onmouseleave = () => {
 		// remove this preview
-		Timer.set('Close Preview', () => commentElement.remove());
+		Timer.set(hoveredLink.href, () => commentElement.remove(), USER_SETTINGS['Delay Close Preview']);
 	};
 	// Note that we append the comment to the '#comments' tag,
 	// not the document's body
@@ -992,6 +972,35 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
+function topMemories(e) {
+	(// приостановка действий по клику на кнопку до окончания текущего запроса
+		this.onclick = o => o.preventDefault()
+	)(e);
+	
+	const $this = this;
+	const watch = this.id === 'memories_button';
+	
+	fetch('/memories.jsp?csrf='+ encodeURIComponent(TOKEN) + this.getAttribute('watch'), {
+		credentials : 'same-origin',
+		method      : 'POST'
+	}).then(response => {
+		if (response.ok) {
+			response.json().then(data => {
+				if (data.id) {
+					$this.setAttribute('watch', '&id='+ data.id +'&remove=remove&watch='+ watch);
+					$this.classList.add('selected');
+					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data.count;
+				} else {
+					$this.setAttribute('watch', '&add=add&watch='+ watch +'&msgid='+ LOR.topic );
+					$this.classList.remove('selected');
+					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data;
+				}
+			})
+		}
+		$this.onclick = topMemories;
+	});
+}
+
 function toggleForm(e) {
 	const parent = LOR.form.parentNode;
 	const [, topic, replyto = 0 ] = this.href.match(/jsp\?topic=(\d+)(?:&replyto=(\d+))?$/);
@@ -1020,9 +1029,9 @@ const App = (() => {
 	
 	var main_events_count;
 	
-	if (typeof chrome !== 'undefined') {
+	if (typeof chrome !== 'undefined' && chrome.runtime.id) {
 		
-		const port = chrome.runtime.connect({ name: location.href });
+		const port = chrome.runtime.connect(chrome.runtime.id, { name: location.href });
 		const sync = new Promise((resolve, reject) => {
 			chrome.storage.sync.get(USER_SETTINGS, items => {
 				for (let name in items) {
@@ -1037,8 +1046,8 @@ const App = (() => {
 			}
 		});
 		return {
-			checkNow: () => void 0,
-			init: function() {
+			checkNow: () => chrome.runtime.sendMessage({ action: 'l0rNG-checkNow' }),
+			init: () => {
 				const onResponseHandler = (
 				      main_events_count = document.getElementById('main_events_count')
 				  ) ? text => {
@@ -1047,42 +1056,46 @@ const App = (() => {
 				// We can't show notification from the content script directly,
 				// so let's send a corresponding message to the background script
 				port.onMessage.addListener(onResponseHandler);
-				chrome.runtime.sendMessage({ action: 'lorify-ng init' }, onResponseHandler);
-				this.checkNow = () => chrome.runtime.sendMessage({ action: 'lorify-ng checkNow' }, onResponseHandler);
+				chrome.runtime.sendMessage({
+					action : 'l0rNG-init',
+					notes  : main_events_count.innerText.replace(/\((\d+)\)/, '$1')
+				});
 				return sync;
 			}
 		}
 	} else {
-		const defaults   = Object.assign({}, USER_SETTINGS);
-		const startWatch = getDataResponse.bind(null, '/notifications-count',
-			({ response }) => {
-				var text = '';
-				if (response != '0') {
-					text = '('+ response +')';
-					if (USER_SETTINGS['Desktop Notification'] && localStorage['notes'] != response) {
-						sendNotify( (localStorage['notes'] = response) );
-						delay = 0;
-					}
-				}
-				main_events_count.textContent = lorynotify.textContent = text;
-				Timer.set('Check Notifications', startWatch, delay < 6e4 ? (delay += 12e3) : delay);
-			});
-			
+		
+		var notes      = localStorage.getItem('l0rNG-notes') || '';
 		var delay      = 12e3;
 		var sendNotify = count => new Notification('loryfy-ng', {
 				icon: '//github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true',
 				body: 'Уведомлений: '+ count
 			}).onclick = () => window.focus();
 		
-			
-		if (localStorage['lorify-ng']) {
-			const storData = JSON.parse(localStorage.getItem('lorify-ng'));
-			for (let name in storData) {
-				USER_SETTINGS[name] = storData[name];
+		const defaults   = Object.assign({}, USER_SETTINGS);
+		const startWatch = getDataResponse.bind(null, '/notifications-count',
+			({ response }) => {
+				var text = '';
+				if (response != '0') {
+					text = '('+ response +')';
+					if (USER_SETTINGS['Desktop Notification'] && notes != response) {
+						localStorage.setItem('l0rNG-notes', response);
+						sendNotify( (notes = response) );
+						delay = 0;
+					}
+				}
+				main_events_count.textContent = lorynotify.textContent = text;
+				Timer.set('Check Notifications', startWatch, delay < 6e4 ? (delay += 12e3) : delay);
+			});
+		
+		const setValues = items => {
+			for (let name in USER_SETTINGS) {
+				let inp = loryform.elements[name];
+				inp[inp.type === 'checkbox' ? 'checked' : 'value'] = (USER_SETTINGS[name] = items[name]);
 			}
 		}
 		
-		const onValueChange = function({ target }) {
+		const onValueChange = ({ target }) => {
 			Timer.clear('Settings on Changed');
 			switch (target.type) {
 				case 'checkbox':
@@ -1100,40 +1113,34 @@ const App = (() => {
 		const loryform = _setup('form', { id: 'loryform', html: `
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
-				<span class="tab-cell" id="applymsg"><input type="checkbox" id="Realtime Loader" ${
-					USER_SETTINGS['Realtime Loader'] ? 'checked' : '' }></span>
+				<span class="tab-cell" id="applymsg"><input type="checkbox" id="Realtime Loader"></span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
-				<span class="tab-cell"><input type="number" id="Delay Open Preview" min="50" step="25" value="${
-					USER_SETTINGS['Delay Open Preview'] }">
+				<span class="tab-cell"><input type="number" id="Delay Open Preview" min="50" step="25">
 				мс
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка исчезания превью:</span>
-				<span class="tab-cell"><input type="number" id="Delay Close Preview" min="50" step="25" value="${
-					USER_SETTINGS['Delay Close Preview'] }">
+				<span class="tab-cell"><input type="number" id="Delay Close Preview" min="50" step="25">
 				мс
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Предзагружаемых страниц:</span>
-				<span class="tab-cell"><input type="number" id="Preloaded Pages Count" min="1" step="1" value="${
-					USER_SETTINGS['Preloaded Pages Count'] }">
+				<span class="tab-cell"><input type="number" id="Preloaded Pages Count" min="1" step="1">
 				ст
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Оповещения на рабочий стол:</span>
-				<span class="tab-cell"><input type="checkbox" id="Desktop Notification" ${
-					USER_SETTINGS['Desktop Notification'] ? 'checked' : '' }>
+				<span class="tab-cell"><input type="checkbox" id="Desktop Notification">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">CSS анимация:</span>
-				<span class="tab-cell"><input type="checkbox" id="CSS3 Animation" ${
-					USER_SETTINGS['CSS3 Animation'] ? 'checked' : '' }>
+				<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
 					<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
 				</span>
 			</div>`,
@@ -1142,86 +1149,96 @@ const App = (() => {
 					loryform.onchange = () => { loryform.onchange = onValueChange };
 					onValueChange(e)
 				}, 750)
-			}),
-			applymsg = loryform.querySelector('#applymsg');
-			loryform.elements['resetSettings'].onclick = () => {
-				for (let name in defaults) {
-					let inp = loryform.elements[name];
-					inp[inp.type === 'checkbox' ? 'checked' : 'value'] = (USER_SETTINGS[name] = defaults[name]);
-				}
-				localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
-				applymsg.classList.add('apply-anim');
-				Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
-			}
-			const lorynotify = _setup( 'a' , { id: 'lorynotify', class: 'lory-btn', href: 'notifications' });
-			const lorytoggle = _setup('div', { id: 'lorytoggle', class: 'lory-btn', html: `<style>
-				#lorynotify {
-					right: 60px;
-					text-decoration: none;
-					color: inherit;
-					font: bold 1.2em "Open Sans";
-				}
-				#lorytoggle {
-					width: 32px;
-					height: 32px;
-					right: 5px;
-					cursor: pointer;
-					opacity: .5;
-					background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
-				}
-				#loryform {
-					display: table;
-					min-width: 360px;
-					padding: 3px 6px;
-					position: fixed;
-					right: 5px;
-					top: 40px;
-					background: #eee;
-					border-radius: 5px;
-					box-shadow: -1px 2px 8px rgba(0,0,0,.3);
-				}
-				#lorytoggle:hover, #lorytoggle.pinet { opacity: 1; }
-				.lory-btn { position: fixed; top: 5px; }
-				.tab-row  { display: table-row; font-size: 85%; color: #666; }
-				.tab-cell { display: table-cell;
-					position: relative;
-					padding: 4px 2px;
-					vertical-align: middle;
-					max-width: 180px;
-				}
-				#resetSettings, .apply-anim:after { position: absolute; right: 0; }
-				.apply-anim:after {
-					content: 'Настройки сохранены.';
-					-webkit-animation: apply 2s infinite;
-					animation: apply 2s infinite;
-					color: red;
-				}
-				@keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
-				@-webkit-keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
-			</style>`}, {
-				click: () => { lorytoggle.classList.toggle('pinet') ? document.body.appendChild(loryform) : loryform.remove() }
 			});
-			// Определяем статус оповещений:
-			switch (Notification.permission) {
-				case 'granted': // - разрешены
-					break;
-				case 'denied':  // - отклонены
-					sendNotify = () => void 0;
-					break;
-				case 'default': // - требуется подтверждение
-					Notification.requestPermission(granted => {
-						if (granted !== 'granted')
-							sendNotify = () => void 0;
-					});
+			
+		setValues( JSON.parse(localStorage.getItem('lorify-ng')) || USER_SETTINGS );
+		loryform.elements.resetSettings.onclick = () => {
+			setValues( defaults );
+			localStorage.setItem('lorify-ng', JSON.stringify(defaults));
+			applymsg.classList.add('apply-anim');
+			Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
+		}
+		
+		const applymsg   = loryform.querySelector('#applymsg');
+		const lorynotify = _setup( 'a' , { id: 'lorynotify', class: 'lory-btn', href: 'notifications' });
+		const lorytoggle = _setup('div', { id: 'lorytoggle', class: 'lory-btn', html: `<style>
+			#lorynotify {
+				right: 60px;
+				text-decoration: none;
+				color: inherit;
+				font: bold 1.2em "Open Sans";
 			}
+			#lorytoggle {
+				width: 32px;
+				height: 32px;
+				right: 5px;
+				cursor: pointer;
+				opacity: .5;
+				background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
+			}
+			#loryform {
+				display: table;
+				min-width: 360px;
+				padding: 3px 6px;
+				position: fixed;
+				right: 5px;
+				top: 40px;
+				background: #eee;
+				border-radius: 5px;
+				box-shadow: -1px 2px 8px rgba(0,0,0,.3);
+			}
+			#lorytoggle:hover, #lorytoggle.pinet { opacity: 1; }
+			.lory-btn { position: fixed; top: 5px; }
+			.tab-row  { display: table-row; font-size: 85%; color: #666; }
+			.tab-cell { display: table-cell;
+				position: relative;
+				padding: 4px 2px;
+				vertical-align: middle;
+				max-width: 180px;
+			}
+			#resetSettings, .apply-anim:after { position: absolute; right: 0; }
+			.apply-anim:after {
+				content: 'Настройки сохранены.';
+				-webkit-animation: apply 2s infinite;
+				animation: apply 2s infinite;
+				color: red;
+			}
+			@keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
+			@-webkit-keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
+		</style>`}, {
+			click: () => { lorytoggle.classList.toggle('pinet') ? document.body.appendChild(loryform) : loryform.remove() }
+		});
+		// Определяем статус оповещений:
+		switch (Notification.permission) {
+			case 'granted': // - разрешены
+				break;
+			case 'denied':  // - отклонены
+				sendNotify = () => void 0;
+				break;
+			case 'default': // - требуется подтверждение
+				Notification.requestPermission(granted => {
+					if (granted !== 'granted')
+						sendNotify = () => void 0;
+				});
+		}
+		window.addEventListener('storage', ({ key, newValue }) => {
+			if (key === 'l0rNG-notes') {
+				main_events_count.textContent = lorynotify.textContent = '('+ (notes = newValue) +')';
+				Timer.set('Check Notifications', startWatch, delay);
+			} else if (key === 'lorify-ng') {
+				setValues( JSON.parse(newValue) );
+			}
+		});
 		return {
 			checkNow: () => void 0,
 			init: function() {
 				if ( (main_events_count = document.getElementById('main_events_count')) ) {
-					localStorage['notes'] = (
-						lorynotify.textContent = main_events_count.textContent
-					).replace(/\d+/, '$1');
-					(this.checkNow = function(ms) {
+					const $1 = ( lorynotify.textContent = main_events_count.textContent ).replace(/\((\d+)\)/, '$1');
+					if (notes != $1) {
+						!!(notes = $1) && sendNotify( $1 );
+						localStorage.setItem('l0rNG-notes', $1);
+					}
+					!(this.checkNow = function(ms) {
 						Timer.set('Check Notifications', startWatch, ms);
 					})(delay);
 				}

@@ -1,10 +1,10 @@
 
 var   timer    = null;
 const options  = new Object;
-const loriform = document.forms['loriform'];
+const loryform = document.forms['loryform'];
 const applymsg = document.getElementById('applymsg');
 const notify   = document.getElementById('notifications');
-const defaults = { // default options
+const defaults = { // default settings
 	'Realtime Loader': true,
 	'CSS3 Animation' : true,
 	'Delay Open Preview': 50,
@@ -16,8 +16,8 @@ const defaults = { // default options
 chrome.storage.sync.get(defaults, setValues);
 chrome.storage.onChanged.addListener(items => {
 	for (let name in items) {
-		loriform.elements[name][
-			loriform.elements[name].type === 'checkbox'
+		loryform.elements[name][
+			loryform.elements[name].type === 'checkbox'
 			? 'checked'
 			: 'value'] = (
 				options[name] = items[name].newValue
@@ -35,15 +35,15 @@ chrome.runtime.getBackgroundPage( ({ text, openTab }) => {
 });
 
 applymsg.addEventListener('animationend', () => applymsg.classList.remove('apply-anim'));
-loriform.onchange = onValueChange;
-loriform.addEventListener('input', evt => {
+loryform.onchange = onValueChange;
+loryform.addEventListener('input', evt => {
 	clearTimeout(timer);
 	timer = setTimeout(() => {
-		loriform.onchange = () => { loriform.onchange = onValueChange };
+		loryform.onchange = () => { loryform.onchange = onValueChange };
 		onValueChange(evt);
 	}, 750);
 });
-loriform.elements['resetSettings'].addEventListener('click', () => {
+loryform.elements.resetSettings.addEventListener('click', () => {
 	chrome.storage.sync.set(defaults, () => applymsg.classList.add('apply-anim'));
 	setValues(defaults);
 });
@@ -63,8 +63,8 @@ function onValueChange({ target }) {
 
 function setValues(items) {
 	for (let name in items) {
-		loriform.elements[name][
-			loriform.elements[name].type === 'checkbox'
+		loryform.elements[name][
+			loryform.elements[name].type === 'checkbox'
 			? 'checked'
 			: 'value'] = (
 				options[name] = items[name]
