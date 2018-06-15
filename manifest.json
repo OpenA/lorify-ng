@@ -1,4 +1,10 @@
 {
+  "applications": {
+        "gecko": {
+          "id": "uin@lorify-ng",
+          "strict_min_version": "57.0"
+        }
+    },
   "manifest_version": 2,
   "name": "lorify-ng",
   "version": "2.4.0",

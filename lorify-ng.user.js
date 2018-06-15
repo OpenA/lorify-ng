@@ -1027,7 +1027,7 @@ function toggleForm(e) {
 
 const App = (() => {
 	
-	var main_events_count;
+	var main_events_count = '0';
 	
 	if (typeof chrome !== 'undefined' && chrome.runtime.id) {
 		
@@ -1058,7 +1058,7 @@ const App = (() => {
 				port.onMessage.addListener(onResponseHandler);
 				chrome.runtime.sendMessage({
 					action : 'l0rNG-init',
-					notes  : main_events_count.innerText.replace(/\((\d+)\)/, '$1')
+					notes  : main_events_count !== null ? main_events_count.innerText.replace(/\((\d+)\)/, '$1') : ''
 				});
 				return sync;
 			}
