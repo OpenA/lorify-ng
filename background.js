@@ -6,7 +6,8 @@ var defaults = { // default settings
 	'Delay Open Preview'   : 50,
 	'Delay Close Preview'  : 800,
 	'Desktop Notification' : true,
-	'Preloaded Pages Count': 1
+	'Preloaded Pages Count': 1,
+	'Scroll Top View'      : true
 };
 // load settings
 chrome.storage.onChanged.addListener(items => {

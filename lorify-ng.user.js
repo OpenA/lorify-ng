@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.4.1
+// @version     2.4.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -19,7 +19,8 @@ const USER_SETTINGS = {
 	'Delay Open Preview': 50,
 	'Delay Close Preview': 800,
 	'Desktop Notification': true,
-	'Preloaded Pages Count': 1
+	'Preloaded Pages Count': 1,
+	'Scroll Top View': true
 }
 
 const pagesCache    = new Map;
@@ -83,7 +84,6 @@ document.documentElement.append(
 			animation-duration: .3s;
 			position: absolute;
 			z-index: 300;
-			border: 1px solid grey;
 		}
 		.preview #commentForm {
 			display: none;
@@ -130,6 +130,7 @@ document.documentElement.append(
 
 const Navigation = {
 	
+	gotoStart: false,
 	pagesCount: 1,
 	
 	bar: _setup('div', { class: 'nav', html: `
@@ -152,23 +153,6 @@ const Navigation = {
 		var reverse  = num > LOR.page;
 		var content;
 		
-		if (pagesCache.has(num)) {
-			swapAnimateTo(comments, (
-				content = pagesCache.get(num)
-			), reverse );
-		} else {
-			comments.parentNode.replaceChild((
-				content = LoaderSTB
-			), comments );
-			
-			pagesPreload(num).then(comms => {
-				_setup(comms.querySelector('.nav'), {
-					html: Navigation.bar.innerHTML, onclick: navBarHandle
-				});
-				swapAnimateTo(content, comms, reverse);
-			});
-		}
-		
 		this.bar.querySelectorAll('.broken').forEach(lnk => lnk.classList.remove('broken'));
 		
 		if (num <= 0) {
@@ -181,7 +165,19 @@ const Navigation = {
 		}
 		this.bar.children['page_'+ (LOR.page = num)].classList.add('broken');
 		
-		_setup(content.querySelector('.nav'), { html: this.bar.innerHTML, onclick: navBarHandle });
+		if (pagesCache.has(num)) {
+			this.swapAnimateTo(comments, (
+				content = pagesCache.get(num)
+			), reverse );
+		} else {
+			comments.parentNode.replaceChild((
+				content = LoaderSTB
+			), comments );
+			
+			pagesPreload(num).then(comms => {
+				Navigation.swapAnimateTo(content, comms, reverse);
+			});
+		}
 		
 		history.replaceState(null, document.title, LOR.path + (num ? '/page'+ num : ''));
 	},
@@ -209,6 +205,32 @@ const Navigation = {
 		this.bar.children['page_'+ LOR.page].className = 'page-number broken';
 		
 		return this.bar;
+	},
+	
+	swapAnimateTo: function(comments, content, reverse) {
+		
+		const nav = _setup(content.querySelector('.nav'), {
+			html: this.bar.innerHTML, onclick: navBarHandle
+		});
+		
+		if (USER_SETTINGS['CSS3 Animation']) {
+		
+			content.addEventListener('animationend', function(e) {
+				this.removeEventListener(e.type, arguments.callee, true);
+				this.style['animation-name'] = null;
+				this.classList.remove('terminate');
+			}, true);
+			
+			content.classList.add('terminate');
+			content.style['animation-name'] = 'slideToShow'+ (reverse ? '-reverse' : '');
+		}
+		
+		comments.parentNode.replaceChild(content, comments);
+		
+		if (this.gotoStart) {
+			setTimeout(() => nav.scrollIntoView({ block: 'start' }), 300);
+			this.gotoStart = false;
+		}
 	}
 }
 
@@ -523,28 +545,12 @@ function lorcodeMarkup(open, close, blur) {
 	}
 }
 
-function swapAnimateTo(comments, content, reverse) {
-	
-	if (USER_SETTINGS['CSS3 Animation']) {
-		
-		content.addEventListener('animationend', function(e) {
-			this.removeEventListener(e.type, arguments.callee, true);
-			this.style['animation-name'] = null;
-			this.classList.remove('terminate');
-		}, true);
-		
-		content.classList.add('terminate');
-		content.style['animation-name'] = 'slideToShow'+ (reverse ? '-reverse' : '');
-	}
-
-	comments.parentNode.replaceChild(content, comments);
-}
-
 function navBarHandle(e) {
 	const cL = e.target.classList;
 	if (cL[0] === 'page-number') {
 		e.preventDefault();
 		if (!cL.contains('broken')) {
+			Navigation.gotoStart = USER_SETTINGS['Scroll Top View'];
 			switch (cL[1]) {
 				case 'prev': Navigation.page--; break;
 				case 'next': Navigation.page++; break;
@@ -861,10 +867,10 @@ function showCommentInternal(commentElement, commentID, e) {
 		// Avoid duplicated IDs when the original comment was found on the same page
 			id: 'preview-'+ commentID, 
 			class: 'msg preview',
-			style: 'animation-name: toShow; '+
+			style: 'animation-name: toShow; border: 1px solid grey; '+
 				// There are no limitations for the 'z-index' in the CSS standard,
 				// so it depends on the browser. Let's just set it to 300
-				'max-width:'+ parentBlock.offsetWidth +
+				'max-width: '+ parentBlock.offsetWidth +
 				'px; left: '+
 				( left < visibleWidth
 				       ? offsetX
@@ -1146,6 +1152,11 @@ const App = (() => {
 			<div class="tab-row">
 				<span class="tab-cell">Оповещения на рабочий стол:</span>
 				<span class="tab-cell"><input type="checkbox" id="Desktop Notification">
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Возвращать наверх:</span>
+				<span class="tab-cell"><input type="checkbox" id="Scroll Top View">
 				</span>
 			</div>
 			<div class="tab-row">
