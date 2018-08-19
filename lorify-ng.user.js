@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.4.0
+// @version     2.4.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -99,7 +99,7 @@ document.documentElement.append(
 			animation: slideUp 1s ease-out;
 		}
 		#lorcode-markup-panel {
-			margin-left: 1.1em;
+			margin-left: 5px;
 		}
 		#lorcode-markup-panel > .btn {
 			font-size: smaller!important;
@@ -220,6 +220,7 @@ const LORCODE_BUTTONS_PANEL = _setup('div', {
 		<input class="btn btn-default" type="button" value="u">
 		<input class="btn btn-default" type="button" value="s">
 		<input class="btn btn-default" type="button" value="em">
+		<input class="btn btn-default" type="button" value="br">
 		<input class="btn btn-default" type="button" value="cut">
 		<input class="btn btn-default" type="button" value="list">
 		<input class="btn btn-default" type="button" value="strong">
@@ -491,6 +492,10 @@ function lorcodeMarkup(open, close, blur) {
 			select = select.replace(/\n/gm, close);
 			close = '';
 			break;
+		case '[br]':
+			select = select.replace(/\n/gm, (close = open) +'\n' );
+			open = '';
+			break;
 		case '[*]':
 			select = select.replace(/\[\/?\*\]/g, '').replace(/\n/gm, '\n'+ open);
 			break;
@@ -559,7 +564,7 @@ function onWSData(dbCiD) {
 			      reply = comms.ownerDocument.evaluate('//article[@id="comment-'+
 			         dbCiD.join('" or @id="comment-') +'"]/*[@class="title" and contains(., "'+
 			         LOR.user +'")]', comms, null, 3, null);
-				
+			
 			if (reply.booleanValue)
 				App.checkNow();
 			
@@ -584,7 +589,7 @@ function onWSData(dbCiD) {
 							form && msg.querySelector('.msg_body').appendChild( form.parentNode ).firstElementChild.elements['msg'].focus();
 							
 						} else if (msg['edit_comment']) {
-							msg['edit_comment'].hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
+							msg['edit_comment'].parentNode.hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
 						}
 					} else {
 						_setup(msg, { id: 'deleted'+ msg.id.substring(7), class: 'msg deleted' });
@@ -1027,39 +1032,44 @@ function toggleForm(e) {
 
 const App = (() => {
 	
-	var main_events_count = '0';
+	var main_events_count;
 	
 	if (typeof chrome !== 'undefined' && chrome.runtime.id) {
 		
 		const port = chrome.runtime.connect(chrome.runtime.id, { name: location.href });
 		const sync = new Promise((resolve, reject) => {
-			chrome.storage.sync.get(USER_SETTINGS, items => {
-				for (let name in items) {
-					USER_SETTINGS[name] = items[name];
+			
+			const onResponseHandler = items => {
+				if (typeof items === 'object') {
+					for (let name in items) {
+						USER_SETTINGS[name] = items[name];
+					}
+					port.onMessage.removeListener(onResponseHandler);
+					resolve();
 				}
-				resolve();
+			};
+			
+			port.onMessage.addListener(onResponseHandler);
+			chrome.runtime.sendMessage({ action : 'l0rNG-settings' });
+			chrome.storage.onChanged.addListener(items => {
+				for (let name in items) {
+					USER_SETTINGS[name] = items[name].newValue;
+				}
 			});
 		});
-		chrome.storage.onChanged.addListener(items => {
-			for (let name in items) {
-				USER_SETTINGS[name] = items[name].newValue;
-			}
-		});
+		
 		return {
-			checkNow: () => chrome.runtime.sendMessage({ action: 'l0rNG-checkNow' }),
-			init: () => {
-				const onResponseHandler = (
-				      main_events_count = document.getElementById('main_events_count')
-				  ) ? text => {
-				      main_events_count.textContent = text;
-				  } : (  ) => void 0;
-				// We can't show notification from the content script directly,
-				// so let's send a corresponding message to the background script
-				port.onMessage.addListener(onResponseHandler);
-				chrome.runtime.sendMessage({
-					action : 'l0rNG-init',
-					notes  : main_events_count !== null ? main_events_count.innerText.replace(/\((\d+)\)/, '$1') : ''
-				});
+			checkNow : () => chrome.runtime.sendMessage({ action: 'l0rNG-checkNow' }),
+			init     : () => {
+				if ( (main_events_count = document.getElementById('main_events_count')) ) {
+					// We can't show notification from the content script directly,
+					// so let's send a corresponding message to the background script
+					port.onMessage.addListener(text => { main_events_count.textContent = text });
+					chrome.runtime.sendMessage({
+						action : 'l0rNG-init',
+						notes  : main_events_count.innerText.replace(/\((\d+)\)/, '$1')
+					});
+				}
 				return sync;
 			}
 		}

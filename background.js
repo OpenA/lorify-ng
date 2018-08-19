@@ -1,5 +1,26 @@
 
-const openPorts = [];
+var settings = new Object;
+var defaults = { // default settings
+	'Realtime Loader'      : true,
+	'CSS3 Animation'       : true,
+	'Delay Open Preview'   : 50,
+	'Delay Close Preview'  : 800,
+	'Desktop Notification' : true,
+	'Preloaded Pages Count': 1
+};
+// load settings
+chrome.storage.onChanged.addListener(items => {
+	for (let name in items) {
+		settings[name] = items[name].newValue;
+	}
+});
+chrome.storage.sync.get(defaults, items => {
+	for (let name in items) {
+		settings[name] = items[name];
+	}
+});
+
+const openPorts = new Map;
 const empty_Url = [
 	'about:newtab',
 	'about:blank',
@@ -8,6 +29,7 @@ const empty_Url = [
 	'chrome://newtab/'
 ];
 
+var start = true;
 var delay = 0;
 var timr  = null;
 var color = '#3d96ab';
@@ -15,15 +37,13 @@ var text  = '';
 
 //chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
 chrome.notifications.onClicked.addListener(openTab);
-chrome.runtime.onMessage.addListener(atInit);
+chrome.runtime.onMessage.addListener(messageHandler);
 chrome.runtime.onConnect.addListener(port => {
-	const pix = openPorts.push(port);
+	openPorts.set(port.sender.tab.id, port);
 	port.onDisconnect.addListener(() => {
-		openPorts.splice(pix - 1, pix)
-		if (!openPorts.length) {
+		openPorts.delete(port.sender.tab.id);
+		if (!openPorts.size) {
 			clearTimeout(timr);
-			chrome.runtime.onMessage.removeListener(atWork);
-			chrome.runtime.onMessage.addListener(atInit);
 		}
 	});
 });
@@ -57,24 +77,25 @@ function clearNotes() {
 	openPorts.forEach(port => port.postMessage( text ));
 }
 
-function atInit({ action, notes }) {
-	if (action === 'l0rNG-init') {
-		if (text !== notes) {
-			!notes ? clearNotes() : sendNotify( '('+ (text = notes) +')' );
-		}
-		clearTimeout(timr);
-		timr = setTimeout(getNotifications, 5e3);
-		chrome.runtime.onMessage.removeListener(atInit);
-		chrome.runtime.onMessage.addListener(atWork);
-	}
-}
-
-function atWork({ action, notes }) {
-	if (action === 'l0rNG-checkNow') {
-		clearTimeout(timr);
-		getNotifications();
-	} else if (text !== notes) {
-		!notes ? clearNotes() : sendNotify( '('+ (text = notes) +')' );
+function messageHandler({ action, notes }, sender) {
+	// check
+	switch (action) {
+		case 'l0rNG-settings':
+			openPorts.get(sender.tab.id).postMessage( settings );
+			break;
+		case 'l0rNG-checkNow':
+			clearTimeout(timr);
+			getNotifications();
+			break;
+		case 'l0rNG-init':
+			if (text !== notes) {
+				!notes ? clearNotes() : sendNotify( '('+ (text = notes) +')' );
+			}
+			if (start) {
+				clearTimeout(timr);
+				timr  = setTimeout(getNotifications, 5e3);
+				start = false;
+			}
 	}
 }
 
@@ -100,12 +121,14 @@ function getNotifications() {
 }
 
 function sendNotify(notes) {
-	chrome.notifications.create('lorify-ng notification', {
-		type    : 'basic',
-		title   : 'www.Linux.Org.Ru',
-		message : 'Уведомлений: '+ text,
-		iconUrl : './icons/penguin-64.png'
-	});
+	if (settings['Desktop Notification']) {
+		chrome.notifications.create('lorify-ng notification', {
+			type    : 'basic',
+			title   : 'www.Linux.Org.Ru',
+			message : 'Уведомлений: '+ text,
+			iconUrl : './icons/penguin-64.png'
+		});
+	}
 	chrome.browserAction.setBadgeBackgroundColor({ color });
 	chrome.browserAction.setBadgeText({ text });
 	openPorts.forEach(port => port.postMessage( notes ));
