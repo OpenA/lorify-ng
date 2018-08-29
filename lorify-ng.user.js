@@ -4,11 +4,10 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.4.3
+// @version     2.4.4
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
-// @require     https://rawgit.com/OpenA/lorify-ng/master/tinycon.mod.js
 // @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-64.png
 // @run-at      document-start
 // ==/UserScript==
@@ -241,6 +240,110 @@ const Navigation = {
 	}
 }
 
+const Favicon = {
+	
+	original : '//www.linux.org.ru/favicon.ico',
+	index    : 0,
+	size     : 16 * ( Math.ceil(window.devicePixelRatio) || 1 ),
+	// 0: imageload promise => write resolve fn in global variable
+	imgReady : new Promise(rs => { __ready = rs }),
+	
+	get tabname() {
+		let title = document.title;
+		Object.defineProperty(this, 'tabname', { value: title });
+		return title;
+	},
+	
+	get canvas() {
+		let canvas = document.createElement('canvas');
+		canvas.width = canvas.height = this.size;
+		Object.defineProperty(this, 'canvas', { value: canvas });
+		return canvas;
+	},
+	
+	get image() {
+		let image = new Image;
+		// allow cross origin resource requests if the image is not a data:uri
+		if ( ! /^data:/.test(this.original)) {
+			image.crossOrigin = 'anonymous';
+		}
+		Object.defineProperty(this, 'image', {
+			value: _setup(image, {
+				// 1: imageload promise => call resolve fn
+				onload: () => __ready(),
+				src: this.original
+			})
+		});
+		return image;
+	},
+	
+	get icon() {
+		let links = document.getElementsByTagName('link'),
+		   length = links.length;
+		
+		for (var i = 0; i < length; i++) {
+			if (links[i].rel && /\bicon\b/i.test(links[i].rel)) {
+				this.original = links[i].href;
+				Object.defineProperty(this, 'icon', { writable: true, value: links[i] });
+				return links[i];
+			}
+		}
+	},
+	
+	draw: function(label = '', color = '#48de3d') {
+		
+		const $this   = this;
+		const context = this.canvas.getContext('2d');
+		const icon    = this.icon;
+		const size    = this.size;
+		const image   = this.image;
+		
+		this.imgReady.then(resolve => {
+			
+			// clear canvas
+			context.clearRect(0, 0, size, size);
+			// draw the favicon
+			context.drawImage(image, 0, 0, image.width, image.height, 0, 0, size, size);
+			
+			var href = image.src;
+			
+			if (label) {
+				
+				if (typeof label === 'number' && label > 99) {
+					document.title = $this.tabname +' ('+ label +')';
+					label = '99+';
+				}
+				
+				let radius = size / 100 * 38,
+				   centerX = size - radius,
+				   centerY = radius,
+				   fontPix = radius * 1.5;
+			
+				// webkit seems to render fonts lighter than firefox
+				context.font = 'bold '+ fontPix +'px arial';
+				context.fillStyle = color;
+				context.strokeStyle = 'rgba(0,0,0,.2)';
+			
+				// bubble
+				context.beginPath();
+				context.arc(centerX, centerY, radius, 0, 2 * Math.PI, false);
+				context.fill();
+				context.stroke();
+			
+				// label
+				context.fillStyle = '#fff';
+				context.textAlign = "center";
+				context.fillText(label, centerX, fontPix);
+				href = $this.canvas.toDataURL();
+			}
+			
+			icon.parentNode.replaceChild(
+				($this.icon = _setup('link', { type: 'image/x-icon', rel: 'icon', href })), icon
+			);
+		});
+	}
+}
+
 const LORCODE_BUTTONS_PANEL = _setup('div', {
 	id: 'lorcode-markup-panel',
 	html: `
@@ -299,8 +402,6 @@ _setup(document, null, {
 			return;
 		}
 		
-		Tinycon.index = 0;
-		
 		const pagesElements = this.querySelectorAll('.messages > .nav > .page-number');
 		const comments      = this.getElementById('comments');
 		
@@ -330,7 +431,7 @@ _setup(document, null, {
 		);
 		
 		if (topicDel.booleanValue) {
-			Tinycon.setBubble('\u2013', '#F00');
+			Favicon.draw('\u2013', '#F00');
 		} else
 		if (!topicArc.booleanValue) {
 			if ((lastPage -= 1) > LOR.page) {
@@ -357,8 +458,8 @@ _setup(document, null, {
 			var newadded = document.querySelectorAll('.newadded');
 			newadded.forEach(nwc => nwc.classList.remove('newadded'));
 			document.querySelectorAll('#page_'+ LOR.page).forEach(pg => pg.removeAttribute('cnt-new'));
-			Tinycon.setBubble(
-				(Tinycon.index -= newadded.length)
+			Favicon.draw(
+				(Favicon.index -= newadded.length)
 			);
 		});
 	}
@@ -398,7 +499,7 @@ const RealtimeWatcher = (() => {
 		}
 		static terminate(reason) {
 			wS.close(1000, reason);
-			Tinycon.setBubble('\u2013', '#F00');
+			Favicon.draw('\u2013', '#F00');
 		}
 	}
 })();
@@ -624,7 +725,7 @@ function onWSData(dbCiD) {
 				);
 				_setup(           Navigation.bar.children['page_'+ page], { 'cnt-new': cnt_new });
 				_setup( document.querySelector('#comments #page_'+ page), { 'cnt-new': cnt_new });
-				Tinycon.index += i;
+				Favicon.index += i;
 			} else {
 				
 				pagesCache.set(page, comms);
@@ -645,9 +746,9 @@ function onWSData(dbCiD) {
 					_setup(parent.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
 				}
 				addToCommentsCache( msg, { class: 'msg newadded' } );
-				Tinycon.index += msg.length;
+				Favicon.index += msg.length;
 			}
-			Tinycon.setBubble(Tinycon.index);
+			Favicon.draw(Favicon.index);
 			history.replaceState(null, document.title, location.pathname);
 		});
 }
