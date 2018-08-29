@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.4.2
+// @version     2.4.3
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -28,7 +28,8 @@ const ResponsesMap  = new Object;
 const CommentsCache = new Object;
 const LoaderSTB     = _setup('div', { html: '<div class="page-loader"></div>' });
 const LOR           = parseLORUrl(location.pathname);
-const anonymous     = { innerText: 'anonymous' }
+const anonymous     = { innerText: 'anonymous' };
+const TOUCH_DEVICE  = 'ontouchstart' in window;
 const [,TOKEN = ''] = document.cookie.match(/CSRF_TOKEN="?([^;"]*)/);
 const Timer         = {
 	// clear timer by name
@@ -130,7 +131,7 @@ document.documentElement.append(
 
 const Navigation = {
 	
-	gotoStart: false,
+	gotoNode: null,
 	pagesCount: 1,
 	
 	bar: _setup('div', { class: 'nav', html: `
@@ -164,6 +165,10 @@ const Navigation = {
 			this.bar.lastElementChild.classList.add('broken');
 		}
 		this.bar.children['page_'+ (LOR.page = num)].classList.add('broken');
+		
+		if (USER_SETTINGS['Scroll Top View']) {
+			comments.querySelector('.nav').scrollIntoView({ block: 'start' });
+		}
 		
 		if (pagesCache.has(num)) {
 			this.swapAnimateTo(comments, (
@@ -209,7 +214,9 @@ const Navigation = {
 	
 	swapAnimateTo: function(comments, content, reverse) {
 		
-		const nav = _setup(content.querySelector('.nav'), {
+		const elem = this.gotoNode;
+		
+		_setup(content.querySelector('.nav'), {
 			html: this.bar.innerHTML, onclick: navBarHandle
 		});
 		
@@ -227,9 +234,9 @@ const Navigation = {
 		
 		comments.parentNode.replaceChild(content, comments);
 		
-		if (this.gotoStart) {
-			setTimeout(() => nav.scrollIntoView({ block: 'start' }), 300);
-			this.gotoStart = false;
+		if (elem != null) {
+			setTimeout(() => elem.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300);
+			this.gotoNode = null;
 		}
 	}
 }
@@ -550,7 +557,6 @@ function navBarHandle(e) {
 	if (cL[0] === 'page-number') {
 		e.preventDefault();
 		if (!cL.contains('broken')) {
-			Navigation.gotoStart = USER_SETTINGS['Scroll Top View'];
 			switch (cL[1]) {
 				case 'prev': Navigation.page--; break;
 				case 'next': Navigation.page++; break;
@@ -745,8 +751,24 @@ function removePreviews(comment) {
 }
 
 function addPreviewHandler(comment, attrs) {
-	_setup(comment, attrs, {
-		mouseover: function(e) {
+	
+	comment.addEventListener('click', e => {
+		if (e.target.classList[0] === 'link-pref') {
+			var cid  = e.target.getAttribute('cid'),
+				view = document.getElementById('comment-'+ cid);
+			if (view) {
+				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			} else {
+				Navigation.gotoNode = view = CommentsCache[cid];
+				Navigation.page = pagesCache.get(view.parentNode);
+			}
+			e.preventDefault();
+		}
+	});
+	
+	if ( ! TOUCH_DEVICE ) {
+		
+		comment.addEventListener('mouseover', e => {
 			if (e.target.classList[0] === 'link-pref') {
 				Timer.clear(e.target.href);
 				Timer.set('Open Preview', () => {
@@ -755,26 +777,17 @@ function addPreviewHandler(comment, attrs) {
 				});
 				e.preventDefault();
 			}
-		}, mouseout: function(e) {
+		});
+		
+		comment.addEventListener('mouseout', e => {
 			if (e.target.classList[0] === 'link-pref') {
 				_offset_ = 1;
 				Timer.clear('Open Preview');
 			}
-		}, click: function(e) {
-			if (e.target.classList[0] === 'link-pref') {
-				var cid  = e.target.getAttribute('cid'),
-					view = document.getElementById('comment-'+ cid);
-				if (view) {
-					view.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				} else {
-					view = CommentsCache[cid];
-					Navigation.page = pagesCache.get(view.parentNode);
-					setTimeout(() => view.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300);
-				}
-				e.preventDefault();
-			}
-		}
-	});
+		});
+	}
+	
+	_setup(comment, attrs);
 }
 
 function showPreview(e) {
