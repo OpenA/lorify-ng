@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.4.4
+// @version     2.5.0
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -151,7 +151,8 @@ const Navigation = {
 	set page (num) {
 		var comments = pagesCache.get(LOR.page);
 		var reverse  = num > LOR.page;
-		var content;
+		var elem     = this.gotoNode;
+		var content, hash = '';
 		
 		this.bar.querySelectorAll('.broken').forEach(lnk => lnk.classList.remove('broken'));
 		
@@ -169,21 +170,29 @@ const Navigation = {
 			comments.querySelector('.nav').scrollIntoView({ block: 'start' });
 		}
 		
-		if (pagesCache.has(num)) {
-			this.swapAnimateTo(comments, (
-				content = pagesCache.get(num)
-			), reverse );
-		} else {
-			comments.parentNode.replaceChild((
-				content = LoaderSTB
-			), comments );
+		const promise = new Promise(resolve => {
+			if (pagesCache.has(num)) {
+				Navigation.swapAnimateTo(comments, (
+					content = pagesCache.get(num)
+				), reverse, resolve );
+			} else {
+				comments.parentNode.replaceChild((
+					content = LoaderSTB
+				), comments );
 			
-			pagesPreload(num).then(comms => {
-				Navigation.swapAnimateTo(content, comms, reverse);
-			});
+				pagesPreload(num).then(comms => {
+					Navigation.swapAnimateTo( content, comms, reverse, resolve );
+				});
+			}
+		});
+		
+		if (elem) {
+			hash = '#'+ elem.id;
+			promise.then(() => elem.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+			this.gotoNode = null;
 		}
 		
-		history.replaceState(null, document.title, LOR.path + (num ? '/page'+ num : ''));
+		history.replaceState(null, document.title, LOR.path + (num ? '/page'+ num : '') + hash);
 	},
 	
 	addToBar: function(pNumEls) {
@@ -211,9 +220,7 @@ const Navigation = {
 		return this.bar;
 	},
 	
-	swapAnimateTo: function(comments, content, reverse) {
-		
-		const elem = this.gotoNode;
+	swapAnimateTo: function(comments, content, reverse, resolve) {
 		
 		_setup(content.querySelector('.nav'), {
 			html: this.bar.innerHTML, onclick: navBarHandle
@@ -225,18 +232,16 @@ const Navigation = {
 				this.removeEventListener(e.type, arguments.callee, true);
 				this.style['animation-name'] = null;
 				this.classList.remove('terminate');
+				resolve();
 			}, true);
 			
 			content.classList.add('terminate');
 			content.style['animation-name'] = 'slideToShow'+ (reverse ? '-reverse' : '');
+		} else {
+			resolve();
 		}
 		
 		comments.parentNode.replaceChild(content, comments);
-		
-		if (elem != null) {
-			setTimeout(() => elem.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300);
-			this.gotoNode = null;
-		}
 	}
 }
 
@@ -246,7 +251,7 @@ const Favicon = {
 	index    : 0,
 	size     : 16 * ( Math.ceil(window.devicePixelRatio) || 1 ),
 	// 0: imageload promise => write resolve fn in global variable
-	imgReady : new Promise(rs => { __ready = rs }),
+	imgReady : new Promise(resolve => { _ImgResolve = resolve }),
 	
 	get tabname() {
 		let title = document.title;
@@ -270,7 +275,7 @@ const Favicon = {
 		Object.defineProperty(this, 'image', {
 			value: _setup(image, {
 				// 1: imageload promise => call resolve fn
-				onload: () => __ready(),
+				onload: _ImgResolve,
 				src: this.original
 			})
 		});
@@ -298,7 +303,7 @@ const Favicon = {
 		const size    = this.size;
 		const image   = this.image;
 		
-		this.imgReady.then(resolve => {
+		this.imgReady.then(e => {
 			
 			// clear canvas
 			context.clearRect(0, 0, size, size);
@@ -419,7 +424,7 @@ _setup(document, null, {
 		pagesCache.set(comments, LOR.page);
 		
 		addToCommentsCache(
-			comments.querySelectorAll('.msg[id^="comment-"]')
+			comments.querySelectorAll('.msg[id^="comment-"]'), null, true
 		);
 		
 		var   lastPage = Navigation.pagesCount;
@@ -491,7 +496,7 @@ const RealtimeWatcher = (() => {
 			}
 			wS.onclose = e => {
 				console.warn(`Соединение c ${ wS.url } было прервано "${ e.reason }" [код: ${ e.code }]`);
-				if(!e.wasClean) {
+				if(!e.wasClean || e.code == 1008) {
 					Timer.set('WebSocket Data', RealtimeWatcher.start, 5e3);
 				}
 			}
@@ -753,7 +758,7 @@ function onWSData(dbCiD) {
 		});
 }
 
-function addToCommentsCache(els, attrs) {
+function addToCommentsCache(els, attrs, jqfix) {
 	
 	for (var i = 0; i < els.length; i++) {
 		
@@ -774,10 +779,15 @@ function addToCommentsCache(els, attrs) {
 			let num = acid.search.match(/cid=(\d+)/)[1];
 			let url = el.ownerDocument.evaluate('//*[@class="reply"]/ul/li/a[contains(text(), "Ссылка")]/@href',el,null,2,null);
 			// Write special attributes
-			_setup(acid, { class: 'link-pref', cid: num });
+			if (jqfix) {
+				acid.parentNode.replaceChild(
+					_setup('a', { class: 'link-pref', cid: num, href: acid.getAttribute('href'), text: acid.textContent }), acid
+				);
+			} else
+				_setup(acid, { class: 'link-pref', cid: num });
 			// Create new response-map for this comment
 			if (!(num in ResponsesMap)) {
-				ResponsesMap[num] = new Array(0);
+				ResponsesMap[num] = new Array;
 			}
 			ResponsesMap[num].push({
 				text: ( el.querySelector('a[itemprop="creator"]') || anonymous ).innerText,
@@ -842,7 +852,7 @@ function getCommentsContent(html) {
 }
 
 const openPreviews = document.getElementsByClassName('preview');
-var _offset_ = 1;
+var _offset_ = 1, __view = () => void 0;
 
 function removePreviews(comment) {
 	var c = openPreviews.length - _offset_;
@@ -857,11 +867,38 @@ function addPreviewHandler(comment, attrs) {
 		if (e.target.classList[0] === 'link-pref') {
 			var cid  = e.target.getAttribute('cid'),
 				view = document.getElementById('comment-'+ cid);
+			_offset_ = 1;
+			['Close Preview', 'Open Preview', e.target.href].forEach(Timer.clear);
+			removePreviews();
 			if (view) {
+				history.replaceState(null, document.title, location.pathname +'#comment-'+ cid);
 				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
 			} else {
-				Navigation.gotoNode = view = CommentsCache[cid];
-				Navigation.page = pagesCache.get(view.parentNode);
+				view = () => {
+					Navigation.page = pagesCache.get(
+						( Navigation.gotoNode = CommentsCache[cid] ).parentNode
+					);
+				}
+				if (cid in CommentsCache) {
+					view();
+				} else if (TOUCH_DEVICE) {
+					getDataResponse(e.target.pathname + e.target.search,
+						({ response, responseURL }) => { // => OK
+							const { page } = parseLORUrl(responseURL);
+							const comms    = getCommentsContent(response);
+							
+							pagesCache.set(page, comms);
+							pagesCache.set(comms, page);
+							
+							addToCommentsCache(
+								comms.querySelectorAll('.msg[id^="comment-"]')
+							);
+							
+							view();
+						});
+				} else {
+					new Promise(resolve => { __view = () => { __view = () => void 0; resolve() }}).then(view);
+				}
 			}
 			e.preventDefault();
 		}
@@ -931,6 +968,7 @@ function showPreview(e) {
 						e
 					);
 				}
+				__view();
 			}, ({ status, statusText }) => { // => Error
 				commentEl.textContent = status +' '+ statusText;
 				commentEl.classList.add('msg-error');
