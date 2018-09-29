@@ -30,11 +30,9 @@ const empty_Url = [
 	'chrome://newtab/'
 ];
 
-var start = true;
-var delay = 0;
-var timr  = null;
 var color = '#3d96ab';
 var text  = '';
+var timr  = setTimeout(getNotifications, 1e3);
 
 //chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
 chrome.notifications.onClicked.addListener(openTab);
@@ -43,9 +41,6 @@ chrome.runtime.onConnect.addListener(port => {
 	openPorts.set(port.sender.tab.id, port);
 	port.onDisconnect.addListener(() => {
 		openPorts.delete(port.sender.tab.id);
-		if (!openPorts.size) {
-			clearTimeout(timr);
-		}
 	});
 });
 
@@ -92,31 +87,18 @@ function messageHandler({ action, notes }, sender) {
 			if (text !== notes) {
 				!notes ? clearNotes() : sendNotify( '('+ (text = notes) +')' );
 			}
-			if (start) {
-				clearTimeout(timr);
-				timr  = setTimeout(getNotifications, 5e3);
-				start = false;
-			}
 	}
 }
 
 function getNotifications() {
 	const xhr = new XMLHttpRequest;
 	xhr.open('GET', 'https://www.linux.org.ru/notifications-count', true);
-	xhr.onload = function() {
-		switch (this.status) {
-			case 403:
-				break;
-			case 200:
-				if (this.response != '0' && text !== this.response) {
-					sendNotify( '('+ (text = this.response) +')' );
-					delay = 0;
-				} else
-					clearNotes();
-			default:
-				clearTimeout(timr);
-				timr = setTimeout(getNotifications, delay < 6e4 ? (delay += 12e3) : delay);
+	xhr.onload = ({ target: { status, response } }) => {
+		if (status === 200 && response != 0 && text !== response) {
+			sendNotify( '('+ (text = response) +')' );
 		}
+		clearTimeout(timr);
+		timr = setTimeout(getNotifications, 40e3);
 	}
 	xhr.send(null);
 }

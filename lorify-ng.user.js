@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.5.0
+// @version     2.5.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -532,7 +532,7 @@ function winKeyHandler(e) {
 		}
 		
 	} else {
-
+		
 		var exit = true;
 		var tags = Object.assign({'*': ['[*]', '[/*]']}, _tags_);
 		
@@ -678,19 +678,13 @@ function onWSData(dbCiD) {
 		({ response, responseURL }) => { // => OK
 			const { page } = parseLORUrl(responseURL);
 			
-			const comms = getCommentsContent(response),
-			      reply = comms.ownerDocument.evaluate('//article[@id="comment-'+
-			         dbCiD.join('" or @id="comment-') +'"]/*[@class="title" and contains(., "'+
-			         LOR.user +'")]', comms, null, 3, null);
-			
-			if (reply.booleanValue)
-				App.checkNow();
+			const comms = getCommentsContent(response);
 			
 			if (pagesCache.has(page)) {
 			
 				const parent = pagesCache.get(page);
 				
-				parent.querySelectorAll('.msg[id^="comment-"]').forEach(msg => {
+				for (let msg of parent.querySelectorAll('.msg[id^="comment-"]')) {
 					if (msg.id in comms.children) {
 						var cand = comms.children[msg.id],
 						    sign = cand.querySelector('.sign_more > time');
@@ -710,9 +704,9 @@ function onWSData(dbCiD) {
 							msg['edit_comment'].parentNode.hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
 						}
 					} else {
-						_setup(msg, { id: 'deleted'+ msg.id.substring(7), class: 'msg deleted' });
+						_setup(msg, { id: 'deleted'+ msg.id.substr(7), class: 'msg deleted' });
 					}
-				});
+				}
 				
 				for (var i = 0; i < dbCiD.length; i++) {
 				
@@ -760,10 +754,11 @@ function onWSData(dbCiD) {
 
 function addToCommentsCache(els, attrs, jqfix) {
 	
-	for (var i = 0; i < els.length; i++) {
+	var usr_refs = 0; 
+	
+	for (let el of els) {
 		
-		let el  = els[i],
-			cid = el.id.replace('comment-', '');
+		let cid = el.id.replace('comment-', '');
 		
 		el['last_modifed'] = el.querySelector('.sign_more > time');
 		el['edit_comment'] = el.querySelector('.reply a[href^="/edit_comment"]');
@@ -783,8 +778,10 @@ function addToCommentsCache(els, attrs, jqfix) {
 				acid.parentNode.replaceChild(
 					_setup('a', { class: 'link-pref', cid: num, href: acid.getAttribute('href'), text: acid.textContent }), acid
 				);
-			} else
+			} else {
 				_setup(acid, { class: 'link-pref', cid: num });
+				usr_refs += new RegExp(LOR.user).test(acid.nextSibling.textContent);
+			}
 			// Create new response-map for this comment
 			if (!(num in ResponsesMap)) {
 				ResponsesMap[num] = new Array;
@@ -815,6 +812,10 @@ function addToCommentsCache(els, attrs, jqfix) {
 			
 			delete ResponsesMap[cid];
 		}
+	}
+	
+	if (usr_refs > 0) {
+		App.checkNow();
 	}
 }
 
@@ -1234,7 +1235,7 @@ const App = (() => {
 	} else {
 		
 		var notes      = localStorage.getItem('l0rNG-notes') || '';
-		var delay      = 12e3;
+		var delay      = 40e3 + Math.floor(Math.random() * 1e3);
 		var sendNotify = count => new Notification('loryfy-ng', {
 				icon: '//github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true',
 				body: 'Уведомлений: '+ count
@@ -1244,16 +1245,15 @@ const App = (() => {
 		const startWatch = getDataResponse.bind(null, '/notifications-count',
 			({ response }) => {
 				var text = '';
-				if (response != '0') {
+				if (response != 0) {
 					text = '('+ response +')';
-					if (USER_SETTINGS['Desktop Notification'] && notes != response) {
-						localStorage.setItem('l0rNG-notes', response);
-						sendNotify( (notes = response) );
-						delay = 0;
+					if (notes != response) {
+						localStorage.setItem('l0rNG-notes', (notes = response));
+						USER_SETTINGS['Desktop Notification'] && sendNotify(response);
 					}
 				}
 				main_events_count.textContent = lorynotify.textContent = text;
-				Timer.set('Check Notifications', startWatch, delay < 6e4 ? (delay += 12e3) : delay);
+				Timer.set('Check Notifications', startWatch, delay);
 			});
 		
 		const setValues = items => {
@@ -1411,9 +1411,7 @@ const App = (() => {
 						!!(notes = $1) && sendNotify( $1 );
 						localStorage.setItem('l0rNG-notes', $1);
 					}
-					!(this.checkNow = function(ms) {
-						Timer.set('Check Notifications', startWatch, ms);
-					})(delay);
+					Timer.set('Check Notifications', (this.checkNow = startWatch), delay);
 				}
 				document.body.append(lorynotify, lorytoggle);
 				return { then: c => c() }
