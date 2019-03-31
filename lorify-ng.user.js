@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.6.0
+// @version     2.6.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -374,7 +374,7 @@ _setup(document, null, {
 	'DOMContentLoaded': function onDOMReady() {
 		
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
-		this.getElementById('start-rws').remove();
+		//this.getElementById('start-rws').remove();
 		
 		const init = App.init();
 		
@@ -418,6 +418,21 @@ _setup(document, null, {
 			nav.parentNode.replaceChild(bar, nav);
 			
 			_setup(comments.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
+		}
+		
+		const ts = this.querySelector(`#topic-${ LOR.topic } a[itemprop="creator"]`);
+		
+		if (ts) {
+			LOR.TS = ts.innerText;
+			this.getElementById('start-rws').nextElementSibling.append(`\n
+				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
+				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
+					content: "тс";
+					font-size: 75%;
+					color: dimgrey!important;
+					display: inline-block;
+					vertical-align: super;
+				}`);
 		}
 		
 		this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
@@ -807,7 +822,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 			}
 			
 			ResponsesMap[cid].forEach(attrs => {
-				attrs['class' ] = 'link-pref';
+				attrs['class' ] = 'link-pref'+ (attrs.text == LOR.TS ? ' ts' : '');
 				attrs['search'] = '?cid='+ attrs.cid;
 				comment['response_block'].appendChild( _setup('a', attrs) );
 			});
