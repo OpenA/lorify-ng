@@ -916,7 +916,6 @@ function getCommentsContent(html) {
 			class: fav.children['memories_button'].className });
 		_setup(newfv.children['favs_button'], { onclick: topMemories, watch: '&add=add&watch=false&msgid='+ LOR.topic,
 			class: fav.children['favs_button'].className });
-		_setup(topic.querySelector('a[href="comment-message.jsp?topic='+ LOR.topic +'"]'), { onclick: toggleForm });
 	}
 	return comms;
 }
@@ -970,8 +969,9 @@ function addPreviewHandler(comment, attrs) {
 					new Promise(resolve => { __view = () => { __view = () => void 0; resolve() }}).then(view);
 				}
 			}
-			e.preventDefault();
 		}
+		if (/replyComment|quoteComment|link\-pref/.test(e.target.classList[0]))
+			e.preventDefault();
 	});
 	
 	if ( ! TOUCH_DEVICE ) {
@@ -1259,7 +1259,7 @@ function toggleForm(underc, parent, href) {
 function handleReplyToBtn(btn) {
 	const href  = btn.getAttribute('href');
 	const $this = btn.parentNode;
-	$this.innerHTML = '<a class="replyComment" href="#">Ответить</a>\n.\n<a class="quoteComment" href="#">с цитатой</a>';
+	$this.innerHTML = '<a class="replyComment" href="javascript:void(0)">Ответить</a>\n.\n<a class="quoteComment" href="javascript:void(0)">с цитатой</a>';
 	$this.addEventListener('click', e => {
 		
 		if (e.target.tagName === 'A') {
