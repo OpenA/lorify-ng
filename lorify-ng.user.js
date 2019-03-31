@@ -1276,13 +1276,10 @@ function handleReplyToBtn(btn) {
 				case 'quoteComment':
 					let idx = LOR.form.elements['mode'].selectedIndex;
 					let arg = ['>', '\n>'];
-					let msg = underc.parentNode;
+					let msg = underc.parentNode.querySelector('[itemprop="articleBody"]') || underc.parentNode;
 					
 					if (parent.parentNode != underc || parent.style.display == 'none')
 						toggleForm(underc, parent, href);
-					
-					if (msg.children[1] && msg.children[1].getAttribute('itemprop') === 'articleBody')
-						msg = msg.children[1];
 					
 					if (idx !== 1) { // lorcode, line-break
 						let nobl = msg.querySelector('div.code,pre,ul,ol,table');
