@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.6.1
+// @version     2.6.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -352,21 +352,21 @@ const Favicon = {
 const LORCODE_BUTTONS_PANEL = _setup('div', {
 	id: 'lorcode-markup-panel',
 	html: `
-		<input class="btn btn-default" type="button" value="b">
-		<input class="btn btn-default" type="button" value="i">
+		<input class="btn btn-default" type="button" value="b" mkdwn="**,**">
+		<input class="btn btn-default" type="button" value="i" mkdwn="*,*">
 		<input class="btn btn-default" type="button" value="u">
-		<input class="btn btn-default" type="button" value="s">
+		<input class="btn btn-default" type="button" value="s" mkdwn="~,~">
 		<input class="btn btn-default" type="button" value="em">
 		<input class="btn btn-default" type="button" value="br">
-		<input class="btn btn-default" type="button" value="cut">
-		<input class="btn btn-default" type="button" value="list">
+		<input class="btn btn-default" type="button" value="cut" mkdwn=">>>,<<<">
+		<input class="btn btn-default" type="button" value="list" mkdwn="%d.,">
 		<input class="btn btn-default" type="button" value="strong">
 		<input class="btn btn-default" type="button" value="pre">
-		<input class="btn btn-default" type="button" value="user">
-		<input class="btn btn-default" type="button" value="code">
-		<input class="btn btn-default" type="button" value="inline">
+		<input class="btn btn-default" type="button" value="user" mkdwn="@,">
+		<input class="btn btn-default" type="button" value="code" mkdwn="\`\`\`,\`\`\`">
+		<input class="btn btn-default" type="button" value="inline" mkdwn="\`">
 		<input class="btn btn-default" type="button" value="quote">
-		<input class="btn btn-default" type="button" value="url">
+		<input class="btn btn-default" type="button" value="url" mkdwn="url,">
 `});
 
 _setup(document, null, {
@@ -391,13 +391,18 @@ _setup(document, null, {
 				e.stopPropagation();
 				e.preventDefault();
 				if (e.target.type === 'button') {
-					const tag = e.target.value;
-					const sel = window.getSelection();
-					lorcodeMarkup.call(
-						LOR.form.elements['msg'],
-						'['+ tag +']', '[/'+ tag +']',
-						( sel.type !== 'None' && /quote|user/.test(tag) && sel.toString() )
-					);
+					let tag = e.target.value;
+					if (LOR.form.elements['mode'].selectedIndex === 1) {
+						if (tag == 'quote') {
+							lorcodeMarkup.call(LOR.form.elements['msg'], '>', '\n>');
+						} else if ((tag = e.target.getAttribute('mkdwn'))) {
+							markdownMarkup.apply(LOR.form.elements['msg'], tag.split(','));
+						}
+					} else {
+						lorcodeMarkup.call(
+							LOR.form.elements['msg'],
+							'['+ tag +']', '[/'+ tag +']');
+					}
 				}
 			});
 			window.addEventListener('keypress', winKeyHandler);
@@ -529,15 +534,17 @@ const RealtimeWatcher = (() => {
 const isInsideATag = (str, sp, ep) => (str.split(sp).length - 1) > (str.split(ep).length - 1);
 var _char_ = '';
 var _sign_ = false;
-var _tags_ = {
-	'@': ['[user]', '[/user]'],
-	'>': ['>', '\n>']
-}
 
 function winKeyHandler(e) {
 	
 	var txtArea = LOR.form.elements['msg'];
 	var key     = e.key || String.fromCharCode(e.charCode);
+	var mkdown  = LOR.form.elements['mode'].selectedIndex === 1;
+	
+	const _tags_ = {
+		'@': (mkdown ? ['@', ''] : ['[user]', '[/user]']),
+		'>': ['>', '\n>']
+	}
 	
 	if (e.target !== txtArea) {
 		
@@ -550,14 +557,20 @@ function winKeyHandler(e) {
 		
 	} else {
 		
-		var exit = true;
-		var tags = Object.assign({'*': ['[*]', '[/*]']}, _tags_);
-		
+		var exit = true, codePlay = false;
 		var end = txtArea.selectionEnd,
 		  start = txtArea.selectionStart,
 		  part0 = txtArea.value.substring(0, start);
 		
-		if (isInsideATag(part0, /\[code(?:=[^\]]*)?\]/, '[/code]')) {
+		if (mkdown) {
+			_tags_['*'] = ['* ', '\n* '];
+			codePlay = isInsideATag(part0, '```\n', '\n```');
+		} else {
+			_tags_['*'] = ['[*]', '[/*]'];
+			codePlay = isInsideATag(part0, /\[code(?:=[^\]]*)?\]/, '[/code]');
+		}
+		
+		if (codePlay) {
 			const C = '{[(\'"'.indexOf(key);
 		
 			if (C >= 0 && !_sign_) {
@@ -598,8 +611,12 @@ function winKeyHandler(e) {
 				_char_ = '';
 				_sign_ = false;
 			}
-		} else if (end !== start && key in tags) {
-			lorcodeMarkup.apply(txtArea, tags[key]);
+		} else if (end !== start && key in _tags_) {
+			lorcodeMarkup.apply(txtArea, _tags_[key]);
+		} else if (end !== start && mkdown && '*`~'.includes(key)) {
+			if (key === '`' && /\n/gm.test(txtArea.value.substring(start, end)))
+				key = key.repeat(3);
+			markdownMarkup.call(txtArea, key, key);
 		} else
 			exit = false;
 			
@@ -611,6 +628,44 @@ function winKeyHandler(e) {
 			txtArea.classList.remove('select-break');
 		}
 	}
+}
+
+function markdownMarkup(open, close) {
+	
+	const val    = this.value;
+	const end    = this.selectionEnd;
+	const start  = this.selectionStart;
+	const select = this.value.substring(start, end);
+	
+	const typex = (g = '') => new RegExp('^(\\s*)(.*?)(\\s*)$', g);
+	
+	switch (open) {
+		case '```': case '>>>':
+			var mkdwnText = select.replace(/^\n?/, `${open}\n`).replace(/\n?$/, `\n${close}\n`);
+			break;
+		case 'url':
+			const [ uri ] = /(?:ht|f)tps?:\/\/[^\s]+/.exec(select) || '';
+			if (uri) {
+				var mkdwnText = select.replace(uri, '').replace(typex(), `$1[$2](${uri})$3`);
+				break;
+			} else
+				return;
+		case '%d.':
+			var mkdwnText = '';
+			for (let i = 0, li = select.split(/\n/); i < li.length; i++)
+				mkdwnText += `\n${i+1}. ${ li[i] }`;
+			if (!start || this.value.substring(start - 1, start) == '\n')
+				mkdwnText = mkdwnText.substring(1);
+			break;
+		default:
+			var uline = typex().exec(select) === null ? 'gm' : '';
+			var mkdwnText = select.replace(typex( uline ), `$1${open}$2${close}$3`);
+	}
+	
+	this.value = val.substring(0, start) + mkdwnText + val.substring(end);
+	this.setSelectionRange(start, start + mkdwnText.length);
+	this.classList.add('select-break');
+	this.focus();
 }
 
 function lorcodeMarkup(open, close, blur) {
@@ -640,7 +695,7 @@ function lorcodeMarkup(open, close, blur) {
 	}
 	
 	switch (open) {
-		case '\n   ': case '   ': case '\n>': case '>':
+		case '\n   ': case '   ': case '\n>': case '>': case '* ': case '\n* ':
 			select = select.replace(/\n/gm, close);
 			close = '';
 			break;
@@ -663,13 +718,10 @@ function lorcodeMarkup(open, close, blur) {
 	if (wins) {
 		this.selectionStart = this.selectionEnd = this.value.length;
 	} else {
-		var offsetS = 0, offsetE = lorcText.length;
-		
-		if (pins) {
-			offsetS = open.length;
-			offsetE = open.length + select.length;
-		}
-		this.setSelectionRange(start + offsetS, start + offsetE);
+		this.setSelectionRange(
+			start + (pins ? open.length : 0),
+			start + (pins ? open.length + select.length : lorcText.length)
+		);
 		this.classList.add('select-break');
 		this.focus();
 	}
@@ -1223,7 +1275,7 @@ function handleReplyToBtn(btn) {
 					break;
 				case 'quoteComment':
 					let idx = LOR.form.elements['mode'].selectedIndex;
-					let arg = Array.prototype.concat(_tags_['>']);
+					let arg = ['>', '\n>'];
 					let msg = underc.parentNode;
 					
 					if (parent.parentNode != underc || parent.style.display == 'none')
@@ -1291,6 +1343,8 @@ function domToLORCODE(childNodes, nobl) {
 				if (el.className === 'code') {
 					let lng = el.firstElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
 					text += `[code${ lng ? '='+ lng : '' }]\n${ el.innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
+				} else if (el.id === 'cut') {
+					text += `[cut]\n${ domToLORCODE(el.childNodes, nobl) }[/cut]\n`;
 				}
 				break;
 			case 'UL': case 'OL':
@@ -1342,7 +1396,7 @@ function domToMarkdown(childNodes) {
 			case 'S': case 'DEL'   : text += `~~${ domToMarkdown(el.childNodes) }~~`; break;
 			case 'I': case 'EM'    : text +=  `*${ domToMarkdown(el.childNodes) }*` ; break;
 			case 'H1': case 'H2': case 'H3': case 'H4': case 'H5': case 'H6':
-				text += '#'.repeat(Number (el.tagName.substring(1))) +` ${ getRawText(el) }\n\n`;
+				text += '#'.repeat(el.tagName.substring(1)) +` ${ getRawText(el) }\n\n`;
 				break;
 			case 'A':
 				let url = decodeURIComponent(el.href);
@@ -1359,6 +1413,8 @@ function domToMarkdown(childNodes) {
 				if (el.className === 'code') {
 					let lng = el.firstElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
 					text += '```'+ lng +'\n'+ el.innerText.replace(/[\n+]$|$/, '\n```\n');
+				} else if (el.id === 'cut') {
+					text += `>>>\n${ domToLORCODE(el.childNodes, nobl) }\n>>>\n`;
 				}
 				break;
 			case 'BLOCKQUOTE':
