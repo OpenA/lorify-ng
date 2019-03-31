@@ -44,6 +44,10 @@ chrome.runtime.onConnect.addListener(port => {
 	});
 });
 
+if (chrome.browserAction.setBadgeTextColor === undefined) {
+	chrome.browserAction.setBadgeTextColor = () => void 0;
+}
+
 function onGetTabs(tabs) {
 	// If exists a tab with URL == `notify_Url` then we switches to this tab.
 	var tab = tabs[0];
@@ -113,6 +117,7 @@ function sendNotify(notes) {
 		});
 	}
 	chrome.browserAction.setBadgeBackgroundColor({ color });
+	chrome.browserAction.setBadgeTextColor({ color: '#e1e1e1' });
 	chrome.browserAction.setBadgeText({ text });
 	openPorts.forEach(port => port.postMessage( notes ));
 }
