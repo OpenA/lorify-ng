@@ -117,7 +117,7 @@ function sendNotify(notes) {
 		});
 	}
 	chrome.browserAction.setBadgeBackgroundColor({ color });
-	chrome.browserAction.setBadgeTextColor({ color: '#e1e1e1' });
+	chrome.browserAction.setBadgeTextColor({ color: '#fff' });
 	chrome.browserAction.setBadgeText({ text });
 	openPorts.forEach(port => port.postMessage( notes ));
 }

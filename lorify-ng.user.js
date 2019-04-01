@@ -98,13 +98,24 @@ document.documentElement.append(
 			overflow-y: hidden;
 			animation: slideUp 1s ease-out;
 		}
-		#lorcode-markup-panel {
+		#markup-panel {
 			margin-left: 5px;
 		}
-		#lorcode-markup-panel > .btn {
+		#markup-panel > .btn {
 			font-size: smaller!important;
 			padding: 3px 10px!important;
 		}
+		.lorcode > .btn:before {
+			content: attr(lorcode);
+		}
+		.markdown > .btn:not([markdown]) {
+			display: none!important;
+		}
+		.markdown > .btn:before {
+			content: attr(markdown);
+		}
+		.uc:after { content: "\xA0"; }
+		.uc { font-variant: unicase; }
 		
 		@-webkit-keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
 		@keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
@@ -349,25 +360,7 @@ const Favicon = {
 	}
 }
 
-const LORCODE_BUTTONS_PANEL = _setup('div', {
-	id: 'lorcode-markup-panel',
-	html: `
-		<input class="btn btn-default" type="button" value="b" mkdwn="**,**">
-		<input class="btn btn-default" type="button" value="i" mkdwn="*,*">
-		<input class="btn btn-default" type="button" value="u">
-		<input class="btn btn-default" type="button" value="s" mkdwn="~,~">
-		<input class="btn btn-default" type="button" value="em">
-		<input class="btn btn-default" type="button" value="br">
-		<input class="btn btn-default" type="button" value="cut" mkdwn=">>>,<<<">
-		<input class="btn btn-default" type="button" value="list" mkdwn="%d.,">
-		<input class="btn btn-default" type="button" value="strong">
-		<input class="btn btn-default" type="button" value="pre">
-		<input class="btn btn-default" type="button" value="user" mkdwn="@,">
-		<input class="btn btn-default" type="button" value="code" mkdwn="\`\`\`,\`\`\`">
-		<input class="btn btn-default" type="button" value="inline" mkdwn="\`">
-		<input class="btn btn-default" type="button" value="quote">
-		<input class="btn btn-default" type="button" value="url" mkdwn="url,">
-`});
+let MARKDOWN_MODE = false;
 
 _setup(document, null, {
 	
@@ -382,29 +375,53 @@ _setup(document, null, {
 		
 		if ((LOR.form = this.forms['commentForm'] || this.forms['messageForm'])) {
 			
-			LOR.form.elements['csrf'].value = TOKEN;
-			
-			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(LORCODE_BUTTONS_PANEL).previousSibling.remove();
-			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
-			
-			LORCODE_BUTTONS_PANEL.addEventListener('click', e => {
-				e.stopPropagation();
-				e.preventDefault();
-				if (e.target.type === 'button') {
-					let tag = e.target.value;
-					if (LOR.form.elements['mode'].selectedIndex === 1) {
-						if (tag == 'quote') {
-							lorcodeMarkup.call(LOR.form.elements['msg'], '>', '\n>');
-						} else if ((tag = e.target.getAttribute('mkdwn'))) {
-							markdownMarkup.apply(LOR.form.elements['msg'], tag.split(','));
+			const MARKUP_PANEL = _setup('div', {
+				id   : 'markup-panel',
+				class: (MARKDOWN_MODE = LOR.form.elements['mode'].selectedIndex === 1) ? 'markdown' : 'lorcode',
+				html : `
+					<button type="button" class="btn btn-default" lorcode="b"></button>
+					<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>
+					<button type="button" class="btn btn-default" lorcode="u"></button>
+					<button type="button" class="btn btn-default" lorcode="s" markdown="~~"></button>
+					<button type="button" class="btn btn-default" lorcode="em"></button>
+					<button type="button" class="btn btn-default" lorcode="br"></button>
+					<button type="button" class="btn btn-default" lorcode="cut" markdown="&gt;&gt;&gt;"></button>
+					<button type="button" class="btn btn-default" lorcode="list" markdown="1."></button>
+					<button type="button" class="btn btn-default" lorcode="strong"></button>
+					<button type="button" class="btn btn-default uc" lorcode="pre" markdown="* "></button>
+					<button type="button" class="btn btn-default" lorcode="user" markdown="@"></button>
+					<button type="button" class="btn btn-default" lorcode="code" markdown="&#96;&#96;&#96;"></button>
+					<button type="button" class="btn btn-default" lorcode="inline" markdown="&#96;"></button>
+					<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>
+					<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>`}, {
+				click: e => {
+					e.stopPropagation();
+					e.preventDefault();
+					if (e.target.type === 'button') {
+						if (MARKDOWN_MODE) {
+							const mkdwn = e.target.getAttribute('markdown');
+							if (mkdwn === '>' || mkdwn === '* ')
+								lorcodeMarkup.call(LOR.form.elements['msg'], mkdwn, `\n${ mkdwn }`);
+							else
+								markdownMarkup.call(LOR.form.elements['msg'], mkdwn);
+						} else {
+							const bbtag = e.target.getAttribute('lorcode');
+							lorcodeMarkup.call(
+								LOR.form.elements['msg'],
+								'['+ bbtag +']', '[/'+ bbtag +']');
 						}
-					} else {
-						lorcodeMarkup.call(
-							LOR.form.elements['msg'],
-							'['+ tag +']', '[/'+ tag +']');
 					}
 				}
 			});
+			
+			LOR.form.elements['csrf'].value = TOKEN;
+			LOR.form.elements['mode'].onchange = ({ target }) => {
+				MARKUP_PANEL.className = (MARKDOWN_MODE = target.selectedIndex === 1) ? 'markdown' : 'lorcode'
+			};
+			
+			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
+			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
+			
 			window.addEventListener('keypress', winKeyHandler);
 		}
 		
@@ -537,38 +554,22 @@ var _sign_ = false;
 
 function winKeyHandler(e) {
 	
-	var txtArea = LOR.form.elements['msg'];
-	var key     = e.key || String.fromCharCode(e.charCode);
-	var mkdown  = LOR.form.elements['mode'].selectedIndex === 1;
+	const $this = LOR.form.elements['msg'];
+	const key   = e.key || String.fromCharCode(e.charCode);
 	
-	const _tags_ = {
-		'@': (mkdown ? ['@', ''] : ['[user]', '[/user]']),
-		'>': ['>', '\n>']
-	}
-	
-	if (e.target !== txtArea) {
+	if (e.target === $this) {
 		
-		const wSelect = window.getSelection().toString();
+		const val = $this.value;
+		const end = $this.selectionEnd,
+		    start = $this.selectionStart,
+		   before = val.substring(0, start);
 		
-		if (wSelect.length && key in _tags_) {
-			lorcodeMarkup.apply(txtArea, _tags_[key].concat(wSelect));
-			e.preventDefault();
-		}
+		let _STOP_ = true;
 		
-	} else {
-		
-		var exit = true, codePlay = false;
-		var end = txtArea.selectionEnd,
-		  start = txtArea.selectionStart,
-		  part0 = txtArea.value.substring(0, start);
-		
-		if (mkdown) {
-			_tags_['*'] = ['* ', '\n* '];
-			codePlay = isInsideATag(part0, '```\n', '\n```');
-		} else {
-			_tags_['*'] = ['[*]', '[/*]'];
-			codePlay = isInsideATag(part0, /\[code(?:=[^\]]*)?\]/, '[/code]');
-		}
+		const validKeys = MARKDOWN_MODE ? '>*@`~' : '>*@';
+		const codePlay  = MARKDOWN_MODE ?
+			isInsideATag(before, /```[^\n]*\n/, '\n```') :
+			isInsideATag(before, /\[code(?:=[^\]]*)?\]/, '[/code]');
 		
 		if (codePlay) {
 			const C = '{[(\'"'.indexOf(key);
@@ -576,11 +577,11 @@ function winKeyHandler(e) {
 			if (C >= 0 && !_sign_) {
 				_char_ = '}])\'"'[C];
 				_sign_ = true;
-				lorcodeMarkup.call(txtArea, key, _char_);
+				lorcodeMarkup.call($this, key, _char_);
 			} else {
 				switch (e.keyCode) {
 					case 13:
-						var ln = part0.split('\n').pop();
+						var ln = before.split('\n').pop();
 							ln = '\n'+ ln.replace(/^([\s]*).*/, '$1');
 						
 						start += ln.length;
@@ -590,47 +591,70 @@ function winKeyHandler(e) {
 							start += 3;
 						}
 						
-						txtArea.value = part0 + ln + txtArea.value.substring(end);
-						txtArea.setSelectionRange(start, start);
+						$this.value = before + ln + val.substring(end);
+						$this.setSelectionRange(start, start);
 						break;
 					case 9:
-						lorcodeMarkup.call(txtArea, '   ', '\n   ');
+						lorcodeMarkup.call($this, '   ', '\n   ');
 						break;
 					case 8:
 						if (_sign_) {
-							txtArea.value = txtArea.value.slice(0, (start -= 1)) + txtArea.value.slice(end + 1);
-							txtArea.setSelectionRange(start, start);
+							$this.value = val.slice(0, (start -= 1)) + val.slice(end + 1);
+							$this.setSelectionRange(start, start);
 							break;
 						}
 					default:
-						if (key === _char_) {
-							txtArea.setSelectionRange((start += 1), start);
-						} else
-							exit = false;
+						if ((_STOP_ = key === _char_)) {
+							$this.setSelectionRange((start += 1), start);
+						}
 				}
 				_char_ = '';
 				_sign_ = false;
 			}
-		} else if (end !== start && key in _tags_) {
-			lorcodeMarkup.apply(txtArea, _tags_[key]);
-		} else if (end !== start && mkdown && '*`~'.includes(key)) {
-			if (key === '`' && /\n/gm.test(txtArea.value.substring(start, end)))
-				key = key.repeat(3);
-			markdownMarkup.call(txtArea, key, key);
-		} else
-			exit = false;
+		} else if ((_STOP_ = end !== start && validKeys.includes(key))) {
 			
-		if (exit)
-			return e.preventDefault();
+			if (key === '>') {
+				lorcodeMarkup.call($this, '>', '\n>')
+			} else if (MARKDOWN_MODE) {
+				switch (key) {
+					case '`':
+						markdownMarkup.call($this, /\n/gm.test(val.substring(start, end)) ? '```' : key);
+						break;
+					case '*':
+						/*if (before.substring(-1) == '\n') {
+							lorcodeMarkup.call($this, '* ', '\n* ');
+							break;
+						}*/
+					case '~': case '@':
+						markdownMarkup.call($this, key);
+				}
+			} else {
+				lorcodeMarkup.apply($this, key === '@' ? ['[user]', '[/user]'] : ['[*]','[/*]']);
+			}
+		}
+			
+		if (_STOP_) {
+			e.preventDefault();
+		} else if ($this.classList.contains('select-break') && e.keyCode != 8) {
+			$this.setSelectionRange(end, end);
+			$this.classList.remove('select-break');
+		}
 		
-		if (txtArea.classList.contains('select-break') && e.keyCode != 8) {
-			txtArea.setSelectionRange(end, end);
-			txtArea.classList.remove('select-break');
+	} else if ('@>'.includes(key)) {
+		
+		const wSelect = window.getSelection().toString();
+		
+		if (wSelect.length) {
+			e.preventDefault();
+			lorcodeMarkup.apply($this,
+				key === '>'   ? ['>', '\n>', wSelect] :
+				MARKDOWN_MODE ? ['@',    '', wSelect] :
+					   ['[user]', '[/user]', wSelect]);
 		}
 	}
 }
 
-function markdownMarkup(open, close) {
+function markdownMarkup(open) {
 	
 	const val    = this.value;
 	const end    = this.selectionEnd;
@@ -639,32 +663,41 @@ function markdownMarkup(open, close) {
 	
 	const typex = (g = '') => new RegExp('^(\\s*)(.*?)(\\s*)$', g);
 	
+	let close = open, usel = 0, mkdwnText = '';
+	
 	switch (open) {
-		case '```': case '>>>':
-			var mkdwnText = select.replace(/^\n?/, `${open}\n`).replace(/\n?$/, `\n${close}\n`);
+		case '>>>':
+			close = '<<<';
+			usel += 1;
+		case '```':
+			mkdwnText = select.replace(/^\n?/, `${open}\n`).replace(/\n?$/, `\n${close}\n`);
+			usel += open.length;
 			break;
-		case 'url':
-			const [ uri ] = /(?:ht|f)tps?:\/\/[^\s]+/.exec(select) || '';
-			if (uri) {
-				var mkdwnText = select.replace(uri, '').replace(typex(), `$1[$2](${uri})$3`);
-				break;
-			} else
-				return;
-		case '%d.':
-			var mkdwnText = '';
+		case 'http://':
+			const [ uri = '' ] = /(?:ht|f)tps?:\/\/[^\s]+/.exec(select) || '';
+			mkdwnText = select.replace(uri, '').replace(typex(), `$1[$2](${uri})$3`);
+			usel = select ? mkdwnText.length - !uri : 1;
+			break;
+		case '1.':
 			for (let i = 0, li = select.split(/\n/); i < li.length; i++)
 				mkdwnText += `\n${i+1}. ${ li[i] }`;
 			if (!start || this.value.substring(start - 1, start) == '\n')
 				mkdwnText = mkdwnText.substring(1);
 			break;
+		case '@':
+			close = '';
 		default:
-			var uline = typex().exec(select) === null ? 'gm' : '';
-			var mkdwnText = select.replace(typex( uline ), `$1${open}$2${close}$3`);
+			const uline = typex().exec(select) === null ? 'gm' : '';
+			mkdwnText = select.replace(typex( uline ), `$1${open}$2${close}$3`);
 	}
-	
 	this.value = val.substring(0, start) + mkdwnText + val.substring(end);
-	this.setSelectionRange(start, start + mkdwnText.length);
-	this.classList.add('select-break');
+	
+	if (usel) {
+		this.selectionStart = this.selectionEnd = start + usel;
+	} else {
+		this.setSelectionRange(start, start + mkdwnText.length);
+		this.classList.add('select-break');
+	}
 	this.focus();
 }
 
@@ -1274,14 +1307,13 @@ function handleReplyToBtn(btn) {
 					toggleForm(underc, parent, href);
 					break;
 				case 'quoteComment':
-					let idx = LOR.form.elements['mode'].selectedIndex;
 					let arg = ['>', '\n>'];
 					let msg = underc.parentNode.querySelector('[itemprop="articleBody"]') || underc.parentNode;
 					
 					if (parent.parentNode != underc || parent.style.display == 'none')
 						toggleForm(underc, parent, href);
 					
-					if (idx !== 1) { // lorcode, line-break
+					if (!MARKDOWN_MODE) { // lorcode, line-break
 						let nobl = msg.querySelector('div.code,pre,ul,ol,table');
 						if (nobl && (nobl = nobl.parentNode.className != 'reply'))
 							arg[0] = '[quote]', arg[1] = '[/quote]';
