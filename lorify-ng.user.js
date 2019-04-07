@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.6.3
+// @version     2.6.4
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -367,7 +367,7 @@ _setup(document, null, {
 	'DOMContentLoaded': function onDOMReady() {
 		
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
-		//this.getElementById('start-rws').remove();
+		//if (/^\?lastmod=\d+/.test(location.search)) history.replaceState(null, document.title, location.href.replace(/\?lastmod=\d+(#|$)|lastmod=\d+&?/, '$1'));
 		
 		const init = App.init();
 		
@@ -422,6 +422,8 @@ _setup(document, null, {
 			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
 			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
 			
+			this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
+			
 			window.addEventListener('keypress', winKeyHandler);
 		}
 		
@@ -456,8 +458,6 @@ _setup(document, null, {
 					vertical-align: super;
 				}`);
 		}
-		
-		this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 		
 		pagesCache.set(LOR.page, comments);
 		pagesCache.set(comments, LOR.page);
@@ -560,8 +560,8 @@ function winKeyHandler(e) {
 	if (e.target === $this) {
 		
 		const val = $this.value;
-		const end = $this.selectionEnd,
-		    start = $this.selectionStart,
+		const end = $this.selectionEnd;
+		let start = $this.selectionStart,
 		   before = val.substring(0, start);
 		
 		let _STOP_ = true;
@@ -776,7 +776,7 @@ function navBarHandle(e) {
 
 function onWSData(dbCiD) {
 	// Get an HTML containing the comment
-	getDataResponse(LOR.path +'?cid='+ dbCiD[0] +'&skipdeleted=true',
+	getDataResponse(`${LOR.path}?filter=list&cid=${dbCiD[0]}&skipdeleted=true`,
 		({ response, responseURL }) => { // => OK
 			const { page } = parseLORUrl(responseURL);
 			
@@ -933,7 +933,8 @@ function getCommentsContent(html) {
 	// Remove banner scripts
 	comms.querySelectorAll('script').forEach(s => s.remove());
 	// Add reply button action
-	doc.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
+	if (LOR.form)
+		doc.querySelectorAll('a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 	// update favorites and memories counter
 	fav.children[  'favs_count'  ].textContent = newfv.children[  'favs_count'  ].textContent;
 	fav.children['memories_count'].textContent = newfv.children['memories_count'].textContent;
@@ -941,14 +942,12 @@ function getCommentsContent(html) {
 	if (isDel.booleanValue)
 		RealtimeWatcher.terminate('Тема удалена');
 	// Replace topic if modifed
-	if (old.textContent !== topic.textContent) {
-		const form = old.querySelector('#commentForm');
-		old.parentNode.replaceChild(topic, old);
-		form && topic.querySelector('.msg_body').appendChild( form.parentNode ).firstElementChild.elements['msg'].focus();
-		_setup(newfv.children['memories_button'], { onclick: topMemories, watch: '&add=add&watch=true&msgid='+ LOR.topic, 
-			class: fav.children['memories_button'].className });
-		_setup(newfv.children['favs_button'], { onclick: topMemories, watch: '&add=add&watch=false&msgid='+ LOR.topic,
-			class: fav.children['favs_button'].className });
+	for (let name of ['header', '.msg_body > [itemprop="articleBody"]', '.sign > .sign_more']) {
+		const old_el = old.querySelector(name),
+		      new_el = topic.querySelector(name);
+		if (old_el.textContent != new_el.textContent) {
+			old_el.parentNode.replaceChild(old_el, new_el);
+		}
 	}
 	return comms;
 }
@@ -966,14 +965,18 @@ function removePreviews(comment) {
 function addPreviewHandler(comment, attrs) {
 	
 	comment.addEventListener('click', e => {
-		if (e.target.classList[0] === 'link-pref') {
+		
+		const aClass = e.target.classList[0];
+		
+		switch (aClass) {
+		case 'link-pref':
 			var cid  = e.target.getAttribute('cid'),
-				view = document.getElementById('comment-'+ cid);
+				view = document.getElementById(`comment-${cid}`);
 			_offset_ = 1;
 			['Close Preview', 'Open Preview', e.target.href].forEach(Timer.clear);
 			removePreviews();
 			if (view) {
-				history.replaceState(null, document.title, location.pathname +'#comment-'+ cid);
+				history.replaceState(null, document.title, `${location.pathname}#comment-${cid}`);
 				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
 			} else {
 				view = () => {
@@ -983,28 +986,27 @@ function addPreviewHandler(comment, attrs) {
 				}
 				if (cid in CommentsCache) {
 					view();
-				} else if (TOUCH_DEVICE) {
-					getDataResponse(e.target.pathname + e.target.search,
-						({ response, responseURL }) => { // => OK
-							const { page } = parseLORUrl(responseURL);
-							const comms    = getCommentsContent(response);
-							
-							pagesCache.set(page, comms);
-							pagesCache.set(comms, page);
-							
-							addToCommentsCache(
-								comms.querySelectorAll('.msg[id^="comment-"]')
-							);
-							
-							view();
-						});
-				} else {
-					new Promise(resolve => { __view = () => { __view = () => void 0; resolve() }}).then(view);
-				}
+				} else
+					loadRes(e.target.pathname + e.target.search).then(view);
 			}
-		}
-		if (/replyComment|quoteComment|link\-pref/.test(e.target.classList[0]))
 			e.preventDefault();
+			break;
+		case 'replyComment':
+		case 'quoteComment':
+			var cid = comment.id.replace('preview-', ''),
+			   view = document.getElementById(`comment-${cid}`),
+			  click = new MouseEvent('click', {
+					cancelable: true,
+					bubbles   : true,
+					view      : window
+				});
+			if (!view) {
+				Navigation.gotoNode = view = CommentsCache[cid];
+				Navigation.page = pagesCache.get( view.parentNode );
+			} else
+				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			view.querySelector(`.${aClass}`).dispatchEvent(click);
+		}
 	});
 	
 	if ( ! TOUCH_DEVICE ) {
@@ -1025,6 +1027,27 @@ function addPreviewHandler(comment, attrs) {
 				_offset_ = 1;
 				Timer.clear('Open Preview');
 			}
+		});
+		
+		var loadRes = (/**/) => new Promise(resolve => {
+			const f = __view;
+			__view = () => { __view = f; resolve(); }
+		});
+	} else {
+		var loadRes = (href) => new Promise(resolve => {
+			getDataResponse(href, ({ response, responseURL }) => { // => OK
+				const { page } = parseLORUrl(responseURL);
+				const comms    = getCommentsContent(response);
+				
+				pagesCache.set(page, comms);
+				pagesCache.set(comms, page);
+				
+				addToCommentsCache(
+					comms.querySelectorAll('.msg[id^="comment-"]')
+				);
+				
+				resolve();
+			});
 		});
 	}
 	
@@ -1236,35 +1259,6 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 		xhr.status === 200 ? resolve(xhr) : reject(xhr)
 	}
 	xhr.send(null);
-}
-
-function topMemories(e) {
-	(// приостановка действий по клику на кнопку до окончания текущего запроса
-		this.onclick = o => o.preventDefault()
-	)(e);
-	
-	const $this = this;
-	const watch = this.id === 'memories_button';
-	
-	fetch('/memories.jsp?csrf='+ encodeURIComponent(TOKEN) + this.getAttribute('watch'), {
-		credentials : 'same-origin',
-		method      : 'POST'
-	}).then(response => {
-		if (response.ok) {
-			response.json().then(data => {
-				if (data.id) {
-					$this.setAttribute('watch', '&id='+ data.id +'&remove=remove&watch='+ watch);
-					$this.classList.add('selected');
-					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data.count;
-				} else {
-					$this.setAttribute('watch', '&add=add&watch='+ watch +'&msgid='+ LOR.topic );
-					$this.classList.remove('selected');
-					$this.parentNode.children[$this.id.replace('button', 'count')].textContent = data;
-				}
-			})
-		}
-		$this.onclick = topMemories;
-	});
 }
 
 function toggleForm(underc, parent, href) {
