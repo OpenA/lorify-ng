@@ -30,7 +30,6 @@ const empty_Url = [
 	'chrome://newtab/'
 ];
 
-var color = '#3d96ab';
 var text  = '';
 var timr  = setTimeout(getNotifications, 1e3);
 
@@ -44,9 +43,10 @@ chrome.runtime.onConnect.addListener(port => {
 	});
 });
 
-if (chrome.browserAction.setBadgeTextColor === undefined) {
-	chrome.browserAction.setBadgeTextColor = () => void 0;
+if (chrome.browserAction.setBadgeTextColor !== undefined) {
+	chrome.browserAction.setBadgeTextColor({ color: '#ffffff' });
 }
+chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });
 
 function onGetTabs(tabs) {
 	// If exists a tab with URL == `notify_Url` then we switches to this tab.
@@ -77,20 +77,16 @@ function clearNotes() {
 	openPorts.forEach(port => port.postMessage( text ));
 }
 
-function messageHandler({ action, notes }, sender) {
+function messageHandler({ action }, { tab }) {
 	// check
 	switch (action) {
 		case 'l0rNG-settings':
-			openPorts.get(sender.tab.id).postMessage( settings );
+			openPorts.get(tab.id).postMessage( settings );
 			break;
 		case 'l0rNG-checkNow':
 			clearTimeout(timr);
 			getNotifications();
 			break;
-		case 'l0rNG-init':
-			if (text !== notes) {
-				!notes ? clearNotes() : sendNotify( '('+ (text = notes) +')' );
-			}
 	}
 }
 
@@ -116,8 +112,6 @@ function sendNotify(notes) {
 			iconUrl : './icons/penguin-64.png'
 		});
 	}
-	chrome.browserAction.setBadgeBackgroundColor({ color });
-	chrome.browserAction.setBadgeTextColor({ color: '#fff' });
 	chrome.browserAction.setBadgeText({ text });
 	openPorts.forEach(port => port.postMessage( notes ));
 }

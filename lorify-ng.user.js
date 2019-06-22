@@ -25,7 +25,6 @@ const USER_SETTINGS = {
 const pagesCache    = new Map;
 const ResponsesMap  = new Object;
 const CommentsCache = new Object;
-const LoaderSTB     = _setup('div', { html: '<div class="page-loader"></div>' });
 const LOR           = parseLORUrl(location.pathname);
 const anonymous     = { innerText: 'anonymous' };
 const TOUCH_DEVICE  = 'ontouchstart' in window;
@@ -42,7 +41,13 @@ const Timer         = {
 	}
 }
 document.documentElement.append(
-	_setup('script', { text: 'Object.defineProperty(window,"startRealtimeWS",{value:function(){}});', id: 'start-rws'}),
+	_setup('script', { id: 'start-rws', text: `
+		var _= { value: function(){} }; Object.defineProperties(window, { startRealtimeWS: _, initNextPrevKeys: _ });
+		var tag_memories_form_setup = topic_memories_form_setup;
+		function topic_memories_form_setup(a,b,c,d) {
+			window.dispatchEvent( new CustomEvent('memories_setup', { bubbles: true, detail: [a,b,c,d] }) );
+		}
+	`}),
 	_setup('style' , { text: `
 		.newadded  { border: 1px solid #006880; }
 		.msg-error { color: red; font-weight: bold; }
@@ -114,8 +119,8 @@ document.documentElement.append(
 		.markdown > .btn:before {
 			content: attr(markdown);
 		}
-		.uc:after { content: "\xA0"; }
-		.uc { font-variant: unicase; }
+		.markdown > .uc:after { content: "\xA0"; }
+		.markdown > .uc { font-variant: unicase; font-variant: sub; }
 		
 		@-webkit-keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
 		@keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
@@ -141,9 +146,10 @@ document.documentElement.append(
 
 const Navigation = {
 	
-	gotoNode: null,
+	complete: null,
 	pagesCount: 1,
 	
+	stb: _setup('div', { html: '<div class="page-loader"></div>' }),
 	bar: _setup('div', { class: 'nav', html: `
 		<a class="page-number prev" href="#prev">←</a>
 		<a id="page_0" class="page-number" href="${ LOR.path }#comments">1</a>
@@ -162,8 +168,7 @@ const Navigation = {
 	set page (num) {
 		var comments = pagesCache.get(LOR.page);
 		var reverse  = num > LOR.page;
-		var elem     = this.gotoNode;
-		var content, hash = '';
+		var _loader_ = this.stb;
 		
 		this.bar.querySelectorAll('.broken').forEach(lnk => lnk.classList.remove('broken'));
 		
@@ -181,29 +186,17 @@ const Navigation = {
 			comments.querySelector('.nav').scrollIntoView({ block: 'start' });
 		}
 		
-		const promise = new Promise(resolve => {
+		this.complete = new Promise(resolve => {
 			if (pagesCache.has(num)) {
-				Navigation.swapAnimateTo(comments, (
-					content = pagesCache.get(num)
-				), reverse, resolve );
+				Navigation.swapAnimateTo( comments, pagesCache.get(num), reverse, resolve );
 			} else {
-				comments.parentNode.replaceChild((
-					content = LoaderSTB
-				), comments );
-			
+				comments.parentNode.replaceChild( _loader_, comments );
+				
 				pagesPreload(num).then(comms => {
-					Navigation.swapAnimateTo( content, comms, reverse, resolve );
+					Navigation.swapAnimateTo( _loader_, comms, reverse, resolve );
 				});
 			}
 		});
-		
-		if (elem) {
-			hash = '#'+ elem.id;
-			promise.then(() => elem.scrollIntoView({ block: 'start', behavior: 'smooth' }));
-			this.gotoNode = null;
-		}
-		
-		history.replaceState(null, document.title, LOR.path + (num ? '/page'+ num : '') + hash);
 	},
 	
 	addToBar: function(pNumEls) {
@@ -261,8 +254,6 @@ const Favicon = {
 	original : '//www.linux.org.ru/favicon.ico',
 	index    : 0,
 	size     : 16 * ( Math.ceil(window.devicePixelRatio) || 1 ),
-	// 0: imageload promise => write resolve fn in global variable
-	imgReady : new Promise(resolve => { _ImgResolve = resolve }),
 	
 	get tabname() {
 		let title = document.title;
@@ -278,18 +269,18 @@ const Favicon = {
 	},
 	
 	get image() {
-		let image = new Image;
+		let image  = new Image;
+		let origin = this.original;
 		// allow cross origin resource requests if the image is not a data:uri
-		if ( ! /^data:/.test(this.original)) {
+		if ( ! /^data:/.test(origin)) {
 			image.crossOrigin = 'anonymous';
 		}
-		Object.defineProperty(this, 'image', {
-			value: _setup(image, {
-				// 1: imageload promise => call resolve fn
-				onload: _ImgResolve,
-				src: this.original
-			})
+		image.onReady = new Promise(resolve => {
+			// 1: imageload promise => call resolve fn
+			image.onload = resolve;
+			image.src    = origin;
 		});
+		Object.defineProperty(this, 'image', { value: image });
 		return image;
 	},
 	
@@ -308,13 +299,10 @@ const Favicon = {
 	
 	draw: function(label = '', color = '#48de3d') {
 		
-		const $this   = this;
-		const context = this.canvas.getContext('2d');
-		const icon    = this.icon;
-		const size    = this.size;
-		const image   = this.image;
+		const { icon, size, image, tabname, canvas } = this;
+		const context = canvas.getContext('2d');
 		
-		this.imgReady.then(e => {
+		image.onReady.then(e => {
 			
 			// clear canvas
 			context.clearRect(0, 0, size, size);
@@ -326,7 +314,7 @@ const Favicon = {
 			if (label) {
 				
 				if (typeof label === 'number' && label > 99) {
-					document.title = $this.tabname +' ('+ label +')';
+					document.title = tabname +' ('+ label +')';
 					label = '99+';
 				}
 				
@@ -348,14 +336,11 @@ const Favicon = {
 			
 				// label
 				context.fillStyle = '#fff';
-				context.textAlign = "center";
+				context.textAlign = 'center';
 				context.fillText(label, centerX, fontPix);
-				href = $this.canvas.toDataURL();
+				href = canvas.toDataURL();
 			}
-			
-			icon.parentNode.replaceChild(
-				($this.icon = _setup('link', { type: 'image/png', rel: 'icon', href })), icon
-			);
+			_setup(icon, { type: 'image/png', rel: 'icon', href });
 		});
 	}
 }
@@ -367,8 +352,8 @@ _setup(document, null, {
 	'DOMContentLoaded': function onDOMReady() {
 		
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
-		//if (/^\?lastmod=\d+/.test(location.search)) history.replaceState(null, document.title, location.href.replace(/\?lastmod=\d+(#|$)|lastmod=\d+&?/, '$1'));
 		
+		const [, s_top, replyto, s_cid] = location.search.match(/\?(?:topic=([0-9]+)(?:\&replyto=([0-9]+))?|cid=([0-9]+))/) || '';
 		const init = App.init();
 		
 		LOR.user = ( this.getElementById('loginGreating') || anonymous ).innerText;
@@ -377,7 +362,7 @@ _setup(document, null, {
 			
 			const MARKUP_PANEL = _setup('div', {
 				id   : 'markup-panel',
-				class: (MARKDOWN_MODE = LOR.form.elements['mode'].selectedIndex === 1) ? 'markdown' : 'lorcode',
+				class: 'lorcode',
 				html : `
 					<button type="button" class="btn btn-default" lorcode="b"></button>
 					<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>
@@ -395,7 +380,6 @@ _setup(document, null, {
 					<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>
 					<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>`}, {
 				click: e => {
-					e.stopPropagation();
 					e.preventDefault();
 					if (e.target.type === 'button') {
 						if (MARKDOWN_MODE) {
@@ -415,19 +399,56 @@ _setup(document, null, {
 			});
 			
 			LOR.form.elements['csrf'].value = TOKEN;
-			LOR.form.elements['mode'].onchange = ({ target }) => {
-				MARKUP_PANEL.className = (MARKDOWN_MODE = target.selectedIndex === 1) ? 'markdown' : 'lorcode'
-			};
-			
 			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
 			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
 			
 			this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 			
 			window.addEventListener('keypress', winKeyHandler);
+			
+			let bd_rep = this.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
+			if (bd_rep) {
+				bd_rep.append('\n(', _setup('a', {
+					text : 'с цитатой',
+					style: 'color: indianred!important;',
+					href : 'javascript:void(0)'
+				},{
+					click: convMsgBody.bind(null, this.querySelector(`#topic-${ s_top } .msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
+				}), ')\n');
+			}
+			
+			const mode_change = ({ target }) => {
+				MARKUP_PANEL.className = (MARKDOWN_MODE = /markdown/i.test(target.value)) ? 'markdown' : 'lorcode';
+			};
+			
+			if ('mode' in LOR.form.elements) {
+				LOR.form.elements['mode'].addEventListener('change', mode_change);
+				mode_change({ target: LOR.form.elements['mode'] });
+			} else {
+				mode_change({ target: LOR.form.querySelector('select[disabled]') });
+			}
+		}
+		
+		const ts = this.querySelector(`#topic-${ LOR.topic || s_top } a[itemprop="creator"]`);
+		
+		if (ts) {
+			LOR.TS = ts.innerText;
+			this.getElementById('start-rws').nextElementSibling.append(`\n
+				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
+				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
+					content: "тс";
+					font-size: 75%;
+					color: dimgrey!important;
+					display: inline-block;
+					vertical-align: super;
+				}`);
 		}
 		
 		if (!LOR.topic) {
+			window.addEventListener('memories_setup', ({ detail }) => {
+				_setup(document.getElementById('tagFavAdd'), { 'data-tag': detail[0], onclick: tagMemories });
+				_setup(document.getElementById('tagIgnore'), { 'data-tag': detail[0], onclick: tagMemories });
+			});
 			return;
 		}
 		
@@ -444,20 +465,13 @@ _setup(document, null, {
 			_setup(comments.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
 		}
 		
-		const ts = this.querySelector(`#topic-${ LOR.topic } a[itemprop="creator"]`);
+		var history_state = LOR.path + (LOR.page ? '/page'+ LOR.page : '');
 		
-		if (ts) {
-			LOR.TS = ts.innerText;
-			this.getElementById('start-rws').nextElementSibling.append(`\n
-				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
-				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
-					content: "тс";
-					font-size: 75%;
-					color: dimgrey!important;
-					display: inline-block;
-					vertical-align: super;
-				}`);
+		if (s_cid) {
+			this.getElementById('comment-'+ s_cid).scrollIntoView();
+			history_state += '#comment-'+ s_cid;
 		}
+		history.replaceState(null, null, history_state);
 		
 		pagesCache.set(LOR.page, comments);
 		pagesCache.set(comments, LOR.page);
@@ -498,13 +512,36 @@ _setup(document, null, {
 			}
 		});
 		
-		window.addEventListener('dblclick', () => {
-			var newadded = document.querySelectorAll('.newadded');
-			newadded.forEach(nwc => nwc.classList.remove('newadded'));
-			document.querySelectorAll('#page_'+ LOR.page).forEach(pg => pg.removeAttribute('cnt-new'));
-			Favicon.draw(
-				(Favicon.index -= newadded.length)
-			);
+		_setup(window, null, {
+			memories_setup: ({ detail }) => {
+				var [rm_id, memories] = detail;
+				var btn = document.querySelector(`#topic-${ LOR.topic } #${ memories ? 'memories' : 'favs' }_button`);
+				btn.onclick = topicMemories;
+				if (rm_id) {
+					btn.setAttribute('rm-id', rm_id);
+					btn.className = 'selected';
+					btn.title = memories ? 'Отслеживается' : 'В избранном';
+				} else
+					btn.title = memories ? 'Следить за темой' : 'Добавить в избранное';
+			},
+			dblclick: () => {
+				var newadded = document.querySelectorAll('.newadded');
+				newadded.forEach(nwc => nwc.classList.remove('newadded'));
+				document.querySelectorAll('#page_'+ LOR.page).forEach(pg => pg.removeAttribute('cnt-new'));
+				Favicon.draw(
+					(Favicon.index -= newadded.length)
+				);
+			},
+			popstate: e => {
+				const { page } = parseLORUrl(location.pathname);
+				const comment_id = location.hash.substring(1);
+				if (LOR.page != page) {
+					Navigation.page = page;
+					Navigation.complete.then(() => comment_id && document.getElementById(comment_id).scrollIntoView());
+				} else if (comment_id) {
+					document.getElementById(comment_id).scrollIntoView();
+				}
+			}
 		});
 	}
 });
@@ -770,6 +807,7 @@ function navBarHandle(e) {
 				case 'next': Navigation.page++; break;
 				default    : Navigation.page = Number(e.target.id.substring(5));
 			}
+			history.pushState(null, null, LOR.path + (LOR.page ? '/page'+ LOR.page : ''));
 		}
 	}
 }
@@ -850,7 +888,7 @@ function onWSData(dbCiD) {
 				Favicon.index += msg.length;
 			}
 			Favicon.draw(Favicon.index);
-			history.replaceState(null, document.title, location.pathname);
+			history.replaceState(null, null, location.pathname + location.hash);
 		});
 }
 
@@ -962,6 +1000,14 @@ function removePreviews(comment) {
 	}
 }
 
+function goToCommentPage(cid) {
+	const comment = CommentsCache[cid];
+	const num = pagesCache.get( comment.parentNode );
+	Navigation.page = num;
+	Navigation.complete.then(() => comment.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+	history.pushState(null, null, LOR.path + (num ? '/page'+ num : '') +'#comment-'+ cid);
+}
+
 function addPreviewHandler(comment, attrs) {
 	
 	comment.addEventListener('click', e => {
@@ -976,18 +1022,13 @@ function addPreviewHandler(comment, attrs) {
 			['Close Preview', 'Open Preview', e.target.href].forEach(Timer.clear);
 			removePreviews();
 			if (view) {
-				history.replaceState(null, document.title, `${location.pathname}#comment-${cid}`);
 				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
+				history.pushState(null, null, `${location.pathname}#comment-${cid}`);
 			} else {
-				view = () => {
-					Navigation.page = pagesCache.get(
-						( Navigation.gotoNode = CommentsCache[cid] ).parentNode
-					);
-				}
 				if (cid in CommentsCache) {
-					view();
+					goToCommentPage(cid);
 				} else
-					loadRes(e.target.pathname + e.target.search).then(view);
+					loadRes(e.target.pathname + e.target.search).then(goToCommentPage.bind(null, cid));
 			}
 			e.preventDefault();
 			break;
@@ -1000,12 +1041,15 @@ function addPreviewHandler(comment, attrs) {
 					bubbles   : true,
 					view      : window
 				});
-			if (!view) {
-				Navigation.gotoNode = view = CommentsCache[cid];
-				Navigation.page = pagesCache.get( view.parentNode );
-			} else
+			if (view) {
+				history.pushState(null, null, `${location.pathname}#comment-${cid}` );
 				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
-			view.querySelector(`.${aClass}`).dispatchEvent(click);
+				view.querySelector(`.${aClass}`).dispatchEvent(click);
+			} else {
+				goToCommentPage(cid);
+				Navigation.complete.then(() => CommentsCache[cid].querySelector(`.${aClass}`).dispatchEvent(click));
+			}
+			e.preventDefault();
 		}
 	});
 	
@@ -1261,6 +1305,103 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
+function tagMemories(e) {
+	
+	e.preventDefault();
+	
+	if (this.disabled)
+		return;
+	// приостановка действий по клику на кнопку до окончания текущего запроса
+	this.disabled = true;
+	
+	const $this = this;
+	const del = this.classList.contains('selected');
+	const tag = this.getAttribute('data-tag');
+	
+	switch (this.id) {
+	case 'tagFavAdd':
+		var name = 'favorite';
+		var attrs = del ? { title: 'В избранное', class: '' } : { title: 'Удалить из избранного', class: 'selected' };
+		break;
+	case 'tagIgnore':
+		var name = 'ignore';
+		var attrs = del ? { title: 'Игнорировать', class: '' } : { title: 'Перестать игнорировать', class: 'selected' };
+	}
+	
+	const body = new FormData;
+	body.append('csrf', TOKEN );
+	body.append('tagName', tag);
+	body.append((del ? 'del' : 'add'), '');
+	
+	fetch(`${ location.origin }/user-filter/${ name }-tag`, {
+		credentials : 'same-origin',
+		method      : 'POST', body,
+		headers     : {
+			'Accept': 'application/json'
+		}
+	}).then(response => {
+		if (response.ok) {
+			response.json().then(({ error, count }) => {
+				if (error) {
+					alert(error)
+				} else {
+					_setup($this, attrs).parentNode.children[name.replace('orite', 's') +'Count'].textContent = count;
+				}
+			});
+		}
+		$this.disabled = false;
+	});
+}
+
+function topicMemories(e) {
+	
+	e.preventDefault();
+	
+	if (this.disabled)
+		return;
+	// приостановка действий по клику на кнопку до окончания текущего запроса
+	this.disabled = true;
+	
+	const $this = this;
+	const rm_id = this.getAttribute('rm-id');
+	const  name = this.id.split('_')[0];
+	const watch = name === 'memories';
+	const body  = new FormData;
+	
+	body.append('csrf', TOKEN );
+	body.append('watch', watch);
+	
+	if (rm_id) {
+		body.append('remove', '');
+		body.append('id', rm_id);
+	} else {
+		body.append('add', '');
+		body.append('msgid', LOR.topic);
+	}
+	
+	fetch(`${ location.origin }/memories.jsp`, {
+		credentials : 'same-origin',
+		method      : 'POST', body
+	}).then(response => {
+		if (response.ok) {
+			response.json().then(data => {
+				if (data.id) {
+					$this.title = watch ? 'Отслеживается' : 'В избранном';
+					$this.setAttribute('rm-id', data.id);
+					$this.classList.add('selected');
+					$this.parentNode.children[name +'_count'].textContent = data.count;
+				} else {
+					$this.title = watch ? 'Следить за темой' : 'Добавить в избранное';
+					$this.removeAttribute('rm-id');
+					$this.classList.remove('selected');
+					$this.parentNode.children[name +'_count'].textContent = data;
+				}
+			})
+		}
+		$this.disabled = false;
+	});
+}
+
 function toggleForm(underc, parent, href) {
 	const [, topic, replyto = 0 ] = href.match(/jsp\?topic=(\d+)(?:&replyto=(\d+))?$/);
 	if (LOR.form.elements['replyto'].value != replyto) {
@@ -1286,39 +1427,41 @@ function toggleForm(underc, parent, href) {
 function handleReplyToBtn(btn) {
 	const href  = btn.getAttribute('href');
 	const $this = btn.parentNode;
-	$this.innerHTML = '<a class="replyComment" href="javascript:void(0)">Ответить</a>\n.\n<a class="quoteComment" href="javascript:void(0)">с цитатой</a>';
+	$this.innerHTML = '<a class="replyComment" href="'+ href +'">Ответить</a>\n.\n<a class="quoteComment" href="javascript:void(0)">с цитатой</a>';
 	$this.addEventListener('click', e => {
 		
 		if (e.target.tagName === 'A') {
-			e.stopPropagation();
 			e.preventDefault();
 			
 			const parent = LOR.form.parentNode;
-			const underc = $this.parentNode.parentNode;
+			const underc = $this.parentNode.parentNode.parentNode;
 			
 			switch (e.target.classList[0]) {
 				case 'replyComment':
 					toggleForm(underc, parent, href);
 					break;
 				case 'quoteComment':
-					let arg = ['>', '\n>'];
-					let msg = underc.parentNode.querySelector('[itemprop="articleBody"]') || underc.parentNode;
-					
 					if (parent.parentNode != underc || parent.style.display == 'none')
 						toggleForm(underc, parent, href);
-					
-					if (!MARKDOWN_MODE) { // lorcode, line-break
-						let nobl = msg.querySelector('div.code,pre,ul,ol,table');
-						if (nobl && (nobl = nobl.parentNode.className != 'reply'))
-							arg[0] = '[quote]', arg[1] = '[/quote]';
-						arg.push(domToLORCODE(msg.childNodes, !nobl).replace(/(?:[\n]+){3,}/g, '\n\n').trim());
-					} else
-						arg.push(domToMarkdown(msg.childNodes)); // markdown
-					
-					lorcodeMarkup.apply(LOR.form.elements['msg'], arg);
+					convMsgBody(
+						underc.querySelector('[itemprop="articleBody"]') || underc
+					);
 			}
 		}
 	}, false);
+}
+
+function convMsgBody(msg) {
+	let arg = ['>', '\n>'];
+	if (!MARKDOWN_MODE) { // lorcode, line-break
+		let nobl = msg.querySelector('div.code,pre,ul,ol,table');
+		if (nobl && (nobl = nobl.parentNode.className != 'reply'))
+			arg[0] = '[quote]', arg[1] = '[/quote]';
+		arg.push(domToLORCODE(msg.childNodes, !nobl).replace(/(?:[\n]+){3,}/g, '\n\n').trim());
+	} else
+		arg.push(domToMarkdown(msg.childNodes)); // markdown
+	
+	lorcodeMarkup.apply(LOR.form.elements['msg'], arg);
 }
 
 function getRawText(el) {
@@ -1366,8 +1509,8 @@ function domToLORCODE(childNodes, nobl) {
 				if (el.className === 'code') {
 					let lng = el.firstElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
 					text += `[code${ lng ? '='+ lng : '' }]\n${ el.innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
-				} else if (el.id === 'cut') {
-					text += `[cut]\n${ domToLORCODE(el.childNodes, nobl) }[/cut]\n`;
+				} else if (/^cut[0-9]+$/.test(el.id)) {
+					text += '\n'+ domToLORCODE(el.childNodes, nobl); //`[cut]\n${ domToLORCODE(el.childNodes, nobl) }[/cut]\n`;
 				}
 				break;
 			case 'UL': case 'OL':
@@ -1436,8 +1579,8 @@ function domToMarkdown(childNodes) {
 				if (el.className === 'code') {
 					let lng = el.firstElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
 					text += '```'+ lng +'\n'+ el.innerText.replace(/[\n+]$|$/, '\n```\n');
-				} else if (el.id === 'cut') {
-					text += `>>>\n${ domToLORCODE(el.childNodes, nobl) }\n>>>\n`;
+				} else if (/^cut[0-9]+$/.test(el.id)) {
+					text += domToMarkdown(el.childNodes); //`>>>\n${ domToMarkdown(el.childNodes) }\n>>>\n`;
 				}
 				break;
 			case 'BLOCKQUOTE':
@@ -1450,7 +1593,7 @@ function domToMarkdown(childNodes) {
 			case 'PRE': case 'P':
 				text += domToMarkdown(el.childNodes);
 			case 'BR':
-				text += '\n';
+				text += '\n\n';
 				break;
 			default:
 				text += getRawText(el);
@@ -1495,10 +1638,7 @@ const App = (() => {
 					// We can't show notification from the content script directly,
 					// so let's send a corresponding message to the background script
 					port.onMessage.addListener(text => { main_events_count.textContent = text });
-					chrome.runtime.sendMessage({
-						action : 'l0rNG-init',
-						notes  : main_events_count.innerText.replace(/\((\d+)\)/, '$1')
-					});
+					chrome.runtime.sendMessage({ action: 'l0rNG-checkNow' });
 				}
 				return sync;
 			}
@@ -1677,15 +1817,12 @@ const App = (() => {
 			checkNow: () => void 0,
 			init: function() {
 				if ( (main_events_count = document.getElementById('main_events_count')) ) {
-					const $1 = ( lorynotify.textContent = main_events_count.textContent ).replace(/\((\d+)\)/, '$1');
-					if (notes != $1) {
-						!!(notes = $1) && sendNotify( $1 );
-						localStorage.setItem('l0rNG-notes', $1);
-					}
-					Timer.set('Check Notifications', (this.checkNow = startWatch), delay);
+					if (notes)
+						lorynotify.textContent = main_events_count.textContent = '('+ notes +')';
+					(this.checkNow = startWatch)();
 				}
 				document.body.append(lorynotify, lorytoggle);
-				return { then: c => c() }
+				return Promise.resolve();
 			}
 		}
 	}
