@@ -51,6 +51,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 	() => new Object({ cancel: true }),
 	{ urls: [
 		'*://www.linux.org.ru/js/highlight.pack.js',
+		'*://www.linux.org.ru/js/addComments.js',
 		'*://www.linux.org.ru/js/realtime.js',
 		'*://www.linux.org.ru/js/lor.js*'
 	]},

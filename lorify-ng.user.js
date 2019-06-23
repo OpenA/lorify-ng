@@ -42,7 +42,7 @@ const Timer         = {
 }
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
-		var _= { value: function(){} }; Object.defineProperties(window, { startRealtimeWS: _, initNextPrevKeys: _ });
+		var _= { value: function(){} }; Object.defineProperties(window, { startRealtimeWS: _, initNextPrevKeys: _, hljs: { value: { initHighlightingOnLoad: _.value } } });
 		var tag_memories_form_setup = topic_memories_form_setup;
 		function topic_memories_form_setup(a,b,c,d) {
 			window.dispatchEvent( new CustomEvent('memories_setup', { bubbles: true, detail: [a,b,c,d] }) );
@@ -121,6 +121,25 @@ document.documentElement.append(
 		}
 		.markdown > .uc:after { content: "\xA0"; }
 		.markdown > .uc { font-variant: unicase; font-variant: sub; }
+		
+		.process, *[type="submit"]:disabled {
+			color: transparent!important;
+			position: relative;
+		}
+		.process:after, *[type="submit"]:disabled:after {
+			content: "....";
+			margin: 6px 30px;
+			top: 0;
+			display: block;
+			position: absolute;
+			color: white!important;
+			overflow: hidden;
+			animation: process 3s linear infinite;
+			-webkit-animation: process 3s linear infinite;
+		}
+		
+		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
+		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		
 		@-webkit-keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
 		@keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
@@ -355,58 +374,15 @@ _setup(document, null, {
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
 		
 		const [, s_top, replyto, s_cid] = location.search.match(/\?(?:topic=([0-9]+)(?:\&replyto=([0-9]+))?|cid=([0-9]+))/) || '';
-		const top  = this.getElementById(`topic-${ LOR.topic || s_top }`); 
+		const top  = this.getElementById(`topic-${ LOR.topic || s_top }`);
 		const init = App.init();
 		
 		LOR.user = ( this.getElementById('loginGreating') || anonymous ).innerText;
 		
 		if ((LOR.form = this.forms['commentForm'] || this.forms['messageForm'])) {
 			
-			const MARKUP_PANEL = _setup('div', {
-				id   : 'markup-panel',
-				class: 'lorcode',
-				html : `
-					<button type="button" class="btn btn-default" lorcode="b"></button>
-					<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>
-					<button type="button" class="btn btn-default" lorcode="u"></button>
-					<button type="button" class="btn btn-default" lorcode="s" markdown="~~"></button>
-					<button type="button" class="btn btn-default" lorcode="em"></button>
-					<button type="button" class="btn btn-default" lorcode="br"></button>
-					<button type="button" class="btn btn-default" lorcode="cut" markdown="&gt;&gt;&gt;"></button>
-					<button type="button" class="btn btn-default" lorcode="list" markdown="1."></button>
-					<button type="button" class="btn btn-default" lorcode="strong"></button>
-					<button type="button" class="btn btn-default uc" lorcode="pre" markdown="* "></button>
-					<button type="button" class="btn btn-default" lorcode="user" markdown="@"></button>
-					<button type="button" class="btn btn-default" lorcode="code" markdown="&#96;&#96;&#96;"></button>
-					<button type="button" class="btn btn-default" lorcode="inline" markdown="&#96;"></button>
-					<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>
-					<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>`}, {
-				click: e => {
-					e.preventDefault();
-					if (e.target.type === 'button') {
-						if (MARKDOWN_MODE) {
-							const mkdwn = e.target.getAttribute('markdown');
-							if (mkdwn === '>' || mkdwn === '* ')
-								lorcodeMarkup.call(LOR.form.elements['msg'], mkdwn, `\n${ mkdwn }`);
-							else
-								markdownMarkup.call(LOR.form.elements['msg'], mkdwn);
-						} else {
-							const bbtag = e.target.getAttribute('lorcode');
-							lorcodeMarkup.call(
-								LOR.form.elements['msg'],
-								'['+ bbtag +']', '[/'+ bbtag +']');
-						}
-					}
-				}
-			});
-			
-			LOR.form.elements['csrf'].value = TOKEN;
-			LOR.form.elements['msg'].parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
-			LOR.form.elements['msg'].addEventListener('click', e => e.target.classList.remove('select-break'));
-			
+			handleCommentForm(LOR.form);
 			this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
-			
-			window.addEventListener('keypress', winKeyHandler);
 			
 			let bd_rep = this.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
 			if (bd_rep) {
@@ -417,17 +393,6 @@ _setup(document, null, {
 				},{
 					click: convMsgBody.bind(null, top.querySelector(`.msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
 				}), ')\n');
-			}
-			
-			const mode_change = ({ target }) => {
-				MARKUP_PANEL.className = (MARKDOWN_MODE = /markdown/i.test(target.value)) ? 'markdown' : 'lorcode';
-			};
-			
-			if ('mode' in LOR.form.elements) {
-				LOR.form.elements['mode'].addEventListener('change', mode_change);
-				mode_change({ target: LOR.form.elements['mode'] });
-			} else {
-				mode_change({ target: LOR.form.querySelector('select[disabled]') });
 			}
 		}
 		
@@ -443,7 +408,7 @@ _setup(document, null, {
 					display: inline-block;
 					vertical-align: super;
 				}`);
-			top.querySelectorAll('pre[class^="language-"] > code').forEach(Highlight_Code.highlightBlock);
+			Highlight_Code.apply(top);
 		}
 		
 		if (!LOR.topic) {
@@ -737,6 +702,7 @@ function markdownMarkup(open) {
 		this.classList.add('select-break');
 	}
 	this.focus();
+	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
 function lorcodeMarkup(open, close, blur) {
@@ -796,6 +762,7 @@ function lorcodeMarkup(open, close, blur) {
 		this.classList.add('select-break');
 		this.focus();
 	}
+	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
 function navBarHandle(e) {
@@ -904,7 +871,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 		el['last_modifed'] = el.querySelector('.sign_more > time');
 		el['edit_comment'] = el.querySelector('.reply a[href^="/edit_comment"]');
 		
-		el.querySelectorAll('pre[class^="language-"] > code').forEach(Highlight_Code.highlightBlock);
+		Highlight_Code.apply(el);
 		
 		addPreviewHandler(
 			(CommentsCache[cid] = el), attrs
@@ -1308,6 +1275,169 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
+function sendFormData(uri, params, headers) {
+	
+	const REQPARAMS = {
+		credentials : 'same-origin',
+		method      : 'POST',
+		body        : new FormData,
+		headers     : {
+			'Accept': 'application/json'
+		}
+	}
+	for (let name in params)
+		REQPARAMS.body.append(name, params[name]);
+	
+	return fetch(location.origin + uri, REQPARAMS).then(
+		response => (response.ok ? response.json() : Promise.resolve({ url: response.url, error: `${response.status} ${response.statusText}`}))
+	);
+}
+
+function handleCommentForm(form) {
+	
+	const TEXT_AREA    = form.elements['msg'];
+	const SUBMIT_BTN   = form.querySelector('[type="submit"]');
+	const NODE_PREVIEW = _setup('div', { id: 'commentPreview', html: '<div class=error></div><h2></h2><span></span>' });
+	const MARKUP_PANEL = _setup('div', {
+		id   : 'markup-panel',
+		class: 'lorcode',
+		html : `
+			<button type="button" class="btn btn-default" lorcode="b"></button>
+			<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>
+			<button type="button" class="btn btn-default" lorcode="u"></button>
+			<button type="button" class="btn btn-default" lorcode="s" markdown="~~"></button>
+			<button type="button" class="btn btn-default" lorcode="em"></button>
+			<button type="button" class="btn btn-default" lorcode="br"></button>
+			<button type="button" class="btn btn-default" lorcode="cut" markdown="&gt;&gt;&gt;"></button>
+			<button type="button" class="btn btn-default" lorcode="list" markdown="1."></button>
+			<button type="button" class="btn btn-default" lorcode="strong"></button>
+			<button type="button" class="btn btn-default uc" lorcode="pre" markdown="* "></button>
+			<button type="button" class="btn btn-default" lorcode="user" markdown="@"></button>
+			<button type="button" class="btn btn-default" lorcode="code" markdown="&#96;&#96;&#96;"></button>
+			<button type="button" class="btn btn-default" lorcode="inline" markdown="&#96;"></button>
+			<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>
+			<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>`}, {
+		click: e => {
+			e.preventDefault();
+			if (e.target.type === 'button') {
+				if (MARKDOWN_MODE) {
+					const mkdwn = e.target.getAttribute('markdown');
+					if (mkdwn === '>' || mkdwn === '* ')
+						lorcodeMarkup.call(TEXT_AREA, mkdwn, `\n${ mkdwn }`);
+					else
+						markdownMarkup.call(TEXT_AREA, mkdwn);
+				} else {
+					const bbtag = e.target.getAttribute('lorcode');
+					lorcodeMarkup.call(TEXT_AREA, '['+ bbtag +']', '[/'+ bbtag +']');
+				}
+			}
+		}
+	});
+	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
+	
+	form.elements[ 'csrf' ].value = TOKEN;
+	form.elements['preview'].type = 'button';
+	
+	form.elements[ 'cancel'].addEventListener('click', clearForm);
+	form.elements[  'msg'  ].addEventListener('click', ({ target }) => target.classList.remove('select-break'));
+	form.elements['preview'].addEventListener('click', ({ target }) => {
+		
+		if (target.showed) {
+			target.showed = TEXT_AREA.oninput = null;
+			return NODE_PREVIEW.remove();
+		}
+		
+		target.showed = true;
+		form.appendChild( NODE_PREVIEW );
+		
+		const params = {};
+		
+		for (let { name, value } of form.elements) {
+			name && (params[name] = value);
+		}
+		
+		const refresh = () => {
+			params.msg = TEXT_AREA.value;
+			sendFormData('/add_comment_ajax', params).then(
+				({ errors, preview }) => {
+					NODE_PREVIEW.children[0].innerHTML   = errors.join('\n<br>\n');
+					NODE_PREVIEW.children[1].textContent = preview['title'] || '';
+					NODE_PREVIEW.children[2].innerHTML   = preview['processedMessage'];
+					Highlight_Code.apply( NODE_PREVIEW );
+				}
+			);
+		}; refresh();
+		
+		let t = -1;
+		
+		TEXT_AREA.oninput = () => {
+			clearTimeout(t);
+			t = setTimeout(refresh, 1e3);
+		}
+	});
+	
+	form.addEventListener('submit', e => {
+		
+		e.preventDefault();
+		processButton(true);
+		
+		const params = {};
+		
+		for (let { name, value } of form.elements) {
+			name && name !== 'preview' && (params[ name ] = value);
+		}
+		sendFormData('/add_comment_ajax', params).then(({ url, error }) => {
+			if (error)
+				throw error;
+			if (parseLORUrl(url).topic != LOR.topic || true)
+				document.body.appendChild( _setup('form', { action: url, method: 'GET' }) ).submit();
+			clearForm(null, true);
+			processButton(false);
+			form.parentNode.parentNode.querySelector('.replyComment').dispatchEvent(
+				new MouseEvent('click', {
+					cancelable: true,
+					bubbles   : true,
+					view      : window
+				})
+			);
+		}).catch(error => {
+			form.appendChild( NODE_PREVIEW ).children[0].innerHTML = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n(${ error })`;
+			processButton(false);
+		});
+	});
+	
+	window.addEventListener('keypress', winKeyHandler);
+	window.onbeforeunload = () => (
+		TEXT_AREA.value != '' && form.parentNode.style['display'] != 'none'
+			? 'Вы что-то напечатали в форме. Все введенные данные будут потеряны при закрытии страницы.'
+			: void 0
+	);
+	
+	const mode_change = ({ target }) => {
+		MARKUP_PANEL.className = (MARKDOWN_MODE = /markdown/i.test(target.value)) ? 'markdown' : 'lorcode';
+	};
+	
+	if ('mode' in form.elements) {
+		form.elements['mode'].addEventListener('change', mode_change);
+		mode_change({ target: form.elements['mode'] });
+	} else {
+		mode_change({ target: form.querySelector('select[disabled]') });
+	}
+	function processButton(y) {
+		form.elements[ 'cancel'].disabled = SUBMIT_BTN.disabled = y;
+		form.elements['preview'].disabled = y;
+	}
+	function clearForm(_, y) {
+		if (y || confirm('Очистить форму?')) {
+			form.elements[ 'msg' ].value = '';
+			form.elements['title'].value = '';
+			NODE_PREVIEW.children[0].innerHTML   = '';
+			NODE_PREVIEW.children[1].textContent = '';
+			NODE_PREVIEW.children[2].innerHTML   = '';
+		}
+	}
+}
+
 function tagMemories(e) {
 	
 	e.preventDefault();
@@ -1317,9 +1447,10 @@ function tagMemories(e) {
 	// приостановка действий по клику на кнопку до окончания текущего запроса
 	this.disabled = true;
 	
-	const $this = this;
-	const del = this.classList.contains('selected');
-	const tag = this.getAttribute('data-tag');
+	const $this  = this;
+	const  del   = this.classList.contains('selected');
+	const   tag  = this.getAttribute('data-tag');
+	const params = { csrf: TOKEN, tagName: tag };
 	
 	switch (this.id) {
 	case 'tagFavAdd':
@@ -1331,27 +1462,15 @@ function tagMemories(e) {
 		var attrs = del ? { title: 'Игнорировать', class: '' } : { title: 'Перестать игнорировать', class: 'selected' };
 	}
 	
-	const body = new FormData;
-	body.append('csrf', TOKEN );
-	body.append('tagName', tag);
-	body.append((del ? 'del' : 'add'), '');
+	params[del ? 'del' : 'add'] = '';
 	
-	fetch(`${ location.origin }/user-filter/${ name }-tag`, {
-		credentials : 'same-origin',
-		method      : 'POST', body,
-		headers     : {
-			'Accept': 'application/json'
-		}
-	}).then(response => {
-		if (response.ok) {
-			response.json().then(({ error, count }) => {
-				if (error) {
-					alert(error)
-				} else {
-					_setup($this, attrs).parentNode.children[name.replace('orite', 's') +'Count'].textContent = count;
-				}
-			});
-		}
+	sendFormData(`/user-filter/${ name }-tag`, params).then(({ error, count }) => {
+		if (!error) {
+			_setup($this, attrs).parentNode.children[name.replace('orite', 's') +'Count'].textContent = count;
+		} else
+			alert(error);
+		$this.disabled = false;
+	}).catch(() => {
 		$this.disabled = false;
 	});
 }
@@ -1365,42 +1484,34 @@ function topicMemories(e) {
 	// приостановка действий по клику на кнопку до окончания текущего запроса
 	this.disabled = true;
 	
-	const $this = this;
-	const rm_id = this.getAttribute('rm-id');
-	const  name = this.id.split('_')[0];
-	const watch = name === 'memories';
-	const body  = new FormData;
-	
-	body.append('csrf', TOKEN );
-	body.append('watch', watch);
+	const $this  = this;
+	const rm_id  = this.getAttribute('rm-id');
+	const  name  = this.id.split('_')[0];
+	const watch  = name === 'memories';
+	const params = { csrf: TOKEN, watch };
 	
 	if (rm_id) {
-		body.append('remove', '');
-		body.append('id', rm_id);
+		params['remove'] = '';
+		params[  'id'  ] = rm_id;
 	} else {
-		body.append('add', '');
-		body.append('msgid', LOR.topic);
+		params[ 'add' ] = '';
+		params['msgid'] = LOR.topic;
 	}
 	
-	fetch(`${ location.origin }/memories.jsp`, {
-		credentials : 'same-origin',
-		method      : 'POST', body
-	}).then(response => {
-		if (response.ok) {
-			response.json().then(data => {
-				if (data.id) {
-					$this.title = watch ? 'Отслеживается' : 'В избранном';
-					$this.setAttribute('rm-id', data.id);
-					$this.classList.add('selected');
-					$this.parentNode.children[name +'_count'].textContent = data.count;
-				} else {
-					$this.title = watch ? 'Следить за темой' : 'Добавить в избранное';
-					$this.removeAttribute('rm-id');
-					$this.classList.remove('selected');
-					$this.parentNode.children[name +'_count'].textContent = data;
-				}
-			})
+	sendFormData('/memories.jsp', params).then(data => {
+		if (data.id) {
+			$this.title = watch ? 'Отслеживается' : 'В избранном';
+			$this.setAttribute('rm-id', data.id);
+			$this.classList.add('selected');
+			$this.parentNode.children[name +'_count'].textContent = data.count;
+		} else {
+			$this.title = watch ? 'Следить за темой' : 'Добавить в избранное';
+			$this.removeAttribute('rm-id');
+			$this.classList.remove('selected');
+			$this.parentNode.children[name +'_count'].textContent = data;
 		}
+		$this.disabled = false;
+	}).catch(() => {
 		$this.disabled = false;
 	});
 }
@@ -1434,6 +1545,7 @@ function handleReplyToBtn(btn) {
 	$this.addEventListener('click', e => {
 		
 		if (e.target.tagName === 'A') {
+			e.stopPropagation();
 			e.preventDefault();
 			
 			const parent = LOR.form.parentNode;
@@ -1835,7 +1947,6 @@ function HighlightJS() {
 	function q(a) {
 		return a.replace(/&/gm, "&amp;").replace(/</gm, "&lt;").replace(/>/gm, "&gt;")
 	}
-
 	function A(a) {
 		for (var b = a.firstChild; b; b = b.nextSibling) {
 			if (b.nodeName.toUpperCase() == "CODE") {
@@ -1846,7 +1957,6 @@ function HighlightJS() {
 			}
 		}
 	}
-
 	function u(a, b) {
 		return Array.prototype.map.call(a.childNodes, function(c) {
 			if (c.nodeType == 3) {
@@ -1858,7 +1968,6 @@ function HighlightJS() {
 			return u(c, b)
 		}).join("")
 	}
-
 	function B(a) {
 		var b = (a.className + " " + (a.parentNode ? a.parentNode.className : "")).split(/\s+/);
 		b = b.map(function(d) {
@@ -1870,7 +1979,6 @@ function HighlightJS() {
 			}
 		}
 	}
-
 	function z(a) {
 		var c = [];
 		(function b(f, e) {
@@ -1901,12 +2009,10 @@ function HighlightJS() {
 		})(a, 0);
 		return c
 	}
-
 	function s(c, a, h) {
 		var b = 0;
 		var e = "";
 		var k = [];
-
 		function i() {
 			if (!c.length || !a.length) {
 				return c.length ? c : a
@@ -1916,18 +2022,15 @@ function HighlightJS() {
 			}
 			return a[0].event == "start" ? c : a
 		}
-
 		function j(l) {
 			function m(n) {
 				return " " + n.nodeName + '="' + q(n.value) + '"'
 			}
 			e += "<" + l.nodeName.toLowerCase() + Array.prototype.map.call(l.attributes, m).join("") + ">"
 		}
-
 		function f(l) {
 			e += "</" + l.nodeName.toLowerCase() + ">"
 		}
-
 		function d(l) {
 			(l.event == "start" ? j : f)(l.node)
 		}
@@ -1953,16 +2056,13 @@ function HighlightJS() {
 		}
 		return e + q(h.substr(b))
 	}
-
 	function w(a) {
 		function d(e) {
 			return (e && e.source) || e
 		}
-
 		function c(e, f) {
 			return RegExp(d(e), "m" + (a.cI ? "i" : "") + (f ? "g" : ""))
 		}
-
 		function b(k, f) {
 			if (k.compiled) {
 				return
@@ -1971,7 +2071,6 @@ function HighlightJS() {
 			var i = [];
 			if (k.k) {
 				var j = {};
-
 				function e(n, m) {
 					if (a.cI) {
 						m = m.toLowerCase()
@@ -2047,7 +2146,6 @@ function HighlightJS() {
 		}
 		b(a)
 	}
-
 	function y(N, l, R, a) {
 		function W(C, D) {
 			for (var E = 0; E < D.c.length; E++) {
@@ -2057,7 +2155,6 @@ function HighlightJS() {
 				}
 			}
 		}
-
 		function P(D, C) {
 			if (D.e && D.eR.test(C)) {
 				return D
@@ -2066,16 +2163,13 @@ function HighlightJS() {
 				return P(D.parent, C)
 			}
 		}
-
 		function O(C, D) {
 			return !R && D.i && D.iR.test(C)
 		}
-
 		function f(D, C) {
 			var E = j.cI ? C[0].toLowerCase() : C[0];
 			return D.k.hasOwnProperty(E) && D.k[E]
 		}
-
 		function g() {
 			var G = q(i);
 			if (!T.k) {
@@ -2099,7 +2193,6 @@ function HighlightJS() {
 			}
 			return D + G.substr(C)
 		}
-
 		function d() {
 			if (T.sL && !x[T.sL]) {
 				return q(i)
@@ -2113,11 +2206,9 @@ function HighlightJS() {
 			T.top = C.top;
 			return '<span class="' + C.language + '">' + C.value + "</span>"
 		}
-
 		function b() {
 			return T.sL !== undefined ? d() : g()
 		}
-
 		function c(D, C) {
 			var E = D.cN ? '<span class="' + D.cN + '">' : "";
 			if (D.rB) {
@@ -2138,7 +2229,6 @@ function HighlightJS() {
 				}
 			})
 		}
-
 		function Q(G, D) {
 			i += G;
 			if (D === undefined) {
@@ -2231,7 +2321,6 @@ function HighlightJS() {
 			}
 		}
 	}
-
 	function v(a) {
 		var e = {
 			keyword_count: 0,
@@ -2258,7 +2347,6 @@ function HighlightJS() {
 		}
 		return e
 	}
-
 	function t(a, b, c) {
 		if (b) {
 			a = a.replace(/^((<[^>]+>|\t)+)/gm, function(g, d, e, f) {
@@ -2270,7 +2358,6 @@ function HighlightJS() {
 		}
 		return a
 	}
-
 	function p(a, g, c) {
 		var f = u(a, c);
 		var h = B(a);
@@ -2305,12 +2392,18 @@ function HighlightJS() {
 			}
 		}
 	}
+	function o(parent) {
+		for (var i = 0, pre = parent.querySelectorAll('pre[class^="language-"]'); i < pre.length; i++) {
+			p(pre[i])
+		}
+	}
 	var x = {};
 	this.LANGUAGES = x;
 	this.highlight = y;
 	this.highlightAuto = v;
 	this.fixMarkup = t;
 	this.highlightBlock = p;
+	this.apply = o;
 	this.IR = "[a-zA-Z][a-zA-Z0-9_]*";
 	this.UIR = "[a-zA-Z_][a-zA-Z0-9_]*";
 	this.NR = "\\b\\d+(\\.\\d+)?";
