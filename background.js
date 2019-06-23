@@ -47,6 +47,15 @@ if (chrome.browserAction.setBadgeTextColor !== undefined) {
 	chrome.browserAction.setBadgeTextColor({ color: '#ffffff' });
 }
 chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });
+chrome.webRequest.onBeforeRequest.addListener(
+	() => new Object({ cancel: true }),
+	{ urls: [
+		'*://www.linux.org.ru/js/highlight.pack.js',
+		'*://www.linux.org.ru/js/realtime.js',
+		'*://www.linux.org.ru/js/lor.js*'
+	]},
+	['blocking']
+);
 
 function onGetTabs(tabs) {
 	// If exists a tab with URL == `notify_Url` then we switches to this tab.
