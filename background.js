@@ -47,7 +47,7 @@ if (chrome.browserAction.setBadgeTextColor !== undefined) {
 	chrome.browserAction.setBadgeTextColor({ color: '#ffffff' });
 }
 chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });
-chrome.webRequest.onBeforeRequest.addListener(
+/* chrome.webRequest.onBeforeRequest.addListener(
 	() => new Object({ cancel: true }),
 	{ urls: [
 		'*://www.linux.org.ru/js/highlight.pack.js',
@@ -56,7 +56,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 		'*://www.linux.org.ru/js/lor.js*'
 	]},
 	['blocking']
-);
+); */
 
 function onGetTabs(tabs) {
 	// If exists a tab with URL == `notify_Url` then we switches to this tab.
@@ -93,6 +93,10 @@ function messageHandler({ action }, { tab }) {
 		case 'l0rNG-settings':
 			openPorts.get(tab.id).postMessage( settings );
 			break;
+		case 'l0rNG-reset':
+			text = '';
+			chrome.browserAction.setBadgeText({ text });
+			openPorts.forEach(port => port.postMessage( text ));
 		case 'l0rNG-checkNow':
 			clearTimeout(timr);
 			getNotifications();
