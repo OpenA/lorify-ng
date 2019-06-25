@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.6.4
+// @version     2.7.4
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -19,7 +19,8 @@ const USER_SETTINGS = {
 	'Delay Close Preview': 800,
 	'Desktop Notification': true,
 	'Preloaded Pages Count': 1,
-	'Scroll Top View': true
+	'Scroll Top View': true,
+	'Code Block Short Size': 512
 }
 
 const pagesCache    = new Map;
@@ -384,13 +385,9 @@ _setup(document, null, {
 		this.removeEventListener('DOMContentLoaded', resetNotif);
 		
 		if ('reset_form' in this.forms) {
-			fetch(location.origin +'/notifications-reset', {
-				credentials : 'same-origin',
-				method      : 'POST',
-				body        : new FormData( _setup(this.forms['reset_form'], { style: 'display: none;' }) )
-			}).then(({ ok }) => {
-				ok && App.reset();
-			});
+			sendFormData('/notifications-reset', new FormData(
+				_setup(this.forms['reset_form'], { style: 'display: none;' })
+			), true).then( () => App.reset() );
 		}
 	} : function onDOMReady() {
 		
@@ -414,7 +411,7 @@ _setup(document, null, {
 					style: 'color: indianred!important;',
 					href : 'javascript:void(0)'
 				},{
-					click: convMsgBody.bind(null, top.querySelector(`.msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
+					click: convMsgBody.bind(null, this.querySelector(`#topic-${ s_top } .msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
 				}), ')\n');
 			}
 		}
@@ -579,11 +576,16 @@ const RealtimeWatcher = (() => {
 const isInsideATag = (str, sp, ep) => (str.split(sp).length - 1) > (str.split(ep).length - 1);
 var _char_ = '';
 var _sign_ = false;
+var _ctrl_ = false;
 
 function winKeyHandler(e) {
 	
 	const $this = LOR.form.elements['msg'];
 	const key   = e.key || String.fromCharCode(e.charCode);
+	
+	if (e.keyCode === 13 && _ctrl_) {
+		return LOR.form.querySelector('[type="submit"]').click();
+	}
 	
 	if (e.target === $this) {
 		
@@ -649,10 +651,10 @@ function winKeyHandler(e) {
 						markdownMarkup.call($this, /\n/gm.test(val.substring(start, end)) ? '```' : key);
 						break;
 					case '*':
-						/*if (before.substring(-1) == '\n') {
+						if (start == 0 || val.substring(start - 1, start) == '\n') {
 							lorcodeMarkup.call($this, '* ', '\n* ');
 							break;
-						}*/
+						}
 					case '~': case '@':
 						markdownMarkup.call($this, key);
 				}
@@ -660,7 +662,7 @@ function winKeyHandler(e) {
 				lorcodeMarkup.apply($this, key === '@' ? ['[user]', '[/user]'] : ['[*]','[/*]']);
 			}
 		}
-			
+		
 		if (_STOP_) {
 			e.preventDefault();
 		} else if ($this.classList.contains('select-break') && e.keyCode != 8) {
@@ -984,6 +986,7 @@ function getCommentsContent(html) {
 		      new_el = topic.querySelector(name);
 		if (old_el.textContent != new_el.textContent) {
 			old_el.parentNode.replaceChild(old_el, new_el);
+			Highlight_Code.apply( new_el );
 		}
 	}
 	return comms;
@@ -1015,6 +1018,7 @@ function addPreviewHandler(comment, attrs) {
 		
 		switch (aClass) {
 		case 'link-navs':
+			var loadRes = loadFullPage;
 		case 'link-pref':
 			var cid  = e.target.getAttribute('cid'),
 				view = document.getElementById(`comment-${cid}`);
@@ -1078,24 +1082,28 @@ function addPreviewHandler(comment, attrs) {
 			__view = () => { __view = f; resolve(); }
 		});
 	} else {
-		var loadRes = (href) => new Promise(resolve => {
-			getDataResponse(href, ({ response, responseURL }) => { // => OK
-				const { page } = parseLORUrl(responseURL);
-				const comms    = getCommentsContent(response);
-				
-				pagesCache.set(page, comms);
-				pagesCache.set(comms, page);
-				
-				addToCommentsCache(
-					comms.querySelectorAll('.msg[id^="comment-"]')
-				);
-				
-				resolve();
-			});
-		});
+		var loadRes = loadFullPage;
 	}
 	
 	_setup(comment, attrs);
+}
+
+function loadFullPage(href) {
+	return new Promise(resolve => {
+		getDataResponse(href, ({ response, responseURL }) => { // => OK
+			const { page } = parseLORUrl(responseURL);
+			const comms    = getCommentsContent(response);
+			
+			pagesCache.set(page, comms);
+			pagesCache.set(comms, page);
+			
+			addToCommentsCache(
+				comms.querySelectorAll('.msg[id^="comment-"]')
+			);
+			
+			resolve();
+		});
+	});
 }
 
 function showPreview(e) {
@@ -1305,21 +1313,19 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
-function sendFormData(uri, params, headers) {
+function sendFormData(uri, formData, sel) {
 	
 	const REQPARAMS = {
 		credentials : 'same-origin',
 		method      : 'POST',
-		body        : new FormData,
+		body        : formData,
 		headers     : {
 			'Accept': 'application/json'
 		}
 	}
-	for (let name in params)
-		REQPARAMS.body.append(name, params[name]);
 	
 	return fetch(location.origin + uri, REQPARAMS).then(
-		response => (response.ok ? response.json() : Promise.resolve({ url: response.url, error: `${response.status} ${response.statusText}`}))
+		response => response.ok ? (sel ? Promise.resolve(response) : response.json()) : Promise.resolve({ url: response.url, error: `${response.status} ${response.statusText}`})
 	);
 }
 
@@ -1365,6 +1371,12 @@ function handleCommentForm(form) {
 	});
 	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
 	
+	if (!form.elements[ 'cancel']) {
+		form.elements['preview'].after(
+			'\n', _setup('button', { id: 'cancel', class: 'btn btn-default', text: 'Отмена' })
+		)
+	}
+	
 	form.elements[ 'csrf' ].value = TOKEN;
 	form.elements['preview'].type = 'button';
 	form.elements[ 'cancel'].type = 'button';
@@ -1380,15 +1392,13 @@ function handleCommentForm(form) {
 		target.showed = true;
 		form.appendChild( NODE_PREVIEW );
 		
-		const params = {};
-		
-		for (let { name, value } of form.elements) {
-			name && (params[name] = value);
-		}
-		
 		const refresh = () => {
-			params.msg = TEXT_AREA.value;
-			sendFormData('/add_comment_ajax', params).then(
+			
+			const formData = new FormData( form );
+			
+			formData.append('preview', '');
+			
+			sendFormData('/add_comment_ajax', formData).then(
 				({ errors, preview }) => {
 					NODE_PREVIEW.children[0].innerHTML   = errors.join('\n<br>\n');
 					NODE_PREVIEW.children[1].textContent = preview['title'] || '';
@@ -1406,6 +1416,12 @@ function handleCommentForm(form) {
 		}
 	});
 	
+	let action = form.getAttribute('action');
+	let edit   = action === '/edit_comment';
+	
+	if (!edit)
+		action = '/add_comment_ajax';
+	
 	form.addEventListener('submit', e => {
 		
 		e.preventDefault();
@@ -1413,27 +1429,19 @@ function handleCommentForm(form) {
 		
 		let r = setTimeout(() => {
 			
-			const params = {};
+			const formData = new FormData( e.target );
 			
-			for (let { name, value } of form.elements) {
-				name && name !== 'preview' && (params[ name ] = value);
-			}
-			
-			sendFormData('/add_comment_ajax', params).then(({ url, error }) => {
+			sendFormData(action, formData, edit).then(({ url, error }) => {
 				if (error)
 					throw error;
-				if (parseLORUrl(url).topic != LOR.topic)
-					document.body.appendChild( _setup('form', { action: url, method: 'GET' }) ).submit();
-				clearForm(
-					processButton(false), true
-				);
-				form.parentNode.parentNode.querySelector('.replyComment').dispatchEvent(
-					new MouseEvent('click', {
-						cancelable: true,
-						bubbles   : true,
-						view      : window
-					})
-				);
+				if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
+					window.onbeforeunload = null;
+					location.href         = url ;
+					return;
+				}
+				processButton(false)
+				clearForm();
+				closeForm();
 			}).catch(error => {
 				form.appendChild( NODE_PREVIEW ).children[0].innerHTML = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n(${ error })`;
 				processButton(false);
@@ -1448,6 +1456,8 @@ function handleCommentForm(form) {
 		};
 	});
 	
+	window.addEventListener('keyup', () => { _ctrl_ = false });
+	window.addEventListener('keydown', e => { _ctrl_ = e.ctrlKey });
 	window.addEventListener('keypress', winKeyHandler);
 	window.onbeforeunload = () => (
 		TEXT_AREA.value != '' && form.parentNode.style['display'] != 'none'
@@ -1463,21 +1473,41 @@ function handleCommentForm(form) {
 		form.elements['mode'].addEventListener('change', mode_change);
 		mode_change({ target: form.elements['mode'] });
 	} else {
-		mode_change({ target: form.querySelector('select[disabled]') });
+		mode_change({
+			target: form.querySelector('select[disabled]') || form.insertBefore(
+				_setup('select', { style: 'display: block;', html: '<option>LORCODE</option><option>Markdown</option>' }, { change: mode_change }),
+				form.firstElementChild
+			)
+		});
 	}
+	
 	function processButton(y) {
 		form.elements[ 'cancel'].className = y ? 'btn btn-danger' : 'btn btn-default';
 		form.elements['preview'].disabled  = SUBMIT_BTN.disabled = y;
 		SUBMIT_BTN.classList[y ? 'add' : 'remove']('process');
 	}
-	function clearForm(_, y) {
-		if (y || confirm('Очистить форму?')) {
-			form.elements[ 'msg' ].value = '';
-			form.elements['title'].value = '';
-			NODE_PREVIEW.children[0].innerHTML   = '';
-			NODE_PREVIEW.children[1].textContent = '';
-			NODE_PREVIEW.children[2].innerHTML   = '';
+	function clearForm(c) {
+		if (c) {
+			const length = TEXT_AREA.textLength + form.elements['title'].textLength;
+			const answer = length > 0 && !confirm('Очистить форму?');
+			closeForm();
+			if (answer)
+				return;
 		}
+		form.elements[ 'msg' ].value = '';
+		form.elements['title'].value = '';
+		NODE_PREVIEW.children[0].innerHTML   = '';
+		NODE_PREVIEW.children[1].textContent = '';
+		NODE_PREVIEW.children[2].innerHTML   = '';
+	}
+	function closeForm() {
+		form.parentNode.parentNode.querySelector('.replyComment').dispatchEvent(
+			new MouseEvent('click', {
+				cancelable: true,
+				bubbles   : true,
+				view      : window
+			})
+		);
 	}
 }
 
@@ -1490,10 +1520,13 @@ function tagMemories(e) {
 	// приостановка действий по клику на кнопку до окончания текущего запроса
 	this.disabled = true;
 	
-	const $this  = this;
-	const  del   = this.classList.contains('selected');
-	const   tag  = this.getAttribute('data-tag');
-	const params = { csrf: TOKEN, tagName: tag };
+	const $this = this;
+	const  del  = this.classList.contains('selected');
+	const fdata = new FormData;
+	
+	fdata.append(del ? 'del' : 'add', '');
+	fdata.append('csrf'   , TOKEN);
+	fdata.append('tagName', this.getAttribute('data-tag'));
 	
 	switch (this.id) {
 	case 'tagFavAdd':
@@ -1505,9 +1538,7 @@ function tagMemories(e) {
 		var attrs = del ? { title: 'Игнорировать', class: '' } : { title: 'Перестать игнорировать', class: 'selected' };
 	}
 	
-	params[del ? 'del' : 'add'] = '';
-	
-	sendFormData(`/user-filter/${ name }-tag`, params).then(({ error, count }) => {
+	sendFormData(`/user-filter/${ name }-tag`, fdata).then(({ error, count }) => {
 		if (!error) {
 			_setup($this, attrs).parentNode.children[name.replace('orite', 's') +'Count'].textContent = count;
 		} else
@@ -1527,21 +1558,24 @@ function topicMemories(e) {
 	// приостановка действий по клику на кнопку до окончания текущего запроса
 	this.disabled = true;
 	
-	const $this  = this;
-	const rm_id  = this.getAttribute('rm-id');
-	const  name  = this.id.split('_')[0];
-	const watch  = name === 'memories';
-	const params = { csrf: TOKEN, watch };
+	const $this = this;
+	const rm_id = this.getAttribute('rm-id');
+	const  name = this.id.split('_')[0];
+	const watch = name === 'memories';
+	const fdata = new FormData;
+
+	fdata.append('csrf' , TOKEN);
+	fdata.append('watch', watch);
 	
 	if (rm_id) {
-		params['remove'] = '';
-		params[  'id'  ] = rm_id;
+		fdata.append('remove', '');
+		fdata.append(  'id'  , rm_id);
 	} else {
-		params[ 'add' ] = '';
-		params['msgid'] = LOR.topic;
+		fdata.append( 'add' , '');
+		fdata.append('msgid', LOR.topic);
 	}
 	
-	sendFormData('/memories.jsp', params).then(data => {
+	sendFormData('/memories.jsp', fdata).then(data => {
 		if (data.id) {
 			$this.title = watch ? 'Отслеживается' : 'В избранном';
 			$this.setAttribute('rm-id', data.id);
@@ -1763,7 +1797,17 @@ function domToMarkdown(childNodes) {
 
 const App = (() => {
 	
-	var main_events_count;
+	var main_events_count, apply_set = {
+		set 'Code Block Short Size' (v) {
+			var length = document.createTextNode( v );
+			document.getElementById('start-rws').nextElementSibling.append(
+				'\n.spoiled { height: ', length, 'px!important; }'
+			);
+			Object.defineProperty(apply_set, 'Code Block Short Size', {
+				set: function(v) { length.textContent = v.toString(); }
+			});
+		}
+	}
 	
 	if (typeof chrome !== 'undefined' && chrome.runtime.id) {
 		
@@ -1772,7 +1816,7 @@ const App = (() => {
 			
 			const initSettings = items => {
 				for (let name in items) {
-					USER_SETTINGS[name] = items[name];
+					USER_SETTINGS[name] = apply_set[name] = items[name];
 				}
 				port.onMessage.removeListener(initSettings);
 				resolve();
@@ -1782,7 +1826,7 @@ const App = (() => {
 			chrome.runtime.sendMessage({ action : 'l0rNG-settings' });
 			chrome.storage.onChanged.addListener(items => {
 				for (let name in items) {
-					USER_SETTINGS[name] = items[name].newValue;
+					USER_SETTINGS[name] = apply_set[name] = items[name].newValue;
 				}
 			});
 		});
@@ -1828,7 +1872,7 @@ const App = (() => {
 		const setValues = items => {
 			for (let name in USER_SETTINGS) {
 				let inp = loryform.elements[name];
-				inp[inp.type === 'checkbox' ? 'checked' : 'value'] = (USER_SETTINGS[name] = items[name]);
+				inp[inp.type === 'checkbox' ? 'checked' : 'value'] = (USER_SETTINGS[name] = apply_set[name] = items[name]);
 			}
 		}
 		
@@ -1851,6 +1895,12 @@ const App = (() => {
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
 				<span class="tab-cell" id="applymsg"><input type="checkbox" id="Realtime Loader"></span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
+				<span class="tab-cell"><input type="number" id="Code Block Short Size" min="15" step="1">
+				px
+				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
@@ -2439,6 +2489,12 @@ function HighlightJS() {
 	}
 	function o(parent) {
 		Array.prototype.map.call(parent.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(function(a) {
+			if (a.offsetHeight > USER_SETTINGS['Code Block Short Size']) {
+				a.parentNode.parentNode.classList.add('spoiled');
+				a.parentNode.parentNode.append( _setup('span', { class: 'spoiler-open', style: 'cursor: pointer;', text: 'Развернуть' }, {
+					click: (e) => { e.target.textContent = e.target.parentNode.classList.toggle('spoiled') ? 'Развернуть' : 'Свернуть'; e.preventDefault(); }
+				}))
+			}
 			p(a, hljs.tabReplace)
 		})
 	}

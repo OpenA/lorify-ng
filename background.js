@@ -7,7 +7,8 @@ var defaults = { // default settings
 	'Delay Close Preview'  : 800,
 	'Desktop Notification' : true,
 	'Preloaded Pages Count': 1,
-	'Scroll Top View'      : true
+	'Scroll Top View'      : true,
+	'Code Block Short Size': 512
 };
 // load settings
 chrome.storage.onChanged.addListener(items => {
@@ -30,7 +31,7 @@ const empty_Url = [
 	'chrome://newtab/'
 ];
 
-var text  = '';
+var notes = 0;
 var timr  = setTimeout(getNotifications, 1e3);
 
 //chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
@@ -82,9 +83,9 @@ function openTab() {
 	chrome.tabs.query({ url: '*://www.linux.org.ru/notifications' }, onGetTabs);
 }
 function clearNotes() {
-	text = '';
-	chrome.browserAction.setBadgeText({ text });
-	openPorts.forEach(port => port.postMessage( text ));
+	notes = 0;
+	chrome.browserAction.setBadgeText({ text: '' });
+	openPorts.forEach(port => port.postMessage(''));
 }
 
 function messageHandler({ action }, { tab }) {
@@ -94,9 +95,8 @@ function messageHandler({ action }, { tab }) {
 			openPorts.get(tab.id).postMessage( settings );
 			break;
 		case 'l0rNG-reset':
-			text = '';
-			chrome.browserAction.setBadgeText({ text });
-			openPorts.forEach(port => port.postMessage( text ));
+			clearNotes();
+			break;
 		case 'l0rNG-checkNow':
 			clearTimeout(timr);
 			getNotifications();
@@ -108,8 +108,8 @@ function getNotifications() {
 	const xhr = new XMLHttpRequest;
 	xhr.open('GET', 'https://www.linux.org.ru/notifications-count', true);
 	xhr.onload = ({ target: { status, response } }) => {
-		if (status === 200 && response != 0 && text !== response) {
-			sendNotify( '('+ (text = response) +')' );
+		if (status === 200 && notes != response) {
+			sendNotify( (notes = Number(response)) );
 		}
 		clearTimeout(timr);
 		timr = setTimeout(getNotifications, 40e3);
@@ -117,15 +117,15 @@ function getNotifications() {
 	xhr.send(null);
 }
 
-function sendNotify(notes) {
-	if (settings['Desktop Notification']) {
+function sendNotify(count) {
+	if (settings['Desktop Notification'] && count) {
 		chrome.notifications.create('lorify-ng notification', {
 			type    : 'basic',
 			title   : 'www.Linux.Org.Ru',
-			message : 'Уведомлений: '+ text,
+			message : 'Уведомлений: '+ count,
 			iconUrl : './icons/penguin-64.png'
 		});
 	}
-	chrome.browserAction.setBadgeText({ text });
-	openPorts.forEach(port => port.postMessage( notes ));
+	chrome.browserAction.setBadgeText({ text: count ? count.toString() : '' });
+	openPorts.forEach(port => port.postMessage( count ? '('+ count +')' : count ));
 }

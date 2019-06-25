@@ -5,12 +5,12 @@ const notify   = document.getElementById('notifications');
 
 applymsg.addEventListener('animationend', () => applymsg.classList.remove('apply-anim'));
 
-chrome.runtime.getBackgroundPage( ({ text, openTab, settings, defaults }) => {
+chrome.runtime.getBackgroundPage( ({ notes, openTab, settings, defaults }) => {
 	
 	var timer = null;
 	
-	notify.hidden = !text;
-	notify.firstElementChild.textContent = text;
+	notify.hidden = !notes;
+	notify.firstElementChild.textContent = notes;
 	notify.firstElementChild.onclick = () => {
 		notify.hidden = true;
 		openTab();
