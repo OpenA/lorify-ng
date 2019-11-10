@@ -13,6 +13,29 @@
 				padding: 4px 2px;
 				vertical-align: middle;
 			}
+			input[type="number"] {
+				max-width: 50%;
+				min-width: 50%;
+			}
+			.step-line, .step-line > input {
+				width: 180px;
+			}
+			st:before, .step-line > input {
+				position: absolute;
+			}
+			st + st {
+				margin-left: 10%;
+			}
+			st {
+				padding: 5px 0;
+				border: 0 solid #ccc;
+				counter-increment: stepIdx;
+				border-left-width: 1px;
+			}
+			st:before {
+				content: counter(stepIdx);
+				font: italic 10px Arial;
+			}
 			.apply-anim:after {
 				content: 'Настройки сохранены.';
 				-webkit-animation: apply 2s linear 1;
@@ -93,6 +116,13 @@
 				<span class="tab-cell">Возвращать наверх:</span>
 				<span class="tab-cell">
 					<input type="checkbox" id="Scroll Top View">
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Задержка перед отправкой:</span>
+				<span class="tab-cell step-line">
+					<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
+					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
 				</span>
 			</div>
 			<div class="tab-row">

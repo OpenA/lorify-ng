@@ -37,7 +37,7 @@ chrome.runtime.getBackgroundPage( ({ notes, openTab, settings, defaults }) => {
 			case 'checkbox':
 				settings[target.id] = target.checked;
 				break;
-			case 'number':
+			default:
 				const min = Number (target.min);
 				settings[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
 		}

@@ -8,6 +8,7 @@ var defaults = { // default settings
 	'Desktop Notification' : true,
 	'Preloaded Pages Count': 1,
 	'Scroll Top View'      : true,
+	'Upload Post Delay'    : 5,
 	'Code Block Short Size': 512
 };
 // load settings

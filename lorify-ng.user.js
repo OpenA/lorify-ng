@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.7.4
+// @version     2.8.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -20,6 +20,7 @@ const USER_SETTINGS = {
 	'Desktop Notification': true,
 	'Preloaded Pages Count': 1,
 	'Scroll Top View': true,
+	'Upload Post Delay': 5,
 	'Code Block Short Size': 512
 }
 
@@ -43,7 +44,7 @@ const Timer         = {
 }
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
-		var _= { value: function(){} }; Object.defineProperties(window, { initNextPrevKeys: _, $script: _, define: { configurable: true, get: define_amd }});
+		var _= { value: function(){} }; Object.defineProperties(window, { initStarPopovers: _, initNextPrevKeys: _, $script: _, define: { configurable: true, get: define_amd }});
 		var tag_memories_form_setup = topic_memories_form_setup;
 		$script.ready = function(name, call) {
 			if (name == 'lorjs')
@@ -114,9 +115,6 @@ document.documentElement.append(
 			overflow-y: hidden;
 			animation: slideUp 1s ease-out;
 		}
-		#markup-panel {
-			margin-left: 5px;
-		}
 		#markup-panel > .btn {
 			font-size: smaller!important;
 			padding: 3px 10px!important;
@@ -136,10 +134,11 @@ document.documentElement.append(
 		.process {
 			color: transparent!important;
 			position: relative;
+			max-width: 80px;
 		}
 		.process:after {
 			content: "....";
-			margin: 6px 30px;
+			margin: 6px 20px;
 			top: 0;
 			display: block;
 			position: absolute;
@@ -148,7 +147,27 @@ document.documentElement.append(
 			animation: process 3s linear infinite;
 			-webkit-animation: process 3s linear infinite;
 		}
-		
+
+		.scrolltop-btn {
+			transform: rotate(90deg);
+			position: fixed;
+			cursor: pointer;
+			right: 15px;
+			bottom: 15px;
+			padding: 6px;
+			opacity: .3;
+		}
+		.scrolltop-btn:before {
+			content: '\x52';
+			font: bold 22px fontello;
+		}
+		.scrolltop-btn:hover {
+			background-color: black;
+			border-radius: 7px;
+			filter: invert(100%);
+			opacity: .5;
+		}
+
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		
@@ -385,9 +404,9 @@ _setup(document, null, {
 		this.removeEventListener('DOMContentLoaded', resetNotif);
 		
 		if ('reset_form' in this.forms) {
-			sendFormData('/notifications-reset', new FormData(
+			sendFormData('notifications-reset', new FormData(
 				_setup(this.forms['reset_form'], { style: 'display: none;' })
-			), true).then( () => App.reset() );
+			), false).then( () => App.reset() );
 		}
 	} : function onDOMReady() {
 		
@@ -395,13 +414,24 @@ _setup(document, null, {
 		
 		const [, s_top, replyto, s_cid] = location.search.match(/\?(?:topic=([0-9]+)(?:\&replyto=([0-9]+))?|cid=([0-9]+))/) || '';
 		const top  = this.getElementById(`topic-${ LOR.topic || s_top }`);
+		const user = this.querySelector('#loginGreating > a[href$="/profile"]');
+		const form = this.forms['commentForm'] || this.forms['messageForm'];
 		const init = App.init();
+
+		if (user) {
+			LOR.Login = new RegExp(user.innerText);
+		} else {
+			this.querySelectorAll('.fav-buttons > a').forEach(a => { a.href = 'javascript:void(0)' });
+			LOR.Login = /(!^)/;
+		}
+		// add scroll top button
+		this.body.appendChild(
+			_setup('div', { class: 'scrolltop-btn' }, { click: () => document.documentElement.scrollIntoView({ block: 'start', behavior: 'smooth' }) })
+		);
 		
-		LOR.user = ( this.getElementById('loginGreating') || anonymous ).innerText;
-		
-		if ((LOR.form = this.forms['commentForm'] || this.forms['messageForm'])) {
+		if (form) {
 			
-			handleCommentForm(LOR.form);
+			handleCommentForm((LOR.CommentForm = form));
 			this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 			
 			let bd_rep = this.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
@@ -419,7 +449,7 @@ _setup(document, null, {
 		const ts = top ? top.querySelector(`a[itemprop="creator"]`) : null;
 		
 		if (ts) {
-			LOR.TS = ts.innerText;
+			LOR.TopicStarter = ts.innerText;
 			this.getElementById('start-rws').nextElementSibling.append(`\n
 				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
 				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
@@ -580,11 +610,13 @@ var _ctrl_ = false;
 
 function winKeyHandler(e) {
 	
-	const $this = LOR.form.elements['msg'];
+	const $this = LOR.CommentForm.elements['msg'];
 	const key   = e.key || String.fromCharCode(e.charCode);
 	
 	if (e.keyCode === 13 && _ctrl_) {
-		return LOR.form.querySelector('[type="submit"]').click();
+		return simulateClick(
+			LOR.CommentForm.querySelector('.form-actions > [do-upload]')
+		);
 	}
 	
 	if (e.target === $this) {
@@ -811,9 +843,9 @@ function onWSData(dbCiD) {
 	// Get an HTML containing the comment
 	getDataResponse(`${LOR.path}?filter=list&cid=${dbCiD[0]}&skipdeleted=true`,
 		({ response, responseURL }) => { // => OK
+
 			const { page } = parseLORUrl(responseURL);
-			
-			const comms = getCommentsContent(response);
+			const comms    = getCommentsContent(response);
 			
 			if (pagesCache.has(page)) {
 			
@@ -889,7 +921,9 @@ function onWSData(dbCiD) {
 
 function addToCommentsCache(els, attrs, jqfix) {
 	
-	var usr_refs = 0; 
+	const { path, Login, TopicStarter } = LOR;
+
+	var usr_refs = 0;
 	
 	for (let el of els) {
 		
@@ -904,7 +938,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 			(CommentsCache[cid] = el), attrs
 		);
 		
-		el.querySelectorAll(`.msg_body > *:not(.reply):not(.sign) a[href*="${ LOR.path }?cid="]`).forEach(a => {
+		el.querySelectorAll(`.msg_body > *:not(.reply):not(.sign) a[href*="${ path }?cid="]`).forEach(a => {
 			_setup(a, { class: 'link-navs', cid: a.search.replace('?cid=', '') })
 		});
 		
@@ -921,7 +955,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 				);
 			} else {
 				_setup(acid, { class: 'link-pref', cid: num });
-				usr_refs += new RegExp(LOR.user).test(acid.nextSibling.textContent);
+				usr_refs += Login.test(acid.nextSibling.textContent);
 			}
 			// Create new response-map for this comment
 			if (!(num in ResponsesMap)) {
@@ -946,7 +980,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 			}
 			
 			ResponsesMap[cid].forEach(attrs => {
-				attrs['class' ] = 'link-pref'+ (attrs.text == LOR.TS ? ' ts' : '');
+				attrs['class' ] = 'link-pref'+ (attrs.text == TopicStarter ? ' ts' : '');
 				attrs['search'] = '?cid='+ attrs.cid;
 				comment['response_block'].appendChild( _setup('a', attrs) );
 			});
@@ -972,7 +1006,7 @@ function getCommentsContent(html) {
 	// Remove banner scripts
 	comms.querySelectorAll('script').forEach(s => s.remove());
 	// Add reply button action
-	if (LOR.form)
+	if (LOR.CommentForm)
 		doc.querySelectorAll('a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 	// update favorites and memories counter
 	fav.children[  'favs_count'  ].textContent = newfv.children[  'favs_count'  ].textContent;
@@ -985,7 +1019,7 @@ function getCommentsContent(html) {
 		const old_el = old.querySelector(name),
 		      new_el = topic.querySelector(name);
 		if (old_el.textContent != new_el.textContent) {
-			old_el.parentNode.replaceChild(old_el, new_el);
+			old_el.parentNode.replaceChild(new_el, old_el);
 			Highlight_Code.apply( new_el );
 		}
 	}
@@ -993,7 +1027,7 @@ function getCommentsContent(html) {
 }
 
 const openPreviews = document.getElementsByClassName('preview');
-var _offset_ = 1, __view = () => void 0;
+var _offset_ = 1, _loads_ = {};
 
 function removePreviews(comment) {
 	var c = openPreviews.length - _offset_;
@@ -1003,11 +1037,26 @@ function removePreviews(comment) {
 }
 
 function goToCommentPage(cid) {
-	const comment = CommentsCache[cid];
-	const num = pagesCache.get( comment.parentNode );
-	Navigation.page = num;
-	Navigation.complete.then(() => comment.scrollIntoView({ block: 'start', behavior: 'smooth' }));
-	history.pushState(null, null, LOR.path + (num ? '/page'+ num : '') +'#comment-'+ cid);
+	return new Promise((resolve, reject) => {
+
+		var comment = document.getElementById(`comment-${cid}`);
+
+		if (comment) {
+			comment.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			history.pushState(null, null, `${location.pathname}#comment-${cid}`);
+			resolve(comment);
+		} else if (cid in CommentsCache) {
+			const num = pagesCache.get( CommentsCache[cid].parentNode );
+			Navigation.page = num;
+			Navigation.complete.then(() => {
+				CommentsCache[cid].scrollIntoView({ block: 'start', behavior: 'smooth' })
+				resolve(CommentsCache[cid]);
+			});
+			history.pushState(null, null, LOR.path + (num ? '/page'+ num : '') +'#comment-'+ cid);
+		} else {
+			reject();
+		}
+	});
 }
 
 function addPreviewHandler(comment, attrs) {
@@ -1018,41 +1067,27 @@ function addPreviewHandler(comment, attrs) {
 		
 		switch (aClass) {
 		case 'link-navs':
-			var loadRes = loadFullPage;
 		case 'link-pref':
-			var cid  = e.target.getAttribute('cid'),
-				view = document.getElementById(`comment-${cid}`);
+			var cid  = e.target.getAttribute('cid');
 			_offset_ = 1;
 			['Close Preview', 'Open Preview', e.target.href].forEach(Timer.clear);
 			removePreviews();
-			if (view) {
-				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				history.pushState(null, null, `${location.pathname}#comment-${cid}`);
-			} else {
-				if (cid in CommentsCache) {
+			goToCommentPage(cid).catch(() => {
+				const href = e.target.pathname + e.target.search;
+				(_loads_[href] || loadFullPage(href)).then(() => {
 					goToCommentPage(cid);
-				} else
-					loadRes(e.target.pathname + e.target.search).then(goToCommentPage.bind(null, cid));
-			}
+				});
+			});
 			e.preventDefault();
 			break;
 		case 'replyComment':
 		case 'quoteComment':
-			var cid = comment.id.replace('preview-', ''),
-			   view = document.getElementById(`comment-${cid}`),
-			  click = new MouseEvent('click', {
-					cancelable: true,
-					bubbles   : true,
-					view      : window
-				});
-			if (view) {
-				history.pushState(null, null, `${location.pathname}#comment-${cid}` );
-				view.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				view.querySelector(`.${aClass}`).dispatchEvent(click);
-			} else {
-				goToCommentPage(cid);
-				Navigation.complete.then(() => CommentsCache[cid].querySelector(`.${aClass}`).dispatchEvent(click));
-			}
+			var cid = comment.id.replace('preview-', '');
+			goToCommentPage(cid).then(target => {
+				simulateClick(
+					target.querySelector(`.${aClass}`)
+				);
+			});
 			e.preventDefault();
 		}
 	});
@@ -1076,20 +1111,13 @@ function addPreviewHandler(comment, attrs) {
 				Timer.clear('Open Preview');
 			}
 		});
-		
-		var loadRes = (/**/) => new Promise(resolve => {
-			const f = __view;
-			__view = () => { __view = f; resolve(); }
-		});
-	} else {
-		var loadRes = loadFullPage;
 	}
 	
 	_setup(comment, attrs);
 }
 
 function loadFullPage(href) {
-	return new Promise(resolve => {
+	return new Promise((resolve, reject) => {
 		getDataResponse(href, ({ response, responseURL }) => { // => OK
 			const { page } = parseLORUrl(responseURL);
 			const comms    = getCommentsContent(response);
@@ -1101,8 +1129,8 @@ function loadFullPage(href) {
 				comms.querySelectorAll('.msg[id^="comment-"]')
 			);
 			
-			resolve();
-		});
+			resolve(comms);
+		}, reject);
 	});
 }
 
@@ -1126,31 +1154,21 @@ function showPreview(e) {
 		// Add Loading Process stub
 		commentEl = _setup('article', { class: 'msg preview', text: 'Загрузка...'});
 		// Get an HTML containing the comment
-		getDataResponse(e.target.pathname + e.target.search,
-			({ response, responseURL }) => { // => OK
-				const { page } = parseLORUrl(responseURL);
-				const comms    = getCommentsContent(response);
-				
-				pagesCache.set(page, comms);
-				pagesCache.set(comms, page);
-				
-				addToCommentsCache(
-					comms.querySelectorAll('.msg[id^="comment-"]')
+		const href = e.target.pathname + e.target.search;
+		(_loads_[href] = loadFullPage(href)).then(comms => {
+			if (commentEl.parentNode) {
+				commentEl.remove();
+				showCommentInternal(
+					comms.children['comment-'+ commentID].cloneNode((e.isNew = true)),
+					commentID,
+					e
 				);
-				
-				if (commentEl.parentNode) {
-					commentEl.remove();
-					showCommentInternal(
-						comms.children['comment-'+ commentID].cloneNode((e.isNew = true)),
-						commentID,
-						e
-					);
-				}
-				__view();
-			}, ({ status, statusText }) => { // => Error
-				commentEl.textContent = status +' '+ statusText;
-				commentEl.classList.add('msg-error');
-			});
+			}
+		}).catch(({ status, statusText }) => { // => Error
+			commentEl.textContent = status +' '+ statusText;
+			commentEl.classList.add('msg-error');
+			delete _loads_[href];
+		});
 	}
 	showCommentInternal(
 		commentEl,
@@ -1274,6 +1292,7 @@ function _setup(el, _Attrs, _Events) {
 function pagesPreload(num) {
 	return new Promise((resolve, reject) => {
 		const xhr = new XMLHttpRequest;
+		xhr.withCredentials = true;
 		xhr.open('GET', location.origin + LOR.path +'/page'+ num, true);
 		xhr.onload = () => {
 			if (xhr.status === 200) {
@@ -1306,6 +1325,7 @@ function parseLORUrl(uri) {
 
 function getDataResponse(uri, resolve, reject = () => void 0) {
 	const xhr = new XMLHttpRequest;
+	xhr.withCredentials = true;
 	xhr.open('GET', location.origin + uri, true);
 	xhr.onload = () => {
 		xhr.status === 200 ? resolve(xhr) : reject(xhr)
@@ -1313,7 +1333,7 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
-function sendFormData(uri, formData, sel) {
+function sendFormData(uri, formData, json = true) {
 	
 	const REQPARAMS = {
 		credentials : 'same-origin',
@@ -1324,15 +1344,28 @@ function sendFormData(uri, formData, sel) {
 		}
 	}
 	
-	return fetch(location.origin + uri, REQPARAMS).then(
-		response => response.ok ? (sel ? Promise.resolve(response) : response.json()) : Promise.resolve({ url: response.url, error: `${response.status} ${response.statusText}`})
+	return fetch(location.origin +'/'+ uri, REQPARAMS).then(
+		response => response.ok
+			? (json ? response.json() : Promise.resolve(response))
+			: Promise.reject(response)
+	);
+}
+
+function simulateClick(el) {
+	el && el.dispatchEvent(
+		new MouseEvent('click', {
+			cancelable: true,
+			bubbles   : true,
+			view      : window
+		})
 	);
 }
 
 function handleCommentForm(form) {
 	
 	const TEXT_AREA    = form.elements['msg'];
-	const SUBMIT_BTN   = form.querySelector('[type="submit"]');
+	const ACTION_JSP   = form.getAttribute('action').replace(/^\//, '');
+	const FACT_PANNEL  = form.querySelector('.form-actions');
 	const NODE_PREVIEW = _setup('div', { id: 'commentPreview', html: '<div class=error></div><h2></h2><span></span>' });
 	const MARKUP_PANEL = _setup('div', {
 		id   : 'markup-panel',
@@ -1370,91 +1403,153 @@ function handleCommentForm(form) {
 		}
 	});
 	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
-	
+
 	if (!form.elements[ 'cancel']) {
 		form.elements['preview'].after(
-			'\n', _setup('button', { id: 'cancel', class: 'btn btn-default', text: 'Отмена' })
+			'\n', _setup('button', { name: 'cancel', class: 'btn btn-default', text: 'Отмена' })
 		)
 	}
-	
+
 	form.elements[ 'csrf' ].value = TOKEN;
 	form.elements['preview'].type = 'button';
 	form.elements[ 'cancel'].type = 'button';
-	form.elements[ 'cancel'].onclick = clearForm;
-	form.elements[  'msg'  ].addEventListener('click', ({ target }) => target.classList.remove('select-break'));
-	form.elements['preview'].addEventListener('click', ({ target }) => {
-		
-		if (target.showed) {
-			target.showed = TEXT_AREA.oninput = null;
-			return NODE_PREVIEW.remove();
-		}
-		
-		target.showed = true;
-		form.appendChild( NODE_PREVIEW );
-		
-		const refresh = () => {
-			
+
+	for (const submit_btn of FACT_PANNEL.querySelectorAll('[type="submit"]')) {
+		submit_btn.type = 'button';
+		submit_btn.setAttribute('do-upload', '');
+	}
+
+	const doSubmit = {
+
+		UID: -1,
+
+		refresh: () => {
+				
 			const formData = new FormData( form );
 			
 			formData.append('preview', '');
-			
-			sendFormData('/add_comment_ajax', formData).then(
-				({ errors, preview }) => {
-					NODE_PREVIEW.children[0].innerHTML   = errors.join('\n<br>\n');
-					NODE_PREVIEW.children[1].textContent = preview['title'] || '';
-					NODE_PREVIEW.children[2].innerHTML   = preview['processedMessage'];
-					Highlight_Code.apply( NODE_PREVIEW );
-				}
+
+			if (form.elements['topic']) {
+				sendFormData('add_comment_ajax', formData).then(
+					({ errors, preview }) => {
+						NODE_PREVIEW.children[0].innerHTML   = errors.join('\n<br>\n');
+						NODE_PREVIEW.children[1].textContent = preview['title'] || '';
+						NODE_PREVIEW.children[2].innerHTML   = preview['processedMessage'];
+						Highlight_Code.apply( NODE_PREVIEW );
+					}
+				);
+			} else {
+				sendFormData(ACTION_JSP, formData, false).then(
+					res => res.text().then(html => {
+						const doc = new DOMParser().parseFromString(html, 'text/html'),
+						      msg = doc.querySelector('.messages');
+						NODE_PREVIEW.replaceChild(msg, NODE_PREVIEW.children[2]);
+						Highlight_Code.apply( msg );
+					})
+				);
+			}
+		},
+
+		process: (sbtn, y) => {
+			form.elements[ 'cancel'].className = `btn btn-${ y ? 'danger' : 'default' }`;
+			form.elements['preview'].disabled  = sbtn.disabled = y;
+			sbtn.classList[y ? 'add' : 'remove']('process');
+			for (const primary of FACT_PANNEL.querySelectorAll('.btn[do-upload]')) {
+				primary.disabled = y;
+			}
+		},
+
+		purge: (clry) => {
+
+			simulateClick(
+				form.parentNode.parentNode.querySelector('.replyComment')
 			);
-		}; refresh();
-		
-		let t = -1;
-		
-		TEXT_AREA.oninput = () => {
-			clearTimeout(t);
-			t = setTimeout(refresh, 1e3);
-		}
-	});
-	
-	let action = form.getAttribute('action');
-	let edit   = action === '/edit_comment';
-	
-	if (!edit)
-		action = '/add_comment_ajax';
-	
-	form.addEventListener('submit', e => {
-		
-		e.preventDefault();
-		processButton(true);
-		
-		let r = setTimeout(() => {
-			
-			const formData = new FormData( e.target );
-			
-			sendFormData(action, formData, edit).then(({ url, error }) => {
-				if (error)
-					throw error;
-				if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
-					window.onbeforeunload = null;
-					location.href         = url ;
-					return;
+
+			if (clry) {
+				form.elements[ 'msg' ].value = '';
+				form.elements['title'].value = '';
+				NODE_PREVIEW.children[0].innerHTML   = '';
+				NODE_PREVIEW.children[1].textContent = '';
+				NODE_PREVIEW.children[2].innerHTML   = '';
+			}
+		},
+
+		handleEvent: function({ target }) {
+
+			const { type, name } = target;
+
+			if (type === 'button') {
+				if (`do_${name}` in doSubmit) {
+					this[`do_${name}`]();
+				} else if (target.hasAttribute('do-upload')) {
+					this[`do_upload`](target, name);
 				}
-				processButton(false)
-				clearForm();
-				closeForm();
-			}).catch(error => {
-				form.appendChild( NODE_PREVIEW ).children[0].innerHTML = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n(${ error })`;
-				processButton(false);
-			});
-		}, 5e3);
-		
-		form.elements['cancel'].onclick = ({ target }) => {
-			clearTimeout(r);
-			processButton(false);
-			alert('Отправка прервана.');
-			target.onclick = clearForm;
-		};
-	});
+			}
+		},
+
+		'do_upload': function(btn, param) {
+
+			const { process, purge } = this;
+			
+			process(btn, true);
+
+			this.UID = setTimeout(() => {
+
+				const formData = new FormData( form );
+
+				if (param)
+					formData.append(param, '');
+
+				sendFormData(ACTION_JSP, formData, false).then(({ url }) => {
+					if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
+						window.onbeforeunload = null;
+						location.href         = url ;
+						return;
+					}
+					process(btn, false);
+					purge(true);
+				}).catch(({ status, statusText }) => {
+					form.appendChild( NODE_PREVIEW ).children[0].innerHTML = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n(${ status +' '+ statusText })`;
+					process(btn, false);
+				});
+			}, USER_SETTINGS['Upload Post Delay'] * 1e3);
+		},
+
+		'do_preview': function() {
+
+			if (NODE_PREVIEW.hasAttribute('opened')) {
+				NODE_PREVIEW.removeAttribute('opened', '');
+				NODE_PREVIEW.remove();
+				TEXT_AREA.oninput = null;
+			} else {
+
+				let t = -1, refresh = this.refresh; refresh();
+
+				form.appendChild( NODE_PREVIEW ).setAttribute('opened', '');
+
+				TEXT_AREA.oninput = () => {
+					clearTimeout(t);
+					t = setTimeout(refresh, 1e3);
+				}
+			}
+		},
+
+		'do_cancel': function() {
+
+			if (form.elements['cancel'].classList.contains('btn-danger')) {
+				clearTimeout(this.UID);
+				this.process(FACT_PANNEL.querySelector('.process[do-upload]'), false);
+				alert('Отправка прервана.');
+			} else {
+				const length = TEXT_AREA.textLength + form.elements['title'].value.length;
+				const answer = length > 0 && confirm('Очистить форму?');
+				this.purge(answer);
+			}
+		}
+	}
+
+	FACT_PANNEL.addEventListener('click', doSubmit);
+	TEXT_AREA.addEventListener('click', ({ target }) => target.classList.remove('select-break'));
 	
 	window.addEventListener('keyup', () => { _ctrl_ = false });
 	window.addEventListener('keydown', e => { _ctrl_ = e.ctrlKey });
@@ -1479,35 +1574,6 @@ function handleCommentForm(form) {
 				form.firstElementChild
 			)
 		});
-	}
-	
-	function processButton(y) {
-		form.elements[ 'cancel'].className = y ? 'btn btn-danger' : 'btn btn-default';
-		form.elements['preview'].disabled  = SUBMIT_BTN.disabled = y;
-		SUBMIT_BTN.classList[y ? 'add' : 'remove']('process');
-	}
-	function clearForm(c) {
-		if (c) {
-			const length = TEXT_AREA.textLength + form.elements['title'].textLength;
-			const answer = length > 0 && !confirm('Очистить форму?');
-			closeForm();
-			if (answer)
-				return;
-		}
-		form.elements[ 'msg' ].value = '';
-		form.elements['title'].value = '';
-		NODE_PREVIEW.children[0].innerHTML   = '';
-		NODE_PREVIEW.children[1].textContent = '';
-		NODE_PREVIEW.children[2].innerHTML   = '';
-	}
-	function closeForm() {
-		form.parentNode.parentNode.querySelector('.replyComment').dispatchEvent(
-			new MouseEvent('click', {
-				cancelable: true,
-				bubbles   : true,
-				view      : window
-			})
-		);
 	}
 }
 
@@ -1538,11 +1604,8 @@ function tagMemories(e) {
 		var attrs = del ? { title: 'Игнорировать', class: '' } : { title: 'Перестать игнорировать', class: 'selected' };
 	}
 	
-	sendFormData(`/user-filter/${ name }-tag`, fdata).then(({ error, count }) => {
-		if (!error) {
-			_setup($this, attrs).parentNode.children[name.replace('orite', 's') +'Count'].textContent = count;
-		} else
-			alert(error);
+	sendFormData(`user-filter/${ name }-tag`, fdata).then(({ count }) => {
+		_setup($this, attrs).parentNode.children[name.replace('orite', 's') +'Count'].textContent = count;
 		$this.disabled = false;
 	}).catch(() => {
 		$this.disabled = false;
@@ -1575,7 +1638,7 @@ function topicMemories(e) {
 		fdata.append('msgid', LOR.topic);
 	}
 	
-	sendFormData('/memories.jsp', fdata).then(data => {
+	sendFormData('memories.jsp', fdata).then(data => {
 		if (data.id) {
 			$this.title = watch ? 'Отслеживается' : 'В избранном';
 			$this.setAttribute('rm-id', data.id);
@@ -1595,18 +1658,18 @@ function topicMemories(e) {
 
 function toggleForm(underc, parent, href) {
 	const [, topic, replyto = 0 ] = href.match(/jsp\?topic=(\d+)(?:&replyto=(\d+))?$/);
-	if (LOR.form.elements['replyto'].value != replyto) {
+	if (LOR.CommentForm.elements['replyto'].value != replyto) {
 		parent.style['display'] = 'none';
 	}
 	if (parent.style['display'] == 'none') {
 		parent.className = 'slide-down';
 		parent.addEventListener('animationend', function(e, _) {
 			_setup(parent, { class: _ }, { remove: { animationend: arguments.callee }});
-			LOR.form.elements['msg'].focus();
+			LOR.CommentForm.elements['msg'].focus();
 		});
 		underc.appendChild(parent).style['display'] = null;
-		LOR.form.elements['replyto'].value = replyto;
-		LOR.form.elements[ 'topic' ].value = topic;
+		LOR.CommentForm.elements['replyto'].value = replyto;
+		LOR.CommentForm.elements[ 'topic' ].value = topic;
 	} else {
 		parent.className = 'slide-up';
 		parent.addEventListener('animationend', function(e, _) {
@@ -1625,7 +1688,7 @@ function handleReplyToBtn(btn) {
 			e.stopPropagation();
 			e.preventDefault();
 			
-			const parent = LOR.form.parentNode;
+			const parent = LOR.CommentForm.parentNode;
 			const underc = $this.parentNode.parentNode.parentNode;
 			
 			switch (e.target.classList[0]) {
@@ -1653,7 +1716,7 @@ function convMsgBody(msg) {
 	} else
 		arg.push(domToMarkdown(msg.childNodes)); // markdown
 	
-	lorcodeMarkup.apply(LOR.form.elements['msg'], arg);
+	lorcodeMarkup.apply(LOR.CommentForm.elements['msg'], arg);
 }
 
 function getRawText(el) {
@@ -1857,15 +1920,17 @@ const App = (() => {
 		const defaults   = Object.assign({}, USER_SETTINGS);
 		const startWatch = getDataResponse.bind(null, '/notifications-count',
 			({ response }) => {
-				var text = '';
 				if (response != 0) {
-					text = '('+ response +')';
 					if (notes != response) {
 						localStorage.setItem('l0rNG-notes', (notes = response));
 						USER_SETTINGS['Desktop Notification'] && sendNotify(response);
 					}
+					main_events_count.textContent = '('+ response +')';
+					lorypanel.children['lorynotify'].setAttribute('notes-cnt', response);
+				} else {
+					main_events_count.textContent = '';
+					lorypanel.children['lorynotify'].removeAttribute('notes-cnt');
 				}
-				main_events_count.textContent = lorynotify.textContent = text;
 				Timer.set('Check Notifications', startWatch, delay);
 			});
 		
@@ -1882,7 +1947,7 @@ const App = (() => {
 				case 'checkbox':
 					USER_SETTINGS[target.id] = target.checked;
 					break;
-				case 'number':
+				default:
 					const min = Number (target.min);
 					USER_SETTINGS[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
 			}
@@ -1931,6 +1996,13 @@ const App = (() => {
 				</span>
 			</div>
 			<div class="tab-row">
+				<span class="tab-cell">Задержка перед отправкой:</span>
+				<span class="tab-cell step-line">
+					<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
+					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
+				</span>
+			</div>
+			<div class="tab-row">
 				<span class="tab-cell">CSS анимация:</span>
 				<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
 					<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
@@ -1951,22 +2023,31 @@ const App = (() => {
 			Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
 		}
 		
-		const applymsg   = loryform.querySelector('#applymsg');
-		const lorynotify = _setup( 'a' , { id: 'lorynotify', class: 'lory-btn', href: 'notifications' });
-		const lorytoggle = _setup('div', { id: 'lorytoggle', class: 'lory-btn', html: `<style>
+		const applymsg  = loryform.querySelector('#applymsg');
+		const lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
+		<div id="lorynotify" class="lory-btn"></div>
+		<div id="lorytoggle" class="lory-btn"></div>
+		<style>
 			#lorynotify {
-				right: 60px;
-				text-decoration: none;
-				color: inherit;
-				font: bold 1.2em "Open Sans";
+				top: -4px;
+				left: -2px;
+				color: white;
+				font: bold 16px "Open Sans";
+				background-color: #3e85a8;
+				border-radius: 5px;
+				z-index: 1;
+			}
+			#lorynotify[notes-cnt]:before {
+				content: attr(notes-cnt);
+				padding: 0 4px;
 			}
 			#lorytoggle {
-				width: 32px;
-				height: 32px;
-				right: 5px;
-				cursor: pointer;
-				opacity: .5;
+				left: 0;
+				top: 0;
+				right: 0;
+				bottom: 0;
 				background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
+				opacity: .5;
 			}
 			#loryform {
 				display: table;
@@ -1979,15 +2060,45 @@ const App = (() => {
 				border-radius: 5px;
 				box-shadow: -1px 2px 8px rgba(0,0,0,.3);
 			}
-			#lorytoggle:hover, #lorytoggle.pinet { opacity: 1; }
-			.lory-btn { position: fixed; top: 5px; }
+			.lorify-settings-panel {
+				position: fixed;
+				top: 5px;
+				right: 5px;
+				padding: 16px;
+			}
+			.lorify-settings-panel:hover > *, .pushed { opacity: 1!important; }
+			.lory-btn { position: absolute; cursor: pointer; }
 			.tab-row  { display: table-row; font-size: 85%; color: #666; }
 			.tab-cell { display: table-cell;
 				position: relative;
 				padding: 4px 2px;
-				vertical-align: middle;
 				max-width: 180px;
+				vertical-align: middle;
 			}
+			input[type="number"] {
+				max-width: 50%;
+				min-width: 50%;
+			}
+			.step-line, .step-line > input {
+				width: 180px;
+			}
+			st:before, .step-line > input {
+				position: absolute;
+			}
+			st + st {
+				margin-left: 10%;
+			}
+			st {
+				padding: 5px 0;
+				border: 0 solid #ccc;
+				counter-increment: stepIdx;
+				border-left-width: 1px;
+			}
+			st:before {
+				content: counter(stepIdx);
+				font: italic 10px Arial;
+			}
+			#loginGreating { margin-right: 42px; }
 			#resetSettings, .apply-anim:after { position: absolute; right: 0; }
 			.apply-anim:after {
 				content: 'Настройки сохранены.';
@@ -1998,7 +2109,17 @@ const App = (() => {
 			@keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
 			@-webkit-keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
 		</style>`}, {
-			click: () => { lorytoggle.classList.toggle('pinet') ? document.body.appendChild(loryform) : loryform.remove() }
+			click: ({ target }) => {
+				if (target.classList[0] === 'lory-btn') {
+					switch (target.id) {
+						case 'lorynotify':
+							window.open('/notifications', '_blank');
+							break;
+						case 'lorytoggle':
+							target.classList.toggle('pushed') ? target.parentNode.after(loryform) : loryform.remove();
+					}
+				}
+			}
 		});
 		// Определяем статус оповещений:
 		switch (Notification.permission) {
@@ -2015,7 +2136,8 @@ const App = (() => {
 		}
 		window.addEventListener('storage', ({ key, newValue }) => {
 			if (key === 'l0rNG-notes') {
-				main_events_count.textContent = lorynotify.textContent = '('+ (notes = newValue) +')';
+				main_events_count.textContent = '('+ newValue +')';
+				lorypanel.children['lorynotify'].setAttribute('notes-cnt', (notes = newValue));
 				Timer.set('Check Notifications', startWatch, delay);
 			} else if (key === 'lorify-ng') {
 				setValues( JSON.parse(newValue) );
@@ -2026,11 +2148,13 @@ const App = (() => {
 			reset: () => localStorage.setItem('l0rNG-notes', (notes = '')),
 			init: function() {
 				if ( (main_events_count = document.getElementById('main_events_count')) ) {
-					if (notes)
-						lorynotify.textContent = main_events_count.textContent = '('+ notes +')';
+					if (notes) {
+						lorypanel.children['lorynotify'].setAttribute('notes-cnt', notes);
+						main_events_count.textContent = '('+ notes +')';
+					}
 					(this.checkNow = startWatch)();
 				}
-				document.body.append(lorynotify, lorytoggle);
+				document.body.appendChild(lorypanel);
 				return Promise.resolve();
 			}
 		}
