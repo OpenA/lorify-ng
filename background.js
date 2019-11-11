@@ -9,7 +9,7 @@ var defaults = { // default settings
 	'Preloaded Pages Count': 1,
 	'Scroll Top View'      : true,
 	'Upload Post Delay'    : 5,
-	'Code Block Short Size': 512
+	'Code Block Short Size': 255
 };
 // load settings
 chrome.storage.onChanged.addListener(items => {

@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.8.1
+// @version     2.8.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -21,7 +21,7 @@ const USER_SETTINGS = {
 	'Preloaded Pages Count': 1,
 	'Scroll Top View': true,
 	'Upload Post Delay': 5,
-	'Code Block Short Size': 512
+	'Code Block Short Size': 255
 }
 
 const pagesCache    = new Map;
@@ -166,6 +166,53 @@ document.documentElement.append(
 			border-radius: 7px;
 			filter: invert(100%);
 			opacity: .5;
+		}
+
+		.shrink-line {
+			position: absolute;
+			bottom: 0;
+			left: 25%;
+			right: 25%;
+			border-radius: 15px 15px 0 0;
+			background: rgba(0,0,0,.5);
+			text-align: center;
+			color: white;
+			cursor: pointer;
+			opacity: .5;
+		}
+		.shrink-line:hover {
+			opacity: 1;
+		}
+		.shrink-text {
+			padding: 5px 8px;
+		}
+		*:not(.cutted) > .shrink-text:after, .cutted > .shrink-text:before {
+			color: #689b19;
+		}
+		*:not(.cutted) > .shrink-text:before, .cutted > .shrink-text:after {
+			font: bold 12px monospace;
+		}
+		.cutted {
+			display: table;
+		}
+		.cutted > *:not(.shrink-text) {
+			display: none;
+		}
+		.cutted > .shrink-text:after {
+			content: '\x20\x20>>>';
+		}
+		.cutted > .shrink-text:before {
+			content: 'показать код';
+		}
+		*:not(.cutted) > .shrink-text {
+			border-radius: 0 0 5px;
+			background: rgba(0,0,0,.2);
+		}
+		*:not(.cutted) > .shrink-text:before {
+			content: '<<<\x20\x20';
+		}
+		*:not(.cutted) > .shrink-text:after {
+			content: 'убрать код';
 		}
 
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
@@ -413,7 +460,7 @@ _setup(document, null, {
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
 		
 		const [, s_top, replyto, s_cid] = location.search.match(/\?(?:topic=([0-9]+)(?:\&replyto=([0-9]+))?|cid=([0-9]+))/) || '';
-		const top  = this.getElementById(`topic-${ LOR.topic || s_top }`);
+		const top  = this.getElementById(`topic-${ LOR.topic }`);
 		const user = this.querySelector('#loginGreating > a[href$="/profile"]');
 		const form = this.forms['commentForm'] || this.forms['messageForm'];
 		const init = App.init();
@@ -446,24 +493,33 @@ _setup(document, null, {
 			}
 		}
 		
-		const ts = top ? top.querySelector(`a[itemprop="creator"]`) : null;
-		
-		if (ts) {
-			LOR.TopicStarter = ts.innerText;
-			this.getElementById('start-rws').nextElementSibling.append(`\n
-				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
-				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
-					content: "тс";
-					font-size: 75%;
-					color: dimgrey!important;
-					display: inline-block;
-					vertical-align: super;
-				}`);
-		}
-		
-		Highlight_Code.apply( top || this );
-		
-		if (!LOR.topic) {
+		if (top) {
+
+			const ts = top.querySelector(`a[itemprop="creator"]`);
+
+			if (ts) {
+				LOR.TopicStarter = ts.innerText;
+				this.getElementById('start-rws').nextElementSibling.append(`\n
+					a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
+					a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
+						content: "тс";
+						font-size: 75%;
+						color: dimgrey!important;
+						display: inline-block;
+						vertical-align: super;
+					}`);
+			}
+
+			Highlight_Code.apply( top );
+			addTopicHandler( top );
+
+		} else {
+
+			for (const tps of this.querySelectorAll('[id^="topic-"]')) {
+
+				Highlight_Code.apply( tps );
+				addTopicHandler( tps );
+			}
 			window.addEventListener('memories_setup', ({ detail }) => {
 				_setup(document.getElementById('tagFavAdd'), { 'data-tag': detail[0], onclick: tagMemories });
 				_setup(document.getElementById('tagIgnore'), { 'data-tag': detail[0], onclick: tagMemories });
@@ -1059,26 +1115,48 @@ function goToCommentPage(cid) {
 	});
 }
 
+function addTopicHandler(topic) {
+	
+	topic.addEventListener('click', ({ target }) => {
+
+		switch (target.classList[0]) {
+		case 'shrink-line':
+			target.textContent = `${ target.parentNode.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
+			target.parentNode.scrollIntoView();
+			break;
+		case 'shrink-text':
+			target.parentNode.classList.toggle('cutted');
+		}
+	});
+}
+
 function addPreviewHandler(comment, attrs) {
 	
 	comment.addEventListener('click', e => {
 		
 		const aClass = e.target.classList[0];
+		const el     = e.target;
 		
 		switch (aClass) {
+		case 'shrink-line':
+			el.textContent = `${ el.parentNode.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
+			el.parentNode.scrollIntoView();
+			break;
+		case 'shrink-text':
+			el.parentNode.classList.toggle('cutted');
+			break;
 		case 'link-navs':
 		case 'link-pref':
-			var cid  = e.target.getAttribute('cid');
+			var cid  = el.getAttribute('cid');
 			_offset_ = 1;
-			['Close Preview', 'Open Preview', e.target.href].forEach(Timer.clear);
+			['Close Preview', 'Open Preview', el.href].forEach(Timer.clear);
 			removePreviews();
 			goToCommentPage(cid).catch(() => {
-				const href = e.target.pathname + e.target.search;
+				const href = el.pathname + el.search;
 				(_loads_[href] || loadFullPage(href)).then(() => {
 					goToCommentPage(cid);
 				});
 			});
-			e.preventDefault();
 			break;
 		case 'replyComment':
 		case 'quoteComment':
@@ -1088,8 +1166,11 @@ function addPreviewHandler(comment, attrs) {
 					target.querySelector(`.${aClass}`)
 				);
 			});
-			e.preventDefault();
+			break;
+		default:
+			return;
 		}
+		e.preventDefault();
 	});
 	
 	if ( ! TOUCH_DEVICE ) {
@@ -1864,7 +1945,7 @@ const App = (() => {
 		set 'Code Block Short Size' (v) {
 			var length = document.createTextNode( v );
 			document.getElementById('start-rws').nextElementSibling.append(
-				'\n.spoiled { height: ', length, 'px!important; }'
+				'\n.shrinked { max-height: ', length, 'px!important; overflow-y: hidden; }'
 			);
 			Object.defineProperty(apply_set, 'Code Block Short Size', {
 				set: function(v) { length.textContent = v.toString(); }
@@ -1949,7 +2030,7 @@ const App = (() => {
 					break;
 				default:
 					const min = Number (target.min);
-					USER_SETTINGS[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
+					USER_SETTINGS[target.id] = apply_set[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
 			}
 			localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
 			applymsg.classList.add('apply-anim');
@@ -1963,7 +2044,7 @@ const App = (() => {
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
-				<span class="tab-cell"><input type="number" id="Code Block Short Size" min="15" step="1">
+				<span class="tab-cell"><input type="number" id="Code Block Short Size" min="0" step="1">
 				px
 				</span>
 			</div>
@@ -2098,7 +2179,7 @@ const App = (() => {
 				content: counter(stepIdx);
 				font: italic 10px Arial;
 			}
-			#loginGreating { margin-right: 42px; }
+			#loginGreating { margin-right: 42px!important; }
 			#resetSettings, .apply-anim:after { position: absolute; right: 0; }
 			.apply-anim:after {
 				content: 'Настройки сохранены.';
@@ -2612,15 +2693,22 @@ function HighlightJS() {
 		}
 	}
 	function o(parent) {
-		Array.prototype.map.call(parent.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(function(a) {
-			if (a.offsetHeight > USER_SETTINGS['Code Block Short Size']) {
-				a.parentNode.parentNode.classList.add('spoiled');
-				a.parentNode.parentNode.append( _setup('span', { class: 'spoiler-open', style: 'cursor: pointer;', text: 'Развернуть' }, {
-					click: (e) => { e.target.textContent = e.target.parentNode.classList.toggle('spoiled') ? 'Развернуть' : 'Свернуть'; e.preventDefault(); }
-				}))
+		const shrink_size = USER_SETTINGS['Code Block Short Size'];
+		Array.prototype.map.call(parent.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(
+			shrink_size < 20 ? a => {
+				a.parentNode.parentNode.classList.add('cutted');
+				a.parentNode.parentNode.prepend( _setup('span', { class: 'shrink-text' }) );
+				p(a, hljs.tabReplace);
+			} : a => {
+				if (a.offsetHeight > shrink_size) {
+					a.parentNode.parentNode.classList.add('shrinked');
+					a.parentNode.parentNode.prepend(
+						_setup('div', { class: 'shrink-line', text: 'Развернуть' })
+					);
+				}
+				p(a, hljs.tabReplace);
 			}
-			p(a, hljs.tabReplace)
-		})
+		);
 	}
 	var x = {};
 	this.LANGUAGES = x;
