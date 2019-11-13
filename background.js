@@ -7,6 +7,7 @@ var defaults = { // default settings
 	'Delay Close Preview'  : 800,
 	'Desktop Notification' : true,
 	'Preloaded Pages Count': 1,
+	'Picture Viewer'       : 2,
 	'Scroll Top View'      : true,
 	'Upload Post Delay'    : 5,
 	'Code Block Short Size': 255

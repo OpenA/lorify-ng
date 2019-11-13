@@ -38,8 +38,9 @@ chrome.runtime.getBackgroundPage( ({ notes, openTab, settings, defaults }) => {
 				settings[target.id] = target.checked;
 				break;
 			default:
-				const min = Number (target.min);
-				settings[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
+				const min = Number (target.min || 0);
+				const val = Number (target.value);
+				settings[target.id] = val >= min ? val : (target.value = min);
 		}
 		chrome.storage.sync.set(settings, () => applymsg.classList.add('apply-anim'));
 	}

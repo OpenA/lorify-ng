@@ -13,7 +13,7 @@
 				padding: 4px 2px;
 				vertical-align: middle;
 			}
-			input[type="number"] {
+			.tab-cell input[type="number"] {
 				max-width: 50%;
 				min-width: 50%;
 			}
@@ -113,9 +113,13 @@
 				</span>
 			</div>
 			<div class="tab-row">
-				<span class="tab-cell">Возвращать наверх:</span>
+				<span class="tab-cell">Просмотр картинок:</span>
 				<span class="tab-cell">
-					<input type="checkbox" id="Scroll Top View">
+					<select id="Picture Viewer">
+						<option value="0">Откл.</option>
+						<option value="1">Только для превью</option>
+						<option value="2">Для превью и ссылок</option>
+					</select>
 				</span>
 			</div>
 			<div class="tab-row">
@@ -123,6 +127,11 @@
 				<span class="tab-cell step-line">
 					<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
 					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Перемещать в начало страницы:</span>
+				<span class="tab-cell"><input type="checkbox" id="Scroll Top View">
 				</span>
 			</div>
 			<div class="tab-row">

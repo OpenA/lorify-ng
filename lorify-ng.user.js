@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.8.2
+// @version     2.8.3
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
@@ -19,6 +19,7 @@ const USER_SETTINGS = {
 	'Delay Close Preview': 800,
 	'Desktop Notification': true,
 	'Preloaded Pages Count': 1,
+	'Picture Viewer': 2,
 	'Scroll Top View': true,
 	'Upload Post Delay': 5,
 	'Code Block Short Size': 255
@@ -42,6 +43,27 @@ const Timer         = {
 		this[name] = setTimeout(func, USER_SETTINGS['Delay '+ name] || t);
 	}
 }
+const Dynamic_Style = (() => {
+
+	const style_el = document.createElement('style');
+
+	const max_shrink_val    = document.createTextNode(USER_SETTINGS['Code Block Short Size']);
+	const img_center_scale  = document.createTextNode('1'); // scale XY size 100%
+	const img_center_rotate = document.createTextNode('0'); // rotate angle 0/deg
+
+	style_el.append(
+		'.shrinked { max-height: ', max_shrink_val, 'px!important; overflow-y: hidden; }',
+		'.central-pic-img { transform: scale(', img_center_scale, ') rotate(', img_center_rotate,'deg); }'
+	)
+
+	return {
+		0: style_el,
+
+		set 'Code Block Short Size' (v) { max_shrink_val.textContent    = v.toString(); },
+		set 'Center Image Scale'    (v) { img_center_scale.textContent  = v.toFixed(2); },
+		set 'Center Image Rotate'   (v) { img_center_rotate.textContent = v.toString(); }
+	}
+})();
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
 		var _= { value: function(){} }; Object.defineProperties(window, { initStarPopovers: _, initNextPrevKeys: _, $script: _, define: { configurable: true, get: define_amd }});
@@ -214,6 +236,36 @@ document.documentElement.append(
 		*:not(.cutted) > .shrink-text:after {
 			content: 'убрать код';
 		}
+		.suplied:after {
+			content: '';
+			-webkit-animation: toHide 3s;
+			animation: toHide 3s;
+		}
+
+		.central-pic-overlay {
+			left: 0;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			background-color: rgba(17,17,17,.9);
+			position: fixed;
+			z-index: 99999;
+		}
+		.central-pic-overlay * {
+			position: absolute;
+		}
+		.central-pic-rotate {
+			left: 8px;
+			bottom: 8px;
+			width: 32px;
+			cursor: pointer;
+		}
+		.svg-circle-arrow {
+			fill: rgba(99,99,99,.5);
+		}
+		.central-pic-rotate:hover .svg-circle-arrow {
+			fill: #777;
+		}
 
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
@@ -238,7 +290,7 @@ document.documentElement.append(
 		
 		@-webkit-keyframes slideToShow-reverse { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
 		@keyframes slideToShow-reverse { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
-`}));
+`}), Dynamic_Style[0]);
 
 const Navigation = {
 	
@@ -617,6 +669,15 @@ _setup(document, null, {
 				}
 			}
 		});
+	},
+	animationstart: ({ target }) => {
+		if (target.className === 'code suplied') {
+			target.classList.remove('suplied');
+			if (target.offsetHeight > USER_SETTINGS['Code Block Short Size']) {
+				target.classList.add('shrinked');
+				target.prepend( _setup('div', { class: 'shrink-line', text: 'Развернуть' }) );
+			}
+		}
 	}
 });
 
@@ -1115,18 +1176,151 @@ function goToCommentPage(cid) {
 	});
 }
 
-function addTopicHandler(topic) {
-	
-	topic.addEventListener('click', ({ target }) => {
+const CentralPicture = (() => {
 
-		switch (target.classList[0]) {
+	var _Scale = 1.0,
+		_RDeg  = 0,
+		_X     = 0,
+		_Y     = 0;
+
+	const _IMG = _setup('img', {
+		class: 'central-pic-img',
+		style: 'left: 0; top: 0;'
+	},{
+		wheel: e => {
+
+			const delta = e.deltaX || e.deltaY;
+			const ratio = _Scale / 7.4;
+
+			if (delta > 0 && (_Scale - ratio) > 0.1) {
+				Dynamic_Style['Center Image Scale'] = (_Scale -= ratio);
+			} else if (delta < 0) {
+				Dynamic_Style['Center Image Scale'] = (_Scale += ratio);
+			}
+			e.preventDefault();
+
+		}, mousedown: e => {
+			
+			const { style } = e.target;
+
+			const startX = e.clientX - _X;
+			const startY = e.clientY - _Y;
+			const dragIMG = ({ clientX, clientY }) => {
+				style.left = (_X = clientX - startX) +'px';
+				style.top  = (_Y = clientY - startY) +'px';
+			}
+			const rmHandle = () => {
+				window.removeEventListener('mousemove', dragIMG);
+				window.removeEventListener('mouseup', rmHandle);
+			}
+			window.addEventListener('mousemove', dragIMG);
+			window.addEventListener('mouseup', rmHandle);
+
+			e.preventDefault();
+		}, error: ({ target }) => {
+			target.style.visibility = 'visible';
+		}
+	});
+
+	const calcSize = () => {
+
+		const { innerWidth, innerHeight } = window,
+			  { style, naturalWidth, naturalHeight } = _IMG;
+			
+		var iW, iH;
+		
+		if (innerWidth / innerHeight < naturalWidth / naturalHeight) {
+			const ratio = innerWidth * 0.85;
+			if (ratio > naturalWidth && style.maxWidth) {
+				iW = naturalWidth;
+				iH = naturalHeight;
+			} else {
+				iW = ratio;
+				iH = naturalHeight * (ratio / naturalWidth);
+			}
+		} else {
+			const ratio = 0.85 * innerHeight;
+			if (ratio > naturalHeight && style.maxHeight) {
+				iW = naturalWidth;
+				iH = naturalHeight;
+			} else {
+				iW = naturalWidth * (ratio / naturalHeight);
+				iH = ratio;
+			}
+		}
+		style.visibility  = 'visible';
+		style.left  = (_X = 0 - iW / 2) +'px';
+		style.top   = (_Y = 0 - iH / 2) +'px';
+		_IMG.width  = iW;
+		_IMG.height = iH;
+	}
+
+	const overlay = _setup('div', {
+		class : 'central-pic-overlay',
+		html  : `<div style="left: 50%; top: 50%;"></div>
+			<svg class="central-pic-rotate" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+				<path class="svg-circle-arrow" d="m31 20c-0.6 4.5-3.7 8.6-8 10.5-2 1.25-5 1.6-7.7 1.5l-1.7-0.15c-2.5-0.6-5-1.7-7-3.5-4.3-3.6-6-10-4-15 1.6-4.55 6-8.1 11-9 1.2-0.25 2.45-0.3 3.7-0.25l0.6-4.1h0.1c2.1 2.7 4.15 5.34 6.3 8-2.8 2-5.6 4.1-8.4 6 0.2-1.4 0.4-2.7 0.56-4.1-2.5-0.025-5.1 1.1-6.6 3.1-2.5 2.75-2.5 7.1-0.13 10 1.8 2.5 5.25 3.6 8.4 3 2.156-0.3 4.1-1.6 5.3-3.4 0.8-1 1.1-2.25 1.5-3.4 2 0.25 3.9592 0.5 7 0.8l0.1-0.05z"></path>
+			</svg>`
+	},{ click : ({ target }) => {
+		switch(target.classList[0]) {
+			case 'central-pic-rotate':
+			case 'svg-circle-arrow':
+				Dynamic_Style['Center Image Rotate'] = _RDeg === 270 ? (_RDeg = 0) : (_RDeg += 90);
+				break;
+			case 'central-pic-overlay':
+				overlay.remove();
+				_IMG.src = '';
+				_IMG.style.left = _X = 0;
+				_IMG.style.top  = _Y = 0;
+				Dynamic_Style['Center Image Scale'] = _Scale = 1;
+				Dynamic_Style['Center Image Rotate'] = _RDeg = 0;
+				window.removeEventListener('resize', calcSize, false);
+		}
+	}});
+	
+	overlay.firstElementChild.append( _IMG );
+
+	return {
+
+		expose: (src, pW, pH) => {
+
+			_IMG.style.visibility = 'hidden';
+			_IMG.onload = calcSize;
+			_IMG.src = src;
+			
+			window.addEventListener('resize', calcSize, false);
+			
+			document.body.append( overlay );
+		}
+	}
+})();
+
+function addTopicHandler(topic) {
+
+	topic.addEventListener('click', e => {
+
+		const aClass = e.target.classList[0];
+		var   el     = e.target;
+
+		switch (aClass) {
 		case 'shrink-line':
-			target.textContent = `${ target.parentNode.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
-			target.parentNode.scrollIntoView();
+			el.textContent = `${ el.parentNode.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
+			el.parentNode.scrollIntoView();
 			break;
 		case 'shrink-text':
-			target.parentNode.classList.toggle('cutted');
+			el.parentNode.classList.toggle('cutted');
+			break;
+		case 'medium-image':
+			el = el.parentNode;
+		case 'link-image':
+			if (USER_SETTINGS['Picture Viewer'] > (aClass == 'link-image')) {
+				CentralPicture.expose(el.href);
+				break;
+			}
+		default:
+			return;
 		}
+		e.preventDefault();
 	});
 }
 
@@ -1167,6 +1361,11 @@ function addPreviewHandler(comment, attrs) {
 				);
 			});
 			break;
+		case 'link-image':
+			if (USER_SETTINGS['Picture Viewer'] > 1) {
+				CentralPicture.expose(el.href);
+				break;
+			}
 		default:
 			return;
 		}
@@ -1941,17 +2140,7 @@ function domToMarkdown(childNodes) {
 
 const App = (() => {
 	
-	var main_events_count, apply_set = {
-		set 'Code Block Short Size' (v) {
-			var length = document.createTextNode( v );
-			document.getElementById('start-rws').nextElementSibling.append(
-				'\n.shrinked { max-height: ', length, 'px!important; overflow-y: hidden; }'
-			);
-			Object.defineProperty(apply_set, 'Code Block Short Size', {
-				set: function(v) { length.textContent = v.toString(); }
-			});
-		}
-	}
+	var main_events_count;
 	
 	if (typeof chrome !== 'undefined' && chrome.runtime.id) {
 		
@@ -1960,7 +2149,7 @@ const App = (() => {
 			
 			const initSettings = items => {
 				for (let name in items) {
-					USER_SETTINGS[name] = apply_set[name] = items[name];
+					USER_SETTINGS[name] = Dynamic_Style[name] = items[name];
 				}
 				port.onMessage.removeListener(initSettings);
 				resolve();
@@ -1970,7 +2159,7 @@ const App = (() => {
 			chrome.runtime.sendMessage({ action : 'l0rNG-settings' });
 			chrome.storage.onChanged.addListener(items => {
 				for (let name in items) {
-					USER_SETTINGS[name] = apply_set[name] = items[name].newValue;
+					USER_SETTINGS[name] = Dynamic_Style[name] = items[name].newValue;
 				}
 			});
 		});
@@ -2016,9 +2205,9 @@ const App = (() => {
 			});
 		
 		const setValues = items => {
-			for (let name in USER_SETTINGS) {
+			for (const name in Object.assign(USER_SETTINGS, items)) {
 				let inp = loryform.elements[name];
-				inp[inp.type === 'checkbox' ? 'checked' : 'value'] = (USER_SETTINGS[name] = apply_set[name] = items[name]);
+				inp[inp.type === 'checkbox' ? 'checked' : 'value'] =  Dynamic_Style[name] = USER_SETTINGS[name];
 			}
 		}
 		
@@ -2029,8 +2218,9 @@ const App = (() => {
 					USER_SETTINGS[target.id] = target.checked;
 					break;
 				default:
-					const min = Number (target.min);
-					USER_SETTINGS[target.id] = apply_set[target.id] = target.valueAsNumber >= min ? target.valueAsNumber : (target.value = min);
+					const min = Number (target.min || 0);
+					const val = Number (target.value);
+					USER_SETTINGS[target.id] = Dynamic_Style[target.id] = val >= min ? val : (target.value = min);
 			}
 			localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
 			applymsg.classList.add('apply-anim');
@@ -2072,8 +2262,13 @@ const App = (() => {
 				</span>
 			</div>
 			<div class="tab-row">
-				<span class="tab-cell">Возвращать наверх:</span>
-				<span class="tab-cell"><input type="checkbox" id="Scroll Top View">
+				<span class="tab-cell">Просмотр картинок:</span>
+				<span class="tab-cell">
+					<select id="Picture Viewer">
+						<option value="0">Откл.</option>
+						<option value="1">Только для превью</option>
+						<option value="2">Для превью и ссылок</option>
+					</select>
 				</span>
 			</div>
 			<div class="tab-row">
@@ -2081,6 +2276,11 @@ const App = (() => {
 				<span class="tab-cell step-line">
 					<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
 					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
+				</span>
+			</div>
+			<div class="tab-row">
+				<span class="tab-cell">Перемещать в начало страницы:</span>
+				<span class="tab-cell"><input type="checkbox" id="Scroll Top View">
 				</span>
 			</div>
 			<div class="tab-row">
@@ -2096,7 +2296,7 @@ const App = (() => {
 				}, 750)
 			});
 			
-		setValues( JSON.parse(localStorage.getItem('lorify-ng')) || USER_SETTINGS );
+		setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
 		loryform.elements.resetSettings.onclick = () => {
 			setValues( defaults );
 			localStorage.setItem('lorify-ng', JSON.stringify(defaults));
@@ -2156,7 +2356,7 @@ const App = (() => {
 				max-width: 180px;
 				vertical-align: middle;
 			}
-			input[type="number"] {
+			.tab-cell input[type="number"] {
 				max-width: 50%;
 				min-width: 50%;
 			}
@@ -2692,7 +2892,9 @@ function HighlightJS() {
 			}
 		}
 	}
+	const img_format = ['jpg','jpeg','png','gif','svg','webp'].map(ext => `a[href*=".${ext}?"],a[href$=".${ext}"]`).join(',');
 	function o(parent) {
+		parent.querySelectorAll(img_format).forEach(a => { a.className = 'link-image' });
 		const shrink_size = USER_SETTINGS['Code Block Short Size'];
 		Array.prototype.map.call(parent.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(
 			shrink_size < 20 ? a => {
@@ -2700,7 +2902,9 @@ function HighlightJS() {
 				a.parentNode.parentNode.prepend( _setup('span', { class: 'shrink-text' }) );
 				p(a, hljs.tabReplace);
 			} : a => {
-				if (a.offsetHeight > shrink_size) {
+				if (!a.offsetHeight) {
+					a.parentNode.parentNode.classList.add('suplied');
+				} else if (a.offsetHeight > shrink_size) {
 					a.parentNode.parentNode.classList.add('shrinked');
 					a.parentNode.parentNode.prepend(
 						_setup('div', { class: 'shrink-line', text: 'Развернуть' })
