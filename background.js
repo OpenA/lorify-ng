@@ -121,10 +121,10 @@ function getNotifications() {
 
 function sendNotify(count) {
 	if (settings['Desktop Notification'] && count) {
-		chrome.notifications.create('lorify-ng notification', {
+		chrome.notifications.create('lorify-ng', {
 			type    : 'basic',
-			title   : 'www.Linux.Org.Ru',
-			message : 'Уведомлений: '+ count,
+			title   : 'LINUX.ORG.RU',
+			message : count +' новых ответов',
 			iconUrl : './icons/penguin-64.png'
 		});
 	}

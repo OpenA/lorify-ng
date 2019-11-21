@@ -4,11 +4,11 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.8.3
+// @version     2.8.4
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
-// @updateURL   https://rawgit.com/OpenA/lorify-ng/master/lorify-ng.user.js
-// @icon        https://rawgit.com/OpenA/lorify-ng/master/icons/penguin-64.png
+// @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
+// @icon        https://github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true
 // @run-at      document-start
 // ==/UserScript==
 
@@ -47,12 +47,12 @@ const Dynamic_Style = (() => {
 
 	const style_el = document.createElement('style');
 
-	const max_shrink_val    = document.createTextNode(USER_SETTINGS['Code Block Short Size']);
+	const max_shrink_val    = document.createTextNode(USER_SETTINGS['Code Block Short Size'].toString());
 	const img_center_scale  = document.createTextNode('1'); // scale XY size 100%
 	const img_center_rotate = document.createTextNode('0'); // rotate angle 0/deg
 
 	style_el.append(
-		'.shrinked { max-height: ', max_shrink_val, 'px!important; overflow-y: hidden; }',
+		'.shrinked { max-height: ', max_shrink_val, 'px!important; overflow-y: hidden!important; }',
 		'.central-pic-img { transform: scale(', img_center_scale, ') rotate(', img_center_rotate,'deg); }'
 	)
 
@@ -511,7 +511,6 @@ _setup(document, null, {
 		
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
 		
-		const [, s_top, replyto, s_cid] = location.search.match(/\?(?:topic=([0-9]+)(?:\&replyto=([0-9]+))?|cid=([0-9]+))/) || '';
 		const top  = this.getElementById(`topic-${ LOR.topic }`);
 		const user = this.querySelector('#loginGreating > a[href$="/profile"]');
 		const form = this.forms['commentForm'] || this.forms['messageForm'];
@@ -533,6 +532,7 @@ _setup(document, null, {
 			handleCommentForm((LOR.CommentForm = form));
 			this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 			
+			let { topic, replyto } = parseReplyUrl(location.search);
 			let bd_rep = this.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
 			if (bd_rep) {
 				bd_rep.append('\n(', _setup('a', {
@@ -540,7 +540,7 @@ _setup(document, null, {
 					style: 'color: indianred!important;',
 					href : 'javascript:void(0)'
 				},{
-					click: convMsgBody.bind(null, this.querySelector(`#topic-${ s_top } .msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
+					click: convMsgBody.bind(null, this.querySelector(`#topic-${ topic } .msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
 				}), ')\n');
 			}
 		}
@@ -593,10 +593,11 @@ _setup(document, null, {
 		}
 		
 		var history_state = LOR.path + (LOR.page ? '/page'+ LOR.page : '');
+		var target_cid    = (location.hash.match(/^\#comment\-(\d+)$/) || location.search.match(/(?:\?|\&)cid=(\d+)/) || '')[1]
 		
-		if (s_cid) {
-			this.getElementById('comment-'+ s_cid).scrollIntoView();
-			history_state += '#comment-'+ s_cid;
+		if (target_cid) {
+			this.getElementById('comment-'+ target_cid).scrollIntoView();
+			history_state += '#comment-'+ target_cid;
 		}
 		history.replaceState(null, null, history_state);
 		
@@ -1059,19 +1060,15 @@ function addToCommentsCache(els, attrs, jqfix) {
 			_setup(a, { class: 'link-navs', cid: a.search.replace('?cid=', '') })
 		});
 		
-		let acid = el.querySelector('.title > a[href*="cid="]');
+		let acid = _setup(el.querySelector(`.title > a[href^="${ path }?cid="]`), { class: 'link-pref' });
+		let self = _setup(el.querySelector(`.reply > ul > li > a[href="${ path }?cid=${ cid }"]`), { class: 'link-self', cid });
 		
 		if (acid) {
 			// Extract reply comment ID from the 'search' string
 			let num = acid.search.match(/cid=(\d+)/)[1];
-			let url = el.ownerDocument.evaluate('//*[@class="reply"]/ul/li/a[contains(text(), "Ссылка")]/@href',el,null,2,null);
 			// Write special attributes
-			if (jqfix) {
-				acid.parentNode.replaceChild(
-					_setup('a', { class: 'link-pref', cid: num, href: acid.getAttribute('href'), text: acid.textContent }), acid
-				);
-			} else {
-				_setup(acid, { class: 'link-pref', cid: num });
+			acid.setAttribute('cid', num);
+			if (!jqfix) {
 				usr_refs += Login.test(acid.nextSibling.textContent);
 			}
 			// Create new response-map for this comment
@@ -1080,7 +1077,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 			}
 			ResponsesMap[num].push({
 				text: ( el.querySelector('a[itemprop="creator"]') || anonymous ).innerText,
-				href: url.stringValue,
+				href: self.href,
 				cid : cid
 			});
 		}
@@ -1339,6 +1336,7 @@ function addPreviewHandler(comment, attrs) {
 		case 'shrink-text':
 			el.parentNode.classList.toggle('cutted');
 			break;
+		case 'link-self':
 		case 'link-navs':
 		case 'link-pref':
 			var cid  = el.getAttribute('cid');
@@ -1594,13 +1592,20 @@ function pagesPreload(num) {
 
 function parseLORUrl(uri) {
 	const out = new Object;
-	var m = uri.match(/^(?:https?:\/\/www\.linux\.org\.ru)?(\/[^\/]+\/(?!archive)[^\/]+\/(\d+))(?:\/page(\d+))?/);
+	var m = uri.match(/^(?:https?:\/\/www\.linux\.org\.ru)?(\/[^\/]+\/(?!archive)[^\/]+\/(\d+))(?:\/page([0-9]+))?/);
 	if (m) {
 		out.path  = m[1];
 		out.topic = m[2];
 		out.page  = Number(m[3]) || 0;
 	}
 	return out;
+}
+
+function parseReplyUrl(uri) {
+	const [, topic = '0', replyto = '0'] = uri.match(/\?topic=(\d+)(?:\&replyto=(\d+))?/) || '';
+	return {
+		topic, replyto
+	};
 }
 
 function getDataResponse(uri, resolve, reject = () => void 0) {
@@ -1850,7 +1855,7 @@ function handleCommentForm(form) {
 	} else {
 		mode_change({
 			target: form.querySelector('select[disabled]') || form.insertBefore(
-				_setup('select', { style: 'display: block;', html: '<option>LORCODE</option><option>Markdown</option>' }, { change: mode_change }),
+				_setup('select', { style: 'display: block;', html: '<option>Markdown</option><option>LORCODE</option>' }, { change: mode_change }),
 				form.firstElementChild
 			)
 		});
@@ -1937,7 +1942,7 @@ function topicMemories(e) {
 }
 
 function toggleForm(underc, parent, href) {
-	const [, topic, replyto = 0 ] = href.match(/jsp\?topic=(\d+)(?:&replyto=(\d+))?$/);
+	const { topic, replyto } = parseReplyUrl(href);
 	if (LOR.CommentForm.elements['replyto'].value != replyto) {
 		parent.style['display'] = 'none';
 	}
@@ -1987,16 +1992,20 @@ function handleReplyToBtn(btn) {
 }
 
 function convMsgBody(msg) {
-	let arg = ['>', '\n>'];
+
+	let open = '>',
+	   close = '\n>',
+	    text = '';
+	
 	if (!MARKDOWN_MODE) { // lorcode, line-break
 		let nobl = msg.querySelector('div.code,pre,ul,ol,table');
 		if (nobl && (nobl = nobl.parentNode.className != 'reply'))
-			arg[0] = '[quote]', arg[1] = '[/quote]';
-		arg.push(domToLORCODE(msg.childNodes, !nobl).replace(/(?:[\n]+){3,}/g, '\n\n').trim());
+			open = '[quote]', close = '[/quote]';
+		text = domToLORCODE(msg.childNodes, !nobl);
 	} else
-		arg.push(domToMarkdown(msg.childNodes)); // markdown
+		text = domToMarkdown(msg.childNodes); // markdown
 	
-	lorcodeMarkup.apply(LOR.CommentForm.elements['msg'], arg);
+	lorcodeMarkup.call(LOR.CommentForm.elements['msg'], open, close, text.replace(/(?:[\n]+){3,}/g, '\n\n').trim());
 }
 
 function getRawText(el) {
@@ -2035,15 +2044,15 @@ function domToLORCODE(childNodes, nobl) {
 				text += `[url${ txt !== url ? '='+ url : '' }]${ txt }[/url]`;
 				break;
 			case 'SPAN':
-				if (el.className === 'code')
+				if (el.classList[0] === 'code')
 					text += `[inline]${ getRawText(el) }[/inline]`;
 				else if (el.children.length && el.children[0].localName === 'img')
 					text += `[user]${ el.children[1].innerText }[/user]`;
 				break;
 			case 'DIV':
-				if (el.className === 'code') {
-					let lng = el.firstElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
-					text += `[code${ lng ? '='+ lng : '' }]\n${ el.innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
+				if (el.classList[0] === 'code') {
+					let lng = el.lastElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
+					text += `[code${ lng ? '='+ lng : '' }]\n${ el.lastElementChild.innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
 				} else if (/^cut[0-9]+$/.test(el.id)) {
 					text += '\n'+ domToLORCODE(el.childNodes, nobl); //`[cut]\n${ domToLORCODE(el.childNodes, nobl) }[/cut]\n`;
 				}
@@ -2072,22 +2081,24 @@ function domToLORCODE(childNodes, nobl) {
 	return text;
 }
 
-function listToMarkdown(listNodes, order) {
+function listToMarkdown(listNodes, order = false, deep = 0) {
 	
-	var text = '', ln = order ? '%d. ' : '* ';
+	var text = '', ln = ' '.repeat(deep) + (order ? '%d. ' : '* ');
+
+	deep += 3;
 	
 	for (let i = 0; i < listNodes.length;) {
 		let li = listNodes[i++];
 		switch (li.tagName) {
-			case 'UL': text += listToMarkdown(li.children,false); break;
-			case 'OL': text += listToMarkdown(li.children, true); break;
-			case 'LI': text += ln.replace('%d', i) + domToMarkdown(li.childNodes);
+			case 'UL': text += listToMarkdown(li.children,false, deep); break;
+			case 'OL': text += listToMarkdown(li.children, true, deep); break;
+			case 'LI': text += ln.replace('%d', i) + domToMarkdown(li.childNodes, deep) +'\n';
 		}
 	}
 	return `${ text }\n\n`;
 }
 
-function domToMarkdown(childNodes) {
+function domToMarkdown(childNodes, deep = 0) {
 	
 	var text = '';
 	
@@ -2105,15 +2116,15 @@ function domToMarkdown(childNodes) {
 				text += txt !== url ? `[${ txt }](${ url })` : url;
 				break;
 			case 'SPAN':
-				if (el.className === 'code')
+				if (el.classList[0] === 'code')
 					text += `\`${ getRawText(el) }\``;
 				else if (el.children.length && el.children[0].localName === 'img')
 					text += '@'+ el.children[1].innerText;
 				break;
 			case 'DIV':
-				if (el.className === 'code') {
-					let lng = el.firstElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
-					text += '```'+ lng +'\n'+ el.innerText.replace(/[\n+]$|$/, '\n```\n');
+				if (el.classList[0] === 'code') {
+					let lng = el.lastElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
+					text += '```'+ lng +'\n'+ el.lastElementChild.innerText.replace(/[\n+]$|$/, '\n```\n');
 				} else if (/^cut[0-9]+$/.test(el.id)) {
 					text += domToMarkdown(el.childNodes); //`>>>\n${ domToMarkdown(el.childNodes) }\n>>>\n`;
 				}
@@ -2123,8 +2134,8 @@ function domToMarkdown(childNodes) {
 					.replace(/\n/g, '\n>')
 					.replace(/([>]+(?:\n|$)){2,}/gm, '$1') +'\n';
 				break;
-			case 'UL': text += listToMarkdown(el.children,false); break;
-			case 'OL': text += listToMarkdown(el.children, true); break;
+			case 'UL': text += listToMarkdown(el.children,false, deep); break;
+			case 'OL': text += listToMarkdown(el.children, true, deep); break;
 			case 'PRE': case 'P':
 				text += domToMarkdown(el.childNodes);
 			case 'BR':
@@ -2182,10 +2193,13 @@ const App = (() => {
 		
 		var notes      = localStorage.getItem('l0rNG-notes') || '';
 		var delay      = 40e3 + Math.floor(Math.random() * 1e3);
-		var sendNotify = count => new Notification('loryfy-ng', {
-				icon: '//github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true',
-				body: 'Уведомлений: '+ count
-			}).onclick = () => window.focus();
+		var sendNotify = count => {
+			const notif = new Notification('LINUX.ORG.RU', {
+				icon: '/tango/img/linux-logo.png',
+				body: `\n${ count } новых ответов`,
+			});
+			notif.onclick = () => { window.focus() };
+		}
 		
 		const defaults   = Object.assign({}, USER_SETTINGS);
 		const startWatch = getDataResponse.bind(null, '/notifications-count',
@@ -2417,8 +2431,8 @@ const App = (() => {
 		}
 		window.addEventListener('storage', ({ key, newValue }) => {
 			if (key === 'l0rNG-notes') {
-				main_events_count.textContent = '('+ newValue +')';
-				lorypanel.children['lorynotify'].setAttribute('notes-cnt', (notes = newValue));
+				main_events_count.textContent = newValue ? '('+ newValue +')' : '';
+				lorypanel.children['lorynotify'][`${newValue ? 'set' : 'remove'}Attribute`]('notes-cnt', (notes = newValue));
 				Timer.set('Check Notifications', startWatch, delay);
 			} else if (key === 'lorify-ng') {
 				setValues( JSON.parse(newValue) );
