@@ -34,7 +34,12 @@ const empty_Url = [
 ];
 
 var notes = 0;
-var timr  = setTimeout(getNotifications, 1e3);
+var dead  = false;
+
+chrome.alarms.onAlarm.addListener(getNotifications);
+chrome.alarms.create('check-lor-notifications', {
+	when: Date.now() + 1e3
+});
 
 //chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
 chrome.notifications.onClicked.addListener(openTab);
@@ -99,28 +104,43 @@ function messageHandler({ action }, { tab }) {
 		case 'l0rNG-reset':
 			clearNotes();
 			break;
+		case 'l0rNG-reval':
+			chrome.alarms.get('check-lor-notifications', alarm => {
+				!alarm && getNotifications();
+			});
+			break;
 		case 'l0rNG-checkNow':
-			clearTimeout(timr);
+			chrome.alarms.clear('check-lor-notifications');
 			getNotifications();
 			break;
 	}
 }
 
 function getNotifications() {
-	const xhr = new XMLHttpRequest;
-	xhr.open('GET', 'https://www.linux.org.ru/notifications-count', true);
-	xhr.onload = ({ target: { status, response } }) => {
-		if (status === 200 && notes != response) {
-			sendNotify( (notes = Number(response)) );
+
+	fetch('https://www.linux.org.ru/notifications-count', {
+		credentials: 'same-origin',
+		method: 'GET'
+	}).then(
+		response => {
+			if (response.ok) {
+				response.json().then(sendNotify);
+			}
+			if (response.status < 400) {
+				chrome.alarms.create('check-lor-notifications', {
+					delayInMinutes: 1
+				});
+			} else if (response.status >= 500) {
+				chrome.alarms.create('check-lor-notifications', {
+					delayInMinutes: 5
+				});
+			}
 		}
-		clearTimeout(timr);
-		timr = setTimeout(getNotifications, 40e3);
-	}
-	xhr.send(null);
+	);
 }
 
 function sendNotify(count) {
-	if (settings['Desktop Notification'] && count) {
+	if ((notes = count) && settings['Desktop Notification']) {
 		chrome.notifications.create('lorify-ng', {
 			type    : 'basic',
 			title   : 'LINUX.ORG.RU',
@@ -129,5 +149,5 @@ function sendNotify(count) {
 		});
 	}
 	chrome.browserAction.setBadgeText({ text: count ? count.toString() : '' });
-	openPorts.forEach(port => port.postMessage( count ? '('+ count +')' : count ));
+	openPorts.forEach(port => port.postMessage( count ? '('+ count +')' : '' ));
 }

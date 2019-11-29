@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.8.4
+// @version     2.8.6
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -124,7 +124,7 @@ document.documentElement.append(
 			position: absolute;
 			z-index: 300;
 		}
-		.preview #commentForm {
+		.preview #commentForm, .hidden {
 			display: none;
 		}
 		.slide-down {
@@ -265,6 +265,31 @@ document.documentElement.append(
 		}
 		.central-pic-rotate:hover .svg-circle-arrow {
 			fill: #777;
+		}
+
+		.tag-list {
+			max-height: 120px;
+			overflow-y: auto;
+			position: absolute;
+		}
+		.tag-list > .tag {
+			display: list-item;
+			padding: 4px 1em;
+			list-style: none;
+		}
+
+		@media screen and (max-width: 570px) {
+			#bd { padding: 0 !important; }
+			.msg .reply { clear: both !important; }
+			.messages .msg { padding: 2px 10px 7px 14px !important; }
+			.message-w-userpic { padding: 0 !important; }
+			.message-w-userpic > *:first-child:not(p) { margin-left: 60px !important; }
+			.msg_body ul, .msg_body ol { margin: 0 0 1em !important; }
+			.userpic { margin-right: 14px !important; }
+		}
+		@media screen and (max-width: 460px) {
+			.title > [datetime] { display: none !important; }
+			.sign > [datetime], .sign > .sign_more { font-size: 12px; }
 		}
 
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
@@ -593,11 +618,19 @@ _setup(document, null, {
 		}
 		
 		var history_state = LOR.path + (LOR.page ? '/page'+ LOR.page : '');
-		var target_cid    = (location.hash.match(/^\#comment\-(\d+)$/) || location.search.match(/(?:\?|\&)cid=(\d+)/) || '')[1]
+		var target_cid    = (location.hash.match(/^#comment\-(\w+)$/) || location.search.match(/(?:\?|&)cid=(\d+)/) || '')[1]
 		
 		if (target_cid) {
-			this.getElementById('comment-'+ target_cid).scrollIntoView();
-			history_state += '#comment-'+ target_cid;
+			if (/(?:fir|la)st/.test(target_cid)) {
+				let targ = comments.querySelector(`.msg[id^="comment-"]:${ target_cid }-of-type`);
+				if (targ) {
+					targ.scrollIntoView();
+					history_state += '#'+ targ.id;
+				}
+			} else {
+				this.getElementById('comment-'+ target_cid).scrollIntoView();
+				history_state += '#comment-'+ target_cid;
+			}
 		}
 		history.replaceState(null, null, history_state);
 		
@@ -989,7 +1022,8 @@ function onWSData(dbCiD) {
 							msg['edit_comment'].parentNode.hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
 						}
 					} else {
-						_setup(msg, { id: 'deleted'+ msg.id.substr(7), class: 'msg deleted' });
+						msg.classList.add('deleted');
+						msg.id = 'deleted'+ msg.id.substr(7);
 					}
 				}
 				
@@ -1183,8 +1217,8 @@ const CentralPicture = (() => {
 	const _IMG = _setup('img', {
 		class: 'central-pic-img',
 		style: 'left: 0; top: 0;'
-	},{
-		wheel: e => {
+	},
+	TOUCH_DEVICE ? null : { wheel: e => {
 
 			const delta = e.deltaX || e.deltaY;
 			const ratio = _Scale / 7.4;
@@ -1612,8 +1646,10 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	const xhr = new XMLHttpRequest;
 	xhr.withCredentials = true;
 	xhr.open('GET', location.origin + uri, true);
-	xhr.onload = () => {
-		xhr.status === 200 ? resolve(xhr) : reject(xhr)
+	xhr.onreadystatechange = () => {
+		if (xhr.readyState !== 4)
+			return;
+		xhr.status === 200 ? resolve(xhr) : reject(xhr);
 	}
 	xhr.send(null);
 }
@@ -1689,27 +1725,21 @@ function handleCommentForm(form) {
 	});
 	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
 
-	if (!form.elements[ 'cancel']) {
+	if (!form.elements['cancel']) {
 		form.elements['preview'].after(
-			'\n', _setup('button', { name: 'cancel', class: 'btn btn-default', text: 'Отмена' })
+			'\n', _setup('button', { type: 'button', class: 'btn btn-default', id: 'cancel', text: 'Отмена' })
 		)
-	}
+	} else
+		_setup(form.elements['cancel'], { type: 'button', name: void 0, id:  'cancel' });
 
-	form.elements[ 'csrf' ].value = TOKEN;
-	form.elements['preview'].type = 'button';
-	form.elements[ 'cancel'].type = 'button';
+	form.elements['csrf'].value = TOKEN;
 
 	for (const submit_btn of FACT_PANNEL.querySelectorAll('[type="submit"]')) {
-		submit_btn.type = 'button';
-		submit_btn.setAttribute('do-upload', '');
+		_setup(submit_btn, { type: 'button', name: void 0, id: submit_btn.name, 'do-upload': '' });
 	}
 
-	const doSubmit = {
+		const refresh_preview = () => {
 
-		UID: -1,
-
-		refresh: () => {
-				
 			const formData = new FormData( form );
 			
 			formData.append('preview', '');
@@ -1733,18 +1763,18 @@ function handleCommentForm(form) {
 					})
 				);
 			}
-		},
+		}
 
-		process: (sbtn, y) => {
+		const submit_process = (sbtn, y) => {
 			form.elements[ 'cancel'].className = `btn btn-${ y ? 'danger' : 'default' }`;
 			form.elements['preview'].disabled  = sbtn.disabled = y;
 			sbtn.classList[y ? 'add' : 'remove']('process');
 			for (const primary of FACT_PANNEL.querySelectorAll('.btn[do-upload]')) {
 				primary.disabled = y;
 			}
-		},
+		}
 
-		purge: (clry) => {
+		const purge_form = (clry) => {
 
 			simulateClick(
 				form.parentNode.parentNode.querySelector('.replyComment')
@@ -1757,30 +1787,31 @@ function handleCommentForm(form) {
 				NODE_PREVIEW.children[1].textContent = '';
 				NODE_PREVIEW.children[2].innerHTML   = '';
 			}
-		},
+		}
+
+	const doSubmit = {
 
 		handleEvent: function({ target }) {
 
-			const { type, name } = target;
+			const { type, id } = target;
 
 			if (type === 'button') {
-				if (`do_${name}` in doSubmit) {
-					this[`do_${name}`]();
+				if (`do_${id}` in this) {
+					this[`do_${id}`]();
 				} else if (target.hasAttribute('do-upload')) {
-					this[`do_upload`](target, name);
+					this.do_upload(target, id);
 				}
 			}
 		},
 
 		'do_upload': function(btn, param) {
 
-			const { process, purge } = this;
-			
-			process(btn, true);
+			submit_process(btn, true);
 
-			this.UID = setTimeout(() => {
+			Timer.set('Upload Post Delay', () => {
 
 				const formData = new FormData( form );
+				const targetId = (form.elements['original'] || { value: 'last' }).value
 
 				if (param)
 					formData.append(param, '');
@@ -1788,14 +1819,16 @@ function handleCommentForm(form) {
 				sendFormData(ACTION_JSP, formData, false).then(({ url }) => {
 					if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
 						window.onbeforeunload = null;
-						location.href         = url ;
+						location.href         = url + (
+							/(?:#comment-|(?:\?|&)cid=)\d+$/.test(url) ? '' : '#comment-'+ targetId
+						);
 						return;
 					}
-					process(btn, false);
-					purge(true);
+					submit_process(btn, false);
+					purge_form(true);
 				}).catch(({ status, statusText }) => {
 					form.appendChild( NODE_PREVIEW ).children[0].innerHTML = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n(${ status +' '+ statusText })`;
-					process(btn, false);
+					submit_process(btn, false);
 				});
 			}, USER_SETTINGS['Upload Post Delay'] * 1e3);
 		},
@@ -1807,28 +1840,22 @@ function handleCommentForm(form) {
 				NODE_PREVIEW.remove();
 				TEXT_AREA.oninput = null;
 			} else {
-
-				let t = -1, refresh = this.refresh; refresh();
-
+				refresh_preview();
 				form.appendChild( NODE_PREVIEW ).setAttribute('opened', '');
-
-				TEXT_AREA.oninput = () => {
-					clearTimeout(t);
-					t = setTimeout(refresh, 1e3);
-				}
+				TEXT_AREA.oninput = () => Timer.set('Refresh Preview', refresh_preview, 1e3);
 			}
 		},
 
 		'do_cancel': function() {
 
 			if (form.elements['cancel'].classList.contains('btn-danger')) {
-				clearTimeout(this.UID);
-				this.process(FACT_PANNEL.querySelector('.process[do-upload]'), false);
+				Timer.clear('Upload Post Delay');
+				submit_process(FACT_PANNEL.querySelector('.process[do-upload]'), false);
 				alert('Отправка прервана.');
 			} else {
 				const length = TEXT_AREA.textLength + form.elements['title'].value.length;
 				const answer = length > 0 && confirm('Очистить форму?');
-				this.purge(answer);
+				purge_form(answer);
 			}
 		}
 	}
@@ -1860,6 +1887,164 @@ function handleCommentForm(form) {
 			)
 		});
 	}
+	if ('tags' in form.elements) {
+		handleTagsInput(form.elements['tags']);
+	}
+}
+
+function handleTagsInput(TAGS_INPUT) {
+
+	const isMainT = TOUCH_DEVICE ? e => e.touches.length === 1 : e => e.button === 0;
+	const tagList = _setup('div', { class: 'tag-list infoblock' }, {
+		click: e => e.preventDefault()
+	});
+
+	tagList.addEventListener(TOUCH_DEVICE ? 'touchstart' : 'mousedown', e => {
+		if (isMainT(e) && e.target.classList[0] === 'tag') {
+			const val = TAGS_INPUT.value,
+				  idx = val.lastIndexOf(',') + 1;
+			TAGS_INPUT.value = (idx ? val.substring(0, idx).trim() +' ' : '') + e.target.innerText +', ';
+		}
+	});
+
+	let keywd = ' ';
+	let focus = false;
+
+	const handleList = () => {
+
+		const last = TAGS_INPUT.value.lastIndexOf(',') + 1,
+			  term = TAGS_INPUT.value.substring(last).trim();
+		
+		tagList.style.left = last ? getCaretCoordinates(TAGS_INPUT, last).left +'px' : '0';
+		
+		if (keywd === term) {
+			focus && TAGS_INPUT.after(tagList);
+		}
+		else if (term) {
+			getDataResponse(`/tags?term=${(keywd = term)}`, ({ responseText }) => {
+
+				const possibleTags = JSON.parse(responseText);
+				
+				for (var i = 0; i < possibleTags.length; i++) {
+					const text = possibleTags[i];
+					const item = tagList.children[i] || tagList.appendChild(
+						document.createElement('a')
+					);
+					_setup(item, { class: 'tag', href: '/tag/'+ text, text });
+				}
+				while (i < tagList.children.length) {
+					tagList.children[i++].className = 'hidden';
+				}
+				focus && TAGS_INPUT.after(tagList);
+			});
+		}
+	}
+	_setup(TAGS_INPUT, { autocomplete: 'off' }, {
+		'focus': () => {
+			focus = true;
+			handleList();
+		},
+		'input': () => {
+			tagList.remove();
+			Timer.set('Search Tags', handleList, 800);
+		},
+		'blur' : () => {
+			focus = false;
+			tagList.remove();
+		}
+	});
+}
+
+function getCaretCoordinates() {
+	// The properties that we copy into a mirrored div.
+	// Note that some browsers, such as Firefox,
+	// do not concatenate properties, i.e. padding-top, bottom etc. -> padding,
+	// so we have to do every single property specifically.
+	const properties = [
+	  'direction',  // RTL support
+	  'boxSizing',
+	  'width',  // on Chrome and IE, exclude the scrollbar, so the mirror div wraps exactly as the textarea does
+	  'height',
+	  'overflowX',
+	  'overflowY',  // copy the scrollbar for IE
+	
+	  'borderTopWidth',
+	  'borderRightWidth',
+	  'borderBottomWidth',
+	  'borderLeftWidth',
+	  'borderStyle',
+	
+	  'paddingTop',
+	  'paddingRight',
+	  'paddingBottom',
+	  'paddingLeft',
+	
+	  // https://developer.mozilla.org/en-US/docs/Web/CSS/font
+	  'fontStyle',
+	  'fontVariant',
+	  'fontWeight',
+	  'fontStretch',
+	  'fontSize',
+	  'fontSizeAdjust',
+	  'lineHeight',
+	  'fontFamily',
+	
+	  'textAlign',
+	  'textTransform',
+	  'textIndent',
+	  'textDecoration',  // might not make a difference, but better be safe
+	
+	  'letterSpacing',
+	  'wordSpacing',
+	
+	  'tabSize',
+	  'MozTabSize'
+	];
+		
+	const isFirefox = window.mozInnerScreenX != null;
+	const mirror    = document.createElement('div');
+	const carret    = document.createElement('span');
+	const iText     = document.createTextNode('');
+
+	mirror.style = 'position: absolute; visibility: hidden; word-wrap: break-word;';
+	mirror.append(iText, carret);
+
+	return (getCaretCoordinates = (input, position) => {
+
+		const computed  = getComputedStyle(input);
+		const { style } = document.body.appendChild(mirror);
+		
+		// transfer the element's properties to the div
+		for (const name of properties) {
+			style[ name ] = computed[ name ];
+		}
+		// the second special handling for input type="text" vs textarea: spaces need to be set non-breaking spaces
+		style.whiteSpace = `${ input.tagName === 'INPUT' ? 'no' : 'pre-' }wrap`;
+		
+		if (isFirefox) {
+			// Firefox lies about the overflow property for textareas: https://bugzilla.mozilla.org/show_bug.cgi?id=984275
+			if (input.scrollHeight > parseInt(computed.height))
+				style.overflowY = 'scroll';
+		} else {
+			style.overflow = 'hidden';  // for Chrome to not render a scrollbar; IE keeps overflowY = 'scroll'
+		}
+		// Wrapping must be replicated *exactly*, including when a long word gets
+		// onto the next line, with whitespace at the end of the line before (#7).
+		// The  *only* reliable way to do that is to copy the *entire* rest of the
+		// textarea's content into the <span> created at the caret position.
+		// for inputs, just '|' would be enough, but why bother?
+		carret.textContent = input.value.substring(position) || '|';  // || because a completely empty faux span doesn't render at all
+		iText.textContent  = input.value.substring(0, position);
+		
+		const coordinates = {
+			top  : carret.offsetTop  + parseInt( computed.borderTopWidth  ),
+			left : carret.offsetLeft + parseInt( computed.borderLeftWidth )
+		};
+		
+		document.body.removeChild(mirror);
+		
+		return coordinates;
+	})(arguments[0], arguments[1]);
 }
 
 function tagMemories(e) {
@@ -2184,6 +2369,7 @@ const App = (() => {
 					// so let's send a corresponding message to the background script
 					sync.then(() => {
 						port.onMessage.addListener(text => { main_events_count.textContent = text });
+						chrome.runtime.sendMessage({ action: 'l0rNG-reval' });
 					});
 				}
 				return sync;
@@ -2192,7 +2378,7 @@ const App = (() => {
 	} else {
 		
 		var notes      = localStorage.getItem('l0rNG-notes') || '';
-		var delay      = 40e3 + Math.floor(Math.random() * 1e3);
+		var delay      = 55e3 + Math.floor(Math.random() * 1765);
 		var sendNotify = count => {
 			const notif = new Notification('LINUX.ORG.RU', {
 				icon: '/tango/img/linux-logo.png',
@@ -2216,6 +2402,9 @@ const App = (() => {
 					lorypanel.children['lorynotify'].removeAttribute('notes-cnt');
 				}
 				Timer.set('Check Notifications', startWatch, delay);
+			}, ({ status }) => {
+				if (status < 400 || status >= 500)
+					Timer.set('Check Notifications', startWatch, delay * (status >= 500 ? 5 : 1));
 			});
 		
 		const setValues = items => {
@@ -2906,27 +3095,36 @@ function HighlightJS() {
 			}
 		}
 	}
-	const img_format = ['jpg','jpeg','png','gif','svg','webp'].map(ext => `a[href*=".${ext}?"],a[href$=".${ext}"]`).join(',');
-	function o(parent) {
-		parent.querySelectorAll(img_format).forEach(a => { a.className = 'link-image' });
+	function o(comment) {
+
 		const shrink_size = USER_SETTINGS['Code Block Short Size'];
-		Array.prototype.map.call(parent.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(
-			shrink_size < 20 ? a => {
-				a.parentNode.parentNode.classList.add('cutted');
-				a.parentNode.parentNode.prepend( _setup('span', { class: 'shrink-text' }) );
-				p(a, hljs.tabReplace);
-			} : a => {
-				if (!a.offsetHeight) {
-					a.parentNode.parentNode.classList.add('suplied');
-				} else if (a.offsetHeight > shrink_size) {
-					a.parentNode.parentNode.classList.add('shrinked');
-					a.parentNode.parentNode.prepend(
-						_setup('div', { class: 'shrink-line', text: 'Развернуть' })
-					);
-				}
-				p(a, hljs.tabReplace);
+		const addSpoiler  = shrink_size < 20 ? block => {
+			block.classList.add('cutted');
+			block.prepend( _setup('span', { class: 'shrink-text' }) );
+		} : (block, height) => {
+			if (!height) {
+				block.classList.add('suplied');
+			} else if (height > shrink_size) {
+				block.classList.add('shrinked');
+				block.prepend(
+					_setup('div', { class: 'shrink-line', text: 'Развернуть' })
+				);
+			}
+		}
+		Array.prototype.map.call(comment.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(
+			code => {
+				addSpoiler(
+					code.parentNode.parentNode.classList[0] === 'code' ? code.parentNode.parentNode : code.parentNode,
+					code.offsetHeight
+				);
+				p(code, hljs.tabReplace);
 			}
 		);
+		comment.querySelectorAll(
+			['jpg','jpeg','png','gif','svg','webp'].map(ext => `a[href*=".${ext}?"],a[href$=".${ext}"]`).join(',')
+		).forEach(a => {
+			a.className = 'link-image';
+		});
 	}
 	var x = {};
 	this.LANGUAGES = x;
