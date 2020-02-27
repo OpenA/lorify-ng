@@ -4,7 +4,7 @@
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 		<title>lorify-ng Options</title>
 		<style>
-			#resetSettings, .apply-anim:after { position: absolute; right: 0; }
+			#resetSettings, .info-line:before { position: absolute; right: 0; }
 			#loriform { display: table; min-width: 360px; margin: 0 auto; }
 			.tab-row  { display: table-row; }
 			.tab-cell { display: table-cell;
@@ -36,11 +36,18 @@
 				content: counter(stepIdx);
 				font: italic 10px Arial;
 			}
-			.apply-anim:after {
-				content: 'Настройки сохранены.';
+			.info-line:before {
 				-webkit-animation: apply 2s linear 1;
 				animation: apply 2s linear 1;
 				color: red;
+				background-color: white;
+				left: 0; top: 0;
+				z-index: 9;
+			}
+			.save-msg:before {
+				content: 'Настройки сохранены.';
+				padding: 15px 0;
+				text-align: center;
 			}
 			#notifications {
 				border-bottom: 1px dashed #bbb;
@@ -56,12 +63,12 @@
 				content: 'Уведомлений: ';
 			}
 			@keyframes apply {
-				0% { opacity: .1; }
+				0% { opacity: .2; }
 				50% { opacity: 1; }
 				100% { opacity: 0; }
 			}
 			@-webkit-keyframes apply {
-				0% { opacity: .1; }
+				0% { opacity: .2; }
 				50% { opacity: 1; }
 				100% { opacity: 0; }
 			}
@@ -71,10 +78,10 @@
 		<div id="notifications" hidden>
 			<a style="color: #68b;" href="javascript:void(0)"></a>
 		</div>
-		<form id="loryform">
+		<form id="loryform" class="info-line">
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
-				<span class="tab-cell" id="applymsg">
+				<span class="tab-cell">
 					<input type="checkbox" id="Realtime Loader">
 				</span>
 			</div>

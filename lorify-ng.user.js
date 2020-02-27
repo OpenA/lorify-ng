@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.8.6
+// @version     2.9.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -88,7 +88,7 @@ document.documentElement.append(
 		.broken    { color: inherit !important; cursor: default; }
 		.select-break::selection { background: rgba(99,99,99,.3); }
 		.response-block, .response-block > a { padding: 0 3px !important; }
-		.page-number { position: relative; }
+		.page-number { position: relative; margin-right: 5px; }
 		.page-number[cnt-new]:not(.broken):after {
 			content: attr(cnt-new);
 			position: absolute;
@@ -99,6 +99,7 @@ document.documentElement.append(
 			line-height: 12px;
 			padding: 3px;
 			border-radius: 5px;
+			z-index: 1;
 		}
 		.deleted > .title:before {
 			content: "Сообщение удалено";
@@ -140,6 +141,9 @@ document.documentElement.append(
 		#markup-panel > .btn {
 			font-size: smaller!important;
 			padding: 3px 10px!important;
+			font-variant: small-caps;
+			margin: 0 5px 5px 0;
+			border: 0;
 		}
 		.lorcode > .btn:before {
 			content: attr(lorcode);
@@ -150,9 +154,7 @@ document.documentElement.append(
 		.markdown > .btn:before {
 			content: attr(markdown);
 		}
-		.markdown > .uc:after { content: "\xA0"; }
-		.markdown > .uc { font-variant: unicase; font-variant: sub; }
-		
+		.markdown > .btn[lorcode=pre]:before { content: "•\xA0"; }
 		.process {
 			color: transparent!important;
 			position: relative;
@@ -169,7 +171,6 @@ document.documentElement.append(
 			animation: process 3s linear infinite;
 			-webkit-animation: process 3s linear infinite;
 		}
-
 		.scrolltop-btn {
 			transform: rotate(90deg);
 			position: fixed;
@@ -189,7 +190,6 @@ document.documentElement.append(
 			filter: invert(100%);
 			opacity: .5;
 		}
-
 		.shrink-line {
 			position: absolute;
 			bottom: 0;
@@ -241,7 +241,6 @@ document.documentElement.append(
 			-webkit-animation: toHide 3s;
 			animation: toHide 3s;
 		}
-
 		.central-pic-overlay {
 			left: 0;
 			top: 0;
@@ -259,6 +258,7 @@ document.documentElement.append(
 			bottom: 8px;
 			width: 32px;
 			cursor: pointer;
+			user-select: none;
 		}
 		.svg-circle-arrow {
 			fill: rgba(99,99,99,.5);
@@ -266,7 +266,6 @@ document.documentElement.append(
 		.central-pic-rotate:hover .svg-circle-arrow {
 			fill: #777;
 		}
-
 		.tag-list {
 			max-height: 120px;
 			overflow-y: auto;
@@ -277,12 +276,19 @@ document.documentElement.append(
 			padding: 4px 1em;
 			list-style: none;
 		}
-
-		@media screen and (max-width: 570px) {
+		@media screen and (max-width: 960px) {
 			#bd { padding: 0 !important; }
+			#bd > article[id^="topic"] { margin-left: 5px !important; margin-right: 5px !important; }
+			.message-w-userpic { padding: 0 !important; }
+			.message-w-userpic > * { margin-left: 115px !important; }
+			.message-w-userpic > .form-container { margin-left: 0 !important; clear: both; }
+		}
+		@media screen and (max-width: 640px) {
+			#markup-panel > .btn { padding: 3px!important; width: 30px; }
+			#markup-panel > .btn:before { display: block; overflow: hidden; }
 			.msg .reply { clear: both !important; }
 			.messages .msg { padding: 2px 10px 7px 14px !important; }
-			.message-w-userpic { padding: 0 !important; }
+			.message-w-userpic > * { margin-left: 0 !important; }
 			.message-w-userpic > *:first-child:not(p) { margin-left: 60px !important; }
 			.msg_body ul, .msg_body ol { margin: 0 0 1em !important; }
 			.userpic { margin-right: 14px !important; }
@@ -291,7 +297,6 @@ document.documentElement.append(
 			.title > [datetime] { display: none !important; }
 			.sign > [datetime], .sign > .sign_more { font-size: 12px; }
 		}
-
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		
@@ -317,108 +322,137 @@ document.documentElement.append(
 		@keyframes slideToShow-reverse { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
 `}), Dynamic_Style[0]);
 
-const Navigation = {
-	
-	complete: null,
-	pagesCount: 1,
-	
-	stb: _setup('div', { html: '<div class="page-loader"></div>' }),
-	bar: _setup('div', { class: 'nav', html: `
-		<a class="page-number prev" href="#prev">←</a>
-		<a id="page_0" class="page-number" href="${ LOR.path }#comments">1</a>
-		<a class="page-number next" href="#next">→</a>
-	`, onclick: navBarHandle }),
-	
-	get lastId () {
-		const last = pagesCache.get(this.pagesCount - 1).querySelector('.msg[id^="comment-"]:last-child');
-		return LOR.topic + (last ? ' '+ last.id.replace('comment-', '') : '');
-	},
-	
-	get page () {
-		return LOR.page;
-	},
-	
-	set page (num) {
-		var comments = pagesCache.get(LOR.page);
-		var reverse  = num > LOR.page;
-		var _loader_ = this.stb;
-		
-		this.bar.querySelectorAll('.broken').forEach(lnk => lnk.classList.remove('broken'));
-		
+class TopicNavigation {
+
+	constructor(pages_count) {
+
+		this.wait = _setup('div', { html: '<div class="page-loader"></div>' });
+		this.bar  = _setup('div', {
+			html  : '<a class="page-number prev" href="#prev">←</a><a class="page-number next" href="#next">→</a>',
+			id    : 'bottom-nav',
+			class : 'nav'
+		},{ click : this });
+
+		this.mir = _setup(this.extendBar(pages_count).cloneNode(true), { id: 'top-nav' }, { click: this });
+	}
+
+	gotoPage(num) {
+
+		const { wait, bar, mir } = this;
+
+		const  _this = this,
+			currpage = LOR.page,
+			comments = pagesCache.get(currpage),
+			reverse  = (LOR.page = num) > currpage;
+
+		for (var i = 0; i < bar.children.length; i++) {
+			bar.children[i].classList.remove('broken');
+			mir.children[i].classList.remove('broken');
+		}
 		if (num <= 0) {
 			// set prev button to inactive
-			this.bar.firstElementChild.classList.add('broken');
+			bar.firstElementChild.classList.add('broken');
+			mir.firstElementChild.classList.add('broken');
 		} else
-		if (num >= this.pagesCount - 1) {
+		if (num >= i - 3) {
 			// set next button to inactive
-			this.bar.lastElementChild.classList.add('broken');
+			bar.lastElementChild.classList.add('broken');
+			mir.lastElementChild.classList.add('broken');
 		}
-		this.bar.children['page_'+ (LOR.page = num)].classList.add('broken');
-		
+		bar.children[`page_${ num }`].classList.add('broken');
+		mir.children[`page_${ num }`].classList.add('broken');
+
 		if (USER_SETTINGS['Scroll Top View']) {
-			comments.querySelector('.nav').scrollIntoView({ block: 'start' });
+			comments.scrollIntoView({ block: 'start' });
 		}
-		
-		this.complete = new Promise(resolve => {
+		return new Promise(resolve => {
 			if (pagesCache.has(num)) {
-				Navigation.swapAnimateTo( comments, pagesCache.get(num), reverse, resolve );
+				_this.swapAnimateTo( comments, pagesCache.get(num), reverse, resolve );
 			} else {
-				comments.parentNode.replaceChild( _loader_, comments );
-				
+				comments.parentNode.replaceChild( wait, comments );
 				pagesPreload(num).then(comms => {
-					Navigation.swapAnimateTo( _loader_, comms, reverse, resolve );
+					_this.swapAnimateTo( wait, comms, reverse, resolve );
 				});
 			}
 		});
-	},
-	
-	addToBar: function(pNumEls) {
-		
-		this.pagesCount = pNumEls.length - 2;
-		
-		var i = this.bar.children.length - 2;
-		var pageLinks = '';
-		
-		for (; i < this.pagesCount; i++) {
-			pageLinks += `<a id="page_${ i }" class="page-number" href="${ LOR.path }/page${ i }#comments">${ i + 1 }</a>\n`;
+	}
+
+	extendBar(pages_count) {
+
+		const { page, path } = LOR;
+
+		const { bar } = this,
+		      prevBtn = bar.firstElementChild,
+		      nextBtn = bar.lastElementChild;
+
+		for (var i = bar.children.length - 2; i < pages_count; i++) {
+			nextBtn.before(
+				_setup('a', { id: `page_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` })
+			);
 		}
-		this.bar.lastElementChild.insertAdjacentHTML('beforebegin', pageLinks);
-		
-		if (LOR.page === 0) {
-			this.bar.firstElementChild.classList.add('broken');
-			this.bar.lastElementChild.href = this.bar.children['page_'+ (LOR.page + 1)].href;
-		} else 
-		if (LOR.page === this.pagesCount - 1) {
-			this.bar.lastElementChild.classList.add('broken');
-			this.bar.firstElementChild.href = this.bar.children['page_'+ (LOR.page - 1)].href;
+		if (page === 0) {
+			prevBtn.classList.add('broken');
+		} else
+		if (page === i - 1) {
+			nextBtn.classList.add('broken');
 		}
-		this.bar.children['page_'+ LOR.page].className = 'page-number broken';
+		bar.children[`page_${ page }`].classList.add('broken');
+
+		return bar;
+	}
+
+	handleEvent(e) {
+
+		const { id, classList } = e.target;
+
+		if (classList[0] === 'page-number') {
+
+			if (!classList.contains('broken')) {
+
+				let { page, path } = LOR;
+
+				switch (classList[1]) {
+					case 'prev': page--; break;
+					case 'next': page++; break;
+					default    : page = Number(id.substring(5));
+				}
+				this.gotoPage(page);
+				history.pushState(null, null, (page ? `${ path }/page${ page }`: path));
+			}
+			e.preventDefault();
+		}
+	}
+
+	swapAnimateTo(comments, content, reverse, resolve) {
 		
-		return this.bar;
-	},
-	
-	swapAnimateTo: function(comments, content, reverse, resolve) {
-		
-		_setup(content.querySelector('.nav'), {
-			html: this.bar.innerHTML, onclick: navBarHandle
-		});
-		
+		let old_nav = content.querySelector('.nav');
+		if (old_nav) {
+			content.replaceChild(this.mir, old_nav);
+		} else
+			content.querySelector('.msg[id^="comment-"]').before(this.mir);
+
 		if (USER_SETTINGS['CSS3 Animation']) {
-		
-			content.addEventListener('animationend', function(e) {
-				this.removeEventListener(e.type, arguments.callee, true);
-				this.style['animation-name'] = null;
-				this.classList.remove('terminate');
+
+			const termHandler = () => {
+				content.removeEventListener('animationend', termHandler, true);
+				content.style['animation-name'] = null;
+				content.classList.remove('terminate');
 				resolve();
-			}, true);
-			
-			content.classList.add('terminate');
+			}
+			content.addEventListener('animationend', termHandler, true);
 			content.style['animation-name'] = 'slideToShow'+ (reverse ? '-reverse' : '');
+			content.classList.add('terminate');
 		} else {
 			resolve();
 		}
-		
 		comments.parentNode.replaceChild(content, comments);
+	}
+
+	addBouble(pagenum, cnt_new) {
+		const btn = this.bar.children[`page_${pagenum}`];
+		cnt_new += Number( btn.getAttribute('cnt-new') );
+		btn.setAttribute('cnt-new', cnt_new);
+		this.mir.children[`page_${pagenum}`].setAttribute('cnt-new', cnt_new);
 	}
 }
 
@@ -518,6 +552,7 @@ const Favicon = {
 	}
 }
 
+let Navigation = null;
 let Highlight_Code = new HighlightJS;
 let MARKDOWN_MODE = false;
 
@@ -588,14 +623,14 @@ _setup(document, null, {
 			}
 
 			Highlight_Code.apply( top );
-			addTopicHandler( top );
+			addPreviewHandler( top );
 
 		} else {
 
 			for (const tps of this.querySelectorAll('[id^="topic-"]')) {
 
 				Highlight_Code.apply( tps );
-				addTopicHandler( tps );
+				addPreviewHandler( tps );
 			}
 			window.addEventListener('memories_setup', ({ detail }) => {
 				_setup(document.getElementById('tagFavAdd'), { 'data-tag': detail[0], onclick: tagMemories });
@@ -603,18 +638,20 @@ _setup(document, null, {
 			});
 			return;
 		}
-		
-		const pagesElements = this.querySelectorAll('.messages > .nav > .page-number');
-		const comments      = this.getElementById('comments');
-		
-		if (pagesElements.length) {
-			
-			const bar = Navigation.addToBar(pagesElements);
-			const nav = pagesElements[0].parentNode;
-			
+
+		const navPages = this.querySelectorAll('.messages > .nav > .page-number');
+		const comments = this.getElementById('comments');
+
+		let lastPageIdx = 0;
+
+		if (navPages.length) {
+
+			const { bar, mir } = (Navigation = new TopicNavigation(navPages.length - 2));
+			const nav = navPages[0].parentNode;
+			lastPageIdx = navPages.length - 3;
+
 			nav.parentNode.replaceChild(bar, nav);
-			
-			_setup(comments.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
+			comments.replaceChild(mir, comments.querySelector('.nav'));
 		}
 		
 		var history_state = LOR.path + (LOR.page ? '/page'+ LOR.page : '');
@@ -641,7 +678,6 @@ _setup(document, null, {
 			comments.querySelectorAll('.msg[id^="comment-"]'), null, true
 		);
 		
-		var   lastPage = Navigation.pagesCount;
 		const topicArc = this.evaluate(
 			'//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема перемещена в архив")]', this.body, null, 3, null
 		);
@@ -653,23 +689,22 @@ _setup(document, null, {
 			Favicon.draw('\u2013', '#F00');
 		} else
 		if (!topicArc.booleanValue) {
-			if ((lastPage -= 1) > LOR.page) {
-				pagesPreload(lastPage).then(RealtimeWatcher.start);
+			if (LOR.page != lastPageIdx) {
+				pagesPreload(lastPageIdx).then(RealtimeWatcher.start);
 			} else {
-				RealtimeWatcher.start();
+				RealtimeWatcher.start(comments);
 			}
 		}
 		
 		init.then(() => {
-			for (var g = 1, num = LOR.page + 1; (g++) < USER_SETTINGS['Preloaded Pages Count']; num++) {
-				if (num >= lastPage)
-					break;
-				pagesPreload(num);
+			const PL_COUNT = USER_SETTINGS['Preloaded Pages Count'];
+			let g = 1 + (LOR.page != lastPageIdx);
+
+			for (let i = LOR.page + 1; g < PL_COUNT && i < lastPageIdx; i++, g++) {
+				pagesPreload(i);
 			}
-			for (num = LOR.page - 1; (g++) < USER_SETTINGS['Preloaded Pages Count']; num--) {
-				if (num < 0)
-					break;
-				pagesPreload(num);
+			for (let i = LOR.page - 1; g < PL_COUNT && i >= 0; i--, g++) {
+				pagesPreload(i);
 			}
 		});
 		
@@ -696,8 +731,9 @@ _setup(document, null, {
 				const { page } = parseLORUrl(location.pathname);
 				const comment_id = location.hash.substring(1);
 				if (LOR.page != page) {
-					Navigation.page = page;
-					Navigation.complete.then(() => comment_id && document.getElementById(comment_id).scrollIntoView());
+					Navigation.gotoPage(page).then(() => {
+						comment_id && document.getElementById(comment_id).scrollIntoView()
+					});
 				} else if (comment_id) {
 					document.getElementById(comment_id).scrollIntoView();
 				}
@@ -715,44 +751,57 @@ _setup(document, null, {
 	}
 });
 
-const RealtimeWatcher = (() => {
-	var wS, dbCiD = new Array(0);
-	return class {
-		static start() {
-			var realtime = document.getElementById('realtime');
-			wS = new WebSocket('wss://www.linux.org.ru:9000/ws');
-			wS.onmessage =  e => {
-				dbCiD.push( e.data );
-				Timer.set('WebSocket Data', () => {
-					if (USER_SETTINGS['Realtime Loader']) {
-						onWSData(dbCiD);
-						dbCiD = new Array(0);
-						realtime.style.display = 'none';
-					} else {
-						realtime.innerHTML = 'Был добавлен новый комментарий.\n<a href="'+
-							LOR.path + '?cid=' + dbCiD[0] +'">Обновить.</a>';
-						realtime.style.display = null;
-					}
-				}, 2e3);
-			}
-			wS.onopen = e => {
-				console.info('Установлено соединение c '+ wS.url);
-				wS.send( Navigation.lastId );
-			}
-			wS.onclose = e => {
-				console.warn(`Соединение c ${ wS.url } было прервано "${ e.reason }" [код: ${ e.code }]`);
-				if(!e.wasClean || e.code == 1008) {
-					Timer.set('WebSocket Data', RealtimeWatcher.start, 5e3);
+const RealtimeWatcher = {
+
+	start: (comms) => {
+
+		const last_id  = comms.querySelector('.msg[id^="comment-"]:last-child').id.replace('comment-', '');
+		const realtime = document.getElementById('realtime');
+		const wS       = (RealtimeWatcher.wS = new WebSocket('wss://www.linux.org.ru:9000/ws'));
+
+		var dbCiD = [];
+
+		wS.onmessage =  e => {
+			dbCiD.push( e.data );
+			Timer.set('WebSocket Data', () => {
+				if (USER_SETTINGS['Realtime Loader']) {
+					realtime.style.display = 'none';
+					onWSData(dbCiD);
+					dbCiD = [];
+				} else {
+					(realtime.lastElementChild || _setup(realtime, {
+						text: 'Был добавлен новый комментарий.\n'
+					}).appendChild(
+						_setup('a', { text: 'Обновить.' })
+					)).setAttribute(
+						'href', LOR.path +'?cid='+ dbCiD[0]
+					);
+					realtime.style.display = null;
 				}
+			}, 2e3);
+		}
+		wS.onopen = () => {
+			console.info(`Установлено соединение c ${ wS.url }`);
+			wS.send( LOR.topic +' '+ last_id );
+		}
+		wS.onclose = ({ code, reason, wasClean }) => {
+			console.warn(`Соединение c ${ wS.url } было прервано "${ reason }" [код: ${ code }]`);
+			if(!wasClean || code == 1008) {
+				Timer.set('WebSocket Data', () => {
+					Favicon.draw(Favicon.index);
+					RealtimeWatcher.start(comms);
+				}, 5e3);
 			}
-			wS.onerror = e => console.error(e);
+			if (code != 1000)
+				Favicon.draw(Favicon.index || '!', '#ae911c');
 		}
-		static terminate(reason) {
-			wS.close(1000, reason);
-			Favicon.draw('\u2013', '#F00');
-		}
+		wS.onerror = e => console.error(e);
+	},
+	terminate: (reason) => {
+		RealtimeWatcher.wS.close(1000, reason);
+		Favicon.draw('\u2013', '#F00');
 	}
-})();
+}
 
 const isInsideATag = (str, sp, ep) => (str.split(sp).length - 1) > (str.split(ep).length - 1);
 var _char_ = '';
@@ -760,7 +809,7 @@ var _sign_ = false;
 var _ctrl_ = false;
 
 function winKeyHandler(e) {
-	
+
 	const $this = LOR.CommentForm.elements['msg'];
 	const key   = e.key || String.fromCharCode(e.charCode);
 	
@@ -806,9 +855,6 @@ function winKeyHandler(e) {
 						
 						$this.value = before + ln + val.substring(end);
 						$this.setSelectionRange(start, start);
-						break;
-					case 9:
-						lorcodeMarkup.call($this, '   ', '\n   ');
 						break;
 					case 8:
 						if (_sign_) {
@@ -975,21 +1021,6 @@ function lorcodeMarkup(open, close, blur) {
 	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
-function navBarHandle(e) {
-	const cL = e.target.classList;
-	if (cL[0] === 'page-number') {
-		e.preventDefault();
-		if (!cL.contains('broken')) {
-			switch (cL[1]) {
-				case 'prev': Navigation.page--; break;
-				case 'next': Navigation.page++; break;
-				default    : Navigation.page = Number(e.target.id.substring(5));
-			}
-			history.pushState(null, null, LOR.path + (LOR.page ? '/page'+ LOR.page : ''));
-		}
-	}
-}
-
 function onWSData(dbCiD) {
 	// Get an HTML containing the comment
 	getDataResponse(`${LOR.path}?filter=list&cid=${dbCiD[0]}&skipdeleted=true`,
@@ -1038,33 +1069,35 @@ function onWSData(dbCiD) {
 					dbCiD[i] = parent.appendChild(comment);
 				}
 				addToCommentsCache( dbCiD, { class: 'msg newadded' } );
-				let cnt_new = i + (
-					Number ( Navigation.bar.children['page_'+ page].getAttribute('cnt-new') ) || 0
-				);
-				_setup(           Navigation.bar.children['page_'+ page], { 'cnt-new': cnt_new });
-				_setup( document.querySelector('#comments #page_'+ page), { 'cnt-new': cnt_new });
+				if (Navigation) {
+					Navigation.addBouble(page, i);
+				}
 				Favicon.index += i;
 			} else {
 				
 				pagesCache.set(page, comms);
 				pagesCache.set(comms, page);
 				
-				const nav = comms.querySelector('.nav');
-				const bar = Navigation.addToBar(nav.children);
-				const msg = comms.querySelectorAll('.msg[id^="comment-"]');
-				const parent = pagesCache.get(LOR.page);
+				const nav = comms.querySelectorAll('.nav > .page-number'),
+				  nav_cnt = nav.length - 2;
+				const msg = comms.querySelectorAll('.msg[id^="comment-"]'),
+				  msg_cnt = msg.length;
 				
-				bar.children['page_'+ page].setAttribute('cnt-new', msg.length);
-				if (!bar.parentNode) {
-					let rt = document.getElementById('realtime');
-					rt.parentNode.insertBefore(bar, rt.nextSibling);
-					parent.insertBefore(_setup(bar.cloneNode(true), { onclick: navBarHandle }),
-						parent.firstElementChild.nextSibling);
+				if (!Navigation) {
+					const { bar, mir } = (Navigation = new TopicNavigation(nav_cnt));
+					document.getElementById('realtime').after(bar);
+					document.querySelector('#comments > .msg[id^="comment-"]').before(mir);
 				} else {
-					_setup(parent.querySelector('.nav'), { html: bar.innerHTML, onclick: navBarHandle });
+					const mir = Navigation.mir;
+					const bar = Navigation.extendBar(nav_cnt);
+					
+					mir.parentNode.replaceChild((
+						Navigation.mir = _setup(bar.cloneNode(true), { id: 'top-nav' }, { click: Navigation })
+					), mir);
 				}
+				Navigation.addBouble(page, msg_cnt);
 				addToCommentsCache( msg, { class: 'msg newadded' } );
-				Favicon.index += msg.length;
+				Favicon.index += msg_cnt;
 			}
 			Favicon.draw(Favicon.index);
 			history.replaceState(null, null, location.pathname + location.hash);
@@ -1087,7 +1120,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 		Highlight_Code.apply(el);
 		
 		addPreviewHandler(
-			(CommentsCache[cid] = el), attrs
+			(CommentsCache[cid] = el), attrs, !TOUCH_DEVICE
 		);
 		
 		el.querySelectorAll(`.msg_body > *:not(.reply):not(.sign) a[href*="${ path }?cid="]`).forEach(a => {
@@ -1152,7 +1185,7 @@ function getCommentsContent(html) {
 	    comms = doc.getElementById('comments'),
 	    isDel = doc.evaluate('//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема удалена")]', doc.body, null, 3, null);
 	// Remove banner scripts
-	comms.querySelectorAll('script').forEach(s => s.remove());
+	comms.querySelectorAll('script, style').forEach(s => s.remove());
 	// Add reply button action
 	if (LOR.CommentForm)
 		doc.querySelectorAll('a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
@@ -1195,8 +1228,7 @@ function goToCommentPage(cid) {
 			resolve(comment);
 		} else if (cid in CommentsCache) {
 			const num = pagesCache.get( CommentsCache[cid].parentNode );
-			Navigation.page = num;
-			Navigation.complete.then(() => {
+			Navigation.gotoPage(num).then(() => {
 				CommentsCache[cid].scrollIntoView({ block: 'start', behavior: 'smooth' })
 				resolve(CommentsCache[cid]);
 			});
@@ -1207,168 +1239,200 @@ function goToCommentPage(cid) {
 	});
 }
 
-const CentralPicture = (() => {
+class CentralPicture {
 
-	var _Scale = 1.0,
-		_RDeg  = 0,
-		_X     = 0,
-		_Y     = 0;
+	static expose(s,w,h) {
+		const pic = new CentralPicture;
+		Object.defineProperty(CentralPicture, 'expose', {
+			value: (s,w,h) => pic.expose(s,w,h)
+		});
+		pic.expose(s,w,h);
+	}
 
-	const _IMG = _setup('img', {
-		class: 'central-pic-img',
-		style: 'left: 0; top: 0;'
-	},
-	TOUCH_DEVICE ? null : { wheel: e => {
+	constructor() {
 
-			const delta = e.deltaX || e.deltaY;
-			const ratio = _Scale / 7.4;
+		var _Scale = 1.0;
+		var _Rdeg  = 0;
+		var _X     = 0;
+		var _Y     = 0;
 
-			if (delta > 0 && (_Scale - ratio) > 0.1) {
-				Dynamic_Style['Center Image Scale'] = (_Scale -= ratio);
-			} else if (delta < 0) {
-				Dynamic_Style['Center Image Scale'] = (_Scale += ratio);
+		const self = this;
+
+		const _IMG = _setup('img', {
+			class: 'central-pic-img',
+			style: 'left: 0; top: 0;'
+		}, { load: this,
+			error: ({ target: { style } }) => {
+				style.visibility = 'visible';
 			}
-			e.preventDefault();
+		});
 
-		}, mousedown: e => {
-			
-			const { style } = e.target;
+		const _Overlay = _setup('div', {
+			class : 'central-pic-overlay',
+			html  : `<div style="left: 50%; top: 50%;"></div>
+				<svg class="central-pic-rotate" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+					<path class="svg-circle-arrow" d="m31 20c-0.6 4.5-3.7 8.6-8 10.5-2 1.25-5 1.6-7.7 1.5l-1.7-0.15c-2.5-0.6-5-1.7-7-3.5-4.3-3.6-6-10-4-15 1.6-4.55 6-8.1 11-9 1.2-0.25 2.45-0.3 3.7-0.25l0.6-4.1h0.1c2.1 2.7 4.15 5.34 6.3 8-2.8 2-5.6 4.1-8.4 6 0.2-1.4 0.4-2.7 0.56-4.1-2.5-0.025-5.1 1.1-6.6 3.1-2.5 2.75-2.5 7.1-0.13 10 1.8 2.5 5.25 3.6 8.4 3 2.156-0.3 4.1-1.6 5.3-3.4 0.8-1 1.1-2.25 1.5-3.4 2 0.25 3.9592 0.5 7 0.8l0.1-0.05z"></path>
+				</svg>`
+		});
 
-			const startX = e.clientX - _X;
-			const startY = e.clientY - _Y;
-			const dragIMG = ({ clientX, clientY }) => {
-				style.left = (_X = clientX - startX) +'px';
-				style.top  = (_Y = clientY - startY) +'px';
-			}
-			const rmHandle = () => {
-				window.removeEventListener('mousemove', dragIMG);
-				window.removeEventListener('mouseup', rmHandle);
-			}
-			window.addEventListener('mousemove', dragIMG);
-			window.addEventListener('mouseup', rmHandle);
-
-			e.preventDefault();
-		}, error: ({ target }) => {
-			target.style.visibility = 'visible';
+		const cleanUp = () => {
+			_Overlay.remove();
+			_IMG.src = '';
+			_IMG.style.left = _X = 0;
+			_IMG.style.top  = _Y = 0;
+			Dynamic_Style['Center Image Scale'] = _Scale = 1;
+			Dynamic_Style['Center Image Rotate'] = _Rdeg = 0;
+			window.removeEventListener('resize', self, false);
 		}
-	});
+		const handler = e => {
+			switch (e.target.classList[0]) {
+				case 'central-pic-rotate':
+				case 'svg-circle-arrow':
+					Dynamic_Style['Center Image Rotate'] = _Rdeg === 270 ? (_Rdeg = 0) : (_Rdeg += 90);
+					break;
+				case 'central-pic-overlay':
+					cleanUp();
+			}
+			e.preventDefault();
+		}
 
-	const calcSize = () => {
+		if (TOUCH_DEVICE) {
 
-		const { innerWidth, innerHeight } = window,
-			  { style, naturalWidth, naturalHeight } = _IMG;
-			
-		var iW, iH;
-		
-		if (innerWidth / innerHeight < naturalWidth / naturalHeight) {
-			const ratio = innerWidth * 0.85;
-			if (ratio > naturalWidth && style.maxWidth) {
-				iW = naturalWidth;
-				iH = naturalHeight;
-			} else {
-				iW = ratio;
-				iH = naturalHeight * (ratio / naturalWidth);
+			let start2D = -1;
+			let startX  = 0;
+			let startY  = 0;
+			let startS  = 1;
+
+			const getPoint2D = ([a, b]) => Math.sqrt(
+				(a.clientX - b.clientX) * (a.clientX - b.clientX) + (a.clientY - b.clientY) * (a.clientY - b.clientY)
+			);
+
+			_IMG.addEventListener('touchstart', e => {
+
+				start2D = e.touches.length > 1 ? getPoint2D(e.touches) : -1;
+				startX  = e.touches[0].clientX - _X;
+				startY  = e.touches[0].clientY - _Y;
+				startS  = _Scale;
+
+				e.preventDefault();
+			});
+			_IMG.addEventListener('touchmove', ({ touches, changedTouches }) => {
+				if (start2D != -1) {
+					const scale = getPoint2D(touches) / start2D * startS;
+					Dynamic_Style['Center Image Scale'] = _Scale = Math.min(
+						(scale < 0.5 ? 0.5 : scale >= 0.9 && scale <= 1.1 ? 1 : scale), 9
+					);
+				} else if (_Scale > 1) {
+					_IMG.style.left = (_X = touches[0].clientX - startX) +'px';
+					_IMG.style.top  = (_Y = touches[0].clientY - startY) +'px';
+				} else {
+					_IMG.style.top  = (/**/ touches[0].clientY - startY) +'px';
+				}
+			});
+			_IMG.addEventListener('touchend', ({ touches, changedTouches }) => {
+				if (!touches.length && _Scale <= 1) {
+					if (changedTouches[0].clientY >= 25) {
+						self.setImagePos( _IMG.width, _IMG.height );
+					} else
+						cleanUp();
+				}
+			});
+			_Overlay.addEventListener('touchstart', handler);
+		} else {
+
+			_IMG.addEventListener('mousedown', e => {
+
+				if ( e.button != 0 ) return;
+
+				const style  = e.target.style;
+				const startX = e.clientX - _X;
+				const startY = e.clientY - _Y;
+				const dragIMG = ({ clientX, clientY }) => {
+					style.left = (_X = clientX - startX) +'px';
+					style.top  = (_Y = clientY - startY) +'px';
+				}
+				const rmHandle = () => {
+					window.removeEventListener('mousemove', dragIMG);
+					window.removeEventListener('mouseup', rmHandle);
+				}
+				window.addEventListener('mousemove', dragIMG);
+				window.addEventListener('mouseup', rmHandle);
+				e.preventDefault();
+			});
+			_IMG.addEventListener('wheel', e => {
+
+				const delta = e.deltaX || e.deltaY;
+				const ratio = _Scale / 7.4;
+
+				if (delta > 0 && (_Scale - ratio ) > 0.1) {
+					Dynamic_Style['Center Image Scale'] = (_Scale -= ratio);
+				} else if (delta < 0) {
+					Dynamic_Style['Center Image Scale'] = (_Scale += ratio);
+				}
+				e.preventDefault();
+			});
+			_Overlay.addEventListener('click', handler);
+		}
+		this._Overlay = _Overlay;
+		this._IMG     = _Overlay.firstElementChild.appendChild( _IMG );
+
+		this.setImagePos = (w, h) => {
+			_IMG.style.left = `${ (_X = 0 - w / 2) }px`;
+			_IMG.style.top  = `${ (_Y = 0 - h / 2) }px`;
+		}
+	}
+	handleEvent() {
+
+		const { naturalWidth, naturalHeight } = this._IMG;
+		const {   innerWidth,   innerHeight } = window;
+
+		var iW = naturalWidth, iH = naturalHeight, iS = innerWidth < 960 ? 1 : 0.85;
+
+		if (innerWidth / innerHeight < iW / iH) {
+			const ratio = innerWidth * iS;
+			if (!(ratio > naturalWidth)) {
+				iH *= (iW = ratio) / naturalWidth;
 			}
 		} else {
-			const ratio = 0.85 * innerHeight;
-			if (ratio > naturalHeight && style.maxHeight) {
-				iW = naturalWidth;
-				iH = naturalHeight;
-			} else {
-				iW = naturalWidth * (ratio / naturalHeight);
-				iH = ratio;
+			const ratio = iS * innerHeight;
+			if (!(ratio > naturalHeight)) {
+				iW *= (iH = ratio) / naturalHeight;
 			}
 		}
-		style.visibility  = 'visible';
-		style.left  = (_X = 0 - iW / 2) +'px';
-		style.top   = (_Y = 0 - iH / 2) +'px';
-		_IMG.width  = iW;
-		_IMG.height = iH;
+		this._IMG.style.visibility = 'visible';
+		this.setImagePos(
+			(this._IMG.width  = iW),
+			(this._IMG.height = iH)
+		);
 	}
+	expose(src) {
 
-	const overlay = _setup('div', {
-		class : 'central-pic-overlay',
-		html  : `<div style="left: 50%; top: 50%;"></div>
-			<svg class="central-pic-rotate" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-				<path class="svg-circle-arrow" d="m31 20c-0.6 4.5-3.7 8.6-8 10.5-2 1.25-5 1.6-7.7 1.5l-1.7-0.15c-2.5-0.6-5-1.7-7-3.5-4.3-3.6-6-10-4-15 1.6-4.55 6-8.1 11-9 1.2-0.25 2.45-0.3 3.7-0.25l0.6-4.1h0.1c2.1 2.7 4.15 5.34 6.3 8-2.8 2-5.6 4.1-8.4 6 0.2-1.4 0.4-2.7 0.56-4.1-2.5-0.025-5.1 1.1-6.6 3.1-2.5 2.75-2.5 7.1-0.13 10 1.8 2.5 5.25 3.6 8.4 3 2.156-0.3 4.1-1.6 5.3-3.4 0.8-1 1.1-2.25 1.5-3.4 2 0.25 3.9592 0.5 7 0.8l0.1-0.05z"></path>
-			</svg>`
-	},{ click : ({ target }) => {
-		switch(target.classList[0]) {
-			case 'central-pic-rotate':
-			case 'svg-circle-arrow':
-				Dynamic_Style['Center Image Rotate'] = _RDeg === 270 ? (_RDeg = 0) : (_RDeg += 90);
-				break;
-			case 'central-pic-overlay':
-				overlay.remove();
-				_IMG.src = '';
-				_IMG.style.left = _X = 0;
-				_IMG.style.top  = _Y = 0;
-				Dynamic_Style['Center Image Scale'] = _Scale = 1;
-				Dynamic_Style['Center Image Rotate'] = _RDeg = 0;
-				window.removeEventListener('resize', calcSize, false);
-		}
-	}});
-	
-	overlay.firstElementChild.append( _IMG );
+		this._IMG.style.visibility = 'hidden';
+		this._IMG.src = src;
 
-	return {
+		window.addEventListener('resize', this, false);
 
-		expose: (src, pW, pH) => {
-
-			_IMG.style.visibility = 'hidden';
-			_IMG.onload = calcSize;
-			_IMG.src = src;
-			
-			window.addEventListener('resize', calcSize, false);
-			
-			document.body.append( overlay );
-		}
+		document.body.append( this._Overlay );
 	}
-})();
-
-function addTopicHandler(topic) {
-
-	topic.addEventListener('click', e => {
-
-		const aClass = e.target.classList[0];
-		var   el     = e.target;
-
-		switch (aClass) {
-		case 'shrink-line':
-			el.textContent = `${ el.parentNode.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
-			el.parentNode.scrollIntoView();
-			break;
-		case 'shrink-text':
-			el.parentNode.classList.toggle('cutted');
-			break;
-		case 'medium-image':
-			el = el.parentNode;
-		case 'link-image':
-			if (USER_SETTINGS['Picture Viewer'] > (aClass == 'link-image')) {
-				CentralPicture.expose(el.href);
-				break;
-			}
-		default:
-			return;
-		}
-		e.preventDefault();
-	});
 }
 
-function addPreviewHandler(comment, attrs) {
-	
-	comment.addEventListener('click', e => {
-		
-		const aClass = e.target.classList[0];
-		const el     = e.target;
-		
+function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
+
+	_setup(comment, attrs, { click: e => {
+
+		const el     = e.target,
+		      aClass = el.classList[0],
+		      parent = el.parentNode;
+
+		let alter = true;
+
 		switch (aClass) {
 		case 'shrink-line':
-			el.textContent = `${ el.parentNode.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
-			el.parentNode.scrollIntoView();
+			el.textContent = `${ parent.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
+			parent.scrollIntoView();
 			break;
 		case 'shrink-text':
-			el.parentNode.classList.toggle('cutted');
+			parent.classList.toggle('cutted');
 			break;
 		case 'link-self':
 		case 'link-navs':
@@ -1384,27 +1448,33 @@ function addPreviewHandler(comment, attrs) {
 				});
 			});
 			break;
-		case 'replyComment':
 		case 'quoteComment':
-			var cid = comment.id.replace('preview-', '');
-			goToCommentPage(cid).then(target => {
-				simulateClick(
-					target.querySelector(`.${aClass}`)
-				);
-			});
+			alter = false;
+		case 'replyComment':
+			var [ name, cid ] = comment.id.split('-');
+			var href = el.getAttribute('href');
+			if (name === 'preview') {
+				goToCommentPage(cid).then(target => {
+					toggleForm(target.lastElementChild.lastElementChild, href, !alter);
+				});
+			} else {
+				toggleForm(comment.lastElementChild.lastElementChild, href, !alter);
+			}
 			break;
+		case 'medium-image':
+			alter = false;
 		case 'link-image':
-			if (USER_SETTINGS['Picture Viewer'] > 1) {
-				CentralPicture.expose(el.href);
+			if (USER_SETTINGS['Picture Viewer'] > alter) {
+				CentralPicture.expose((alter ? el : parent).href);
 				break;
 			}
 		default:
 			return;
 		}
 		e.preventDefault();
-	});
+	}});
 	
-	if ( ! TOUCH_DEVICE ) {
+	if (_MOUSE_) {
 		
 		comment.addEventListener('mouseover', e => {
 			if (e.target.classList[0] === 'link-pref') {
@@ -1424,8 +1494,6 @@ function addPreviewHandler(comment, attrs) {
 			}
 		});
 	}
-	
-	_setup(comment, attrs);
 }
 
 function loadFullPage(href) {
@@ -1539,7 +1607,7 @@ function showCommentInternal(commentElement, commentID, e) {
 				( top < visibleHeight
 				      ? offsetY
 				      : 0 ) +'px;'
-		});
+		}, !TOUCH_DEVICE);
 		
 		commentElement.addEventListener('animationstart', postproc, true);
 	} else {
@@ -1581,20 +1649,11 @@ function _setup(el, _Attrs, _Events) {
 			}
 		}
 		if (_Events) {
-			if ('remove' in _Events) {
-				for (var type in _Events['remove']) {
-					if (_Events['remove'][type].forEach) {
-						_Events['remove'][type].forEach(function(fn) {
-							el.removeEventListener(type, fn, false);
-						});
-					} else {
-						el.removeEventListener(type, _Events['remove'][type], false);
-					}
-				}
-				delete _Events['remove'];
-			}
 			for (var type in _Events) {
-				el.addEventListener(type, _Events[type], false);
+				if (Array.isArray(_Events[type])) {
+					_Events[type].forEach(fn => el.addEventListener(type, fn, false))
+				} else
+					el.addEventListener(type, _Events[type], false);
 			}
 		}
 	}
@@ -1691,22 +1750,22 @@ function handleCommentForm(form) {
 	const MARKUP_PANEL = _setup('div', {
 		id   : 'markup-panel',
 		class: 'lorcode',
-		html : `
-			<button type="button" class="btn btn-default" lorcode="b"></button>
-			<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>
-			<button type="button" class="btn btn-default" lorcode="u"></button>
-			<button type="button" class="btn btn-default" lorcode="s" markdown="~~"></button>
-			<button type="button" class="btn btn-default" lorcode="em"></button>
-			<button type="button" class="btn btn-default" lorcode="br"></button>
-			<button type="button" class="btn btn-default" lorcode="cut" markdown="&gt;&gt;&gt;"></button>
-			<button type="button" class="btn btn-default" lorcode="list" markdown="1."></button>
-			<button type="button" class="btn btn-default" lorcode="strong"></button>
-			<button type="button" class="btn btn-default uc" lorcode="pre" markdown="* "></button>
-			<button type="button" class="btn btn-default" lorcode="user" markdown="@"></button>
-			<button type="button" class="btn btn-default" lorcode="code" markdown="&#96;&#96;&#96;"></button>
-			<button type="button" class="btn btn-default" lorcode="inline" markdown="&#96;"></button>
-			<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>
-			<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>`}, {
+		html : ''+
+			'<button type="button" class="btn btn-default" lorcode="b"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="u"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="s" markdown="~~"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="em"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="br"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="cut" markdown="&gt;&gt;&gt;"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="list" markdown="1."></button>'+
+			'<button type="button" class="btn btn-default" lorcode="strong"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="pre" markdown="* "></button>'+
+			'<button type="button" class="btn btn-default" lorcode="user" markdown="@"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="code" markdown="&#96;&#96;&#96;"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="inline" markdown="&#96;"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>'+
+			'<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>'}, {
 		click: e => {
 			e.preventDefault();
 			if (e.target.type === 'button') {
@@ -1864,14 +1923,19 @@ function handleCommentForm(form) {
 	TEXT_AREA.addEventListener('click', ({ target }) => target.classList.remove('select-break'));
 	
 	window.addEventListener('keyup', () => { _ctrl_ = false });
-	window.addEventListener('keydown', e => { _ctrl_ = e.ctrlKey });
+	window.addEventListener('keydown', e => {
+		if (!(_ctrl_ = e.ctrlKey) && e.keyCode == 9 && e.target === TEXT_AREA) {
+			e.preventDefault();
+			lorcodeMarkup.call(e.target, '   ', '\n   ');
+		}
+	});
 	window.addEventListener('keypress', winKeyHandler);
 	window.onbeforeunload = () => (
 		TEXT_AREA.value != '' && form.parentNode.style['display'] != 'none'
 			? 'Вы что-то напечатали в форме. Все введенные данные будут потеряны при закрытии страницы.'
 			: void 0
 	);
-	
+
 	const mode_change = ({ target }) => {
 		MARKUP_PANEL.className = (MARKDOWN_MODE = /markdown/i.test(target.value)) ? 'markdown' : 'lorcode';
 	};
@@ -2126,54 +2190,55 @@ function topicMemories(e) {
 	});
 }
 
-function toggleForm(underc, parent, href) {
+function toggleForm(underc, href, quote) {
+
 	const { topic, replyto } = parseReplyUrl(href);
-	if (LOR.CommentForm.elements['replyto'].value != replyto) {
-		parent.style['display'] = 'none';
+
+	const formel = LOR.CommentForm.elements;
+	const parent = LOR.CommentForm.parentNode;
+
+	let toshow = (parent.style['display'] == 'none');
+
+	if (quote) {
+		convMsgBody(
+			underc.querySelector('[itemprop="articleBody"]') || underc
+		);
+		if (parent.parentNode === underc && !toshow)
+			return;
 	}
-	if (parent.style['display'] == 'none') {
-		parent.className = 'slide-down';
-		parent.addEventListener('animationend', function(e, _) {
-			_setup(parent, { class: _ }, { remove: { animationend: arguments.callee }});
-			LOR.CommentForm.elements['msg'].focus();
-		});
+	if (formel.replyto.value != replyto) {
+		parent.style['display'] = 'none';
+		toshow = true;
+	}
+
+	const slideCompl = () => {
+		if (!toshow) {
+			parent.style['display'] = 'none';
+		} else
+			formel.msg.focus();
+		parent.className = 'form-container';
+		parent.removeEventListener('animationend', slideCompl);
+	}
+	if (toshow) {
+		_setup(parent, { class: 'form-container slide-down' }, { 'animationend': slideCompl });
 		underc.appendChild(parent).style['display'] = null;
-		LOR.CommentForm.elements['replyto'].value = replyto;
-		LOR.CommentForm.elements[ 'topic' ].value = topic;
+		formel['replyto'].value = replyto;
+		formel[ 'topic' ].value = topic;
 	} else {
-		parent.className = 'slide-up';
-		parent.addEventListener('animationend', function(e, _) {
-			_setup(parent, { class: _, style: 'display: none;'}, { remove: { animationend: arguments.callee }});
-		});
+		_setup(parent, { class: 'form-container slide-up' }, { 'animationend': slideCompl });
 	}
 }
 
 function handleReplyToBtn(btn) {
-	const href  = btn.getAttribute('href');
-	const $this = btn.parentNode;
-	$this.innerHTML = '<a class="replyComment" href="'+ href +'">Ответить</a>\n.\n<a class="quoteComment" href="javascript:void(0)">с цитатой</a>';
-	$this.addEventListener('click', e => {
-		
-		if (e.target.tagName === 'A') {
-			e.stopPropagation();
-			e.preventDefault();
-			
-			const parent = LOR.CommentForm.parentNode;
-			const underc = $this.parentNode.parentNode.parentNode;
-			
-			switch (e.target.classList[0]) {
-				case 'replyComment':
-					toggleForm(underc, parent, href);
-					break;
-				case 'quoteComment':
-					if (parent.parentNode != underc || parent.style.display == 'none')
-						toggleForm(underc, parent, href);
-					convMsgBody(
-						underc.querySelector('[itemprop="articleBody"]') || underc
-					);
-			}
-		}
-	}, false);
+
+	const href   = btn.getAttribute('href');
+	const parent = btn.parentNode;
+
+	btn.remove(), parent.append(
+		_setup('a', { class: 'replyComment', href, text: 'Ответить'}),
+		'\n.\n',
+		_setup('a', { class: 'quoteComment', href, text: 'с цитатой'})
+	);
 }
 
 function convMsgBody(msg) {
@@ -2337,55 +2402,80 @@ function domToMarkdown(childNodes, deep = 0) {
 const App = (() => {
 	
 	var main_events_count;
+	var opened = true;
 	
-	if (typeof chrome !== 'undefined' && chrome.runtime.id) {
-		
-		const port = chrome.runtime.connect(chrome.runtime.id, { name: location.href });
-		const sync = new Promise((resolve, reject) => {
-			
-			const initSettings = items => {
-				for (let name in items) {
-					USER_SETTINGS[name] = Dynamic_Style[name] = items[name];
-				}
-				port.onMessage.removeListener(initSettings);
-				resolve();
-			};
-			
-			port.onMessage.addListener(initSettings);
-			chrome.runtime.sendMessage({ action : 'l0rNG-settings' });
-			chrome.storage.onChanged.addListener(items => {
-				for (let name in items) {
-					USER_SETTINGS[name] = Dynamic_Style[name] = items[name].newValue;
+	if (typeof chrome !== 'undefined' && chrome.runtime) {
+
+		const portConnect = resolve => {
+			const port = chrome.runtime.connect();
+			port.onMessage.addListener(({ name, data }) => {
+				switch (name) {
+					case 'new-notes':
+						if (main_events_count)
+							main_events_count.textContent = data;
+						break;
+					case 'connection-resolve':
+						console.info('WebExt Runtime Connected!');
+						resolve((opened = true));
+					case 'settings-change':
+						for (const key in data) {
+							Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
+						}
 				}
 			});
-		});
-		
+			port.onDisconnect.addListener(() => {
+				console.warn('WebExt Runtime Disconnected!');
+				opened = false;
+			});
+		}
+
+		const sendMessage = action => {
+			if (opened) {
+				chrome.runtime.sendMessage({ action });
+			} else {
+				new Promise(portConnect).then(() => chrome.runtime.sendMessage({ action }));
+			}
+		}
+
+		const sync = new Promise(portConnect);
+
 		return {
-			checkNow : () => chrome.runtime.sendMessage({ action: 'l0rNG-checkNow' }),
-			reset    : () => chrome.runtime.sendMessage({ action: 'l0rNG-reset' }),
+			checkNow : () => sendMessage( 'l0rNG-checkNow' ),
+			reset    : () => sendMessage( 'l0rNG-reset' ),
 			init     : () => {
 				if ( (main_events_count = document.getElementById('main_events_count')) ) {
 					// We can't show notification from the content script directly,
 					// so let's send a corresponding message to the background script
-					sync.then(() => {
-						port.onMessage.addListener(text => { main_events_count.textContent = text });
-						chrome.runtime.sendMessage({ action: 'l0rNG-reval' });
-					});
+					sync.then(() => sendMessage( 'l0rNG-reval' ));
 				}
 				return sync;
 			}
 		}
 	} else {
-		
-		var notes      = localStorage.getItem('l0rNG-notes') || '';
-		var delay      = 55e3 + Math.floor(Math.random() * 1765);
-		var sendNotify = count => {
-			const notif = new Notification('LINUX.ORG.RU', {
-				icon: '/tango/img/linux-logo.png',
-				body: `\n${ count } новых ответов`,
-			});
-			notif.onclick = () => { window.focus() };
-		}
+
+		let notes = localStorage.getItem('l0rNG-notes') || '';
+		let delay = 55e3 + Math.floor(Math.random() * 1765);
+
+		const sendNotify = (permission => {
+			// Определяем статус оповещений:
+			var granted = (permission === 'granted'); // - разрешены
+
+			switch (permission) {
+				case 'denied':  // - отклонены
+					return () => void 0;
+				case 'default': // - требуется подтверждение
+					Notification.requestPermission(p => { granted = (p === 'granted'); });
+			}
+			return count => {
+				if (USER_SETTINGS['Desktop Notification'] && granted) {
+					const notif = new Notification('LINUX.ORG.RU', {
+						icon: '/tango/img/linux-logo.png',
+						body: `\n${ count } новых ответов`,
+					});
+					notif.onclick = () => { window.focus() };
+				}
+			}
+		})( window.Notification ? Notification.permission : 'denied' );
 		
 		const defaults   = Object.assign({}, USER_SETTINGS);
 		const startWatch = getDataResponse.bind(null, '/notifications-count',
@@ -2393,13 +2483,14 @@ const App = (() => {
 				if (response != 0) {
 					if (notes != response) {
 						localStorage.setItem('l0rNG-notes', (notes = response));
-						USER_SETTINGS['Desktop Notification'] && sendNotify(response);
+						sendNotify(response);
 					}
 					main_events_count.textContent = '('+ response +')';
 					lorypanel.children['lorynotify'].setAttribute('notes-cnt', response);
 				} else {
 					main_events_count.textContent = '';
 					lorypanel.children['lorynotify'].removeAttribute('notes-cnt');
+					notes != '' && App.reset();
 				}
 				Timer.set('Check Notifications', startWatch, delay);
 			}, ({ status }) => {
@@ -2409,31 +2500,30 @@ const App = (() => {
 		
 		const setValues = items => {
 			for (const name in Object.assign(USER_SETTINGS, items)) {
-				let inp = loryform.elements[name];
-				inp[inp.type === 'checkbox' ? 'checked' : 'value'] =  Dynamic_Style[name] = USER_SETTINGS[name];
+				 const input   = loryform.elements[name],
+				       param   = input.type === 'checkbox' ? 'checked' : 'value';
+				input[ param ] = Dynamic_Style[name] = USER_SETTINGS[name];
 			}
 		}
-		
-		const onValueChange = ({ target }) => {
-			Timer.clear('Settings on Changed');
-			switch (target.type) {
+
+		const onValueChange = input => {
+			switch (input.type) {
 				case 'checkbox':
-					USER_SETTINGS[target.id] = target.checked;
+					USER_SETTINGS[input.id] = input.checked;
 					break;
 				default:
-					const min = Number (target.min || 0);
-					const val = Number (target.value);
-					USER_SETTINGS[target.id] = Dynamic_Style[target.id] = val >= min ? val : (target.value = min);
+					const min = Number (input.min || 0);
+					const val = Number (input.value);
+					Dynamic_Style[input.id] = USER_SETTINGS[input.id] = val >= min ? val : (input.value = min);
 			}
 			localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
-			applymsg.classList.add('apply-anim');
-			Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
+			loryform.classList.add('save-msg');
 		}
 		
-		const loryform = _setup('form', { id: 'loryform', html: `
+		const loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
-				<span class="tab-cell" id="applymsg"><input type="checkbox" id="Realtime Loader"></span>
+				<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
@@ -2491,23 +2581,27 @@ const App = (() => {
 				<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
 					<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
 				</span>
-			</div>`,
-				onchange: onValueChange,
-				oninput: e => Timer.set('Settings on Changed', () => {
-					loryform.onchange = () => { loryform.onchange = onValueChange };
-					onValueChange(e)
-				}, 750)
+			</div>`}, {
+				animationend: () => loryform.classList.remove('save-msg'),
+				change: ({ target }) => {
+					opened && onValueChange(target);
+				},
+				input : ({ target }) => {
+					opened = false;
+					Timer.set('Settings on Changed', () => {
+						opened = true;
+						onValueChange(target);
+					}, 750)
+				}
 			});
 			
 		setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
 		loryform.elements.resetSettings.onclick = () => {
 			setValues( defaults );
 			localStorage.setItem('lorify-ng', JSON.stringify(defaults));
-			applymsg.classList.add('apply-anim');
-			Timer.set('Apply Setting MSG', () => applymsg.classList.remove('apply-anim'), 2e3);
+			loryform.classList.add('save-msg');
 		}
-		
-		const applymsg  = loryform.querySelector('#applymsg');
+
 		const lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
 		<div id="lorynotify" class="lory-btn"></div>
 		<div id="lorytoggle" class="lory-btn"></div>
@@ -2583,15 +2677,29 @@ const App = (() => {
 				font: italic 10px Arial;
 			}
 			#loginGreating { margin-right: 42px!important; }
-			#resetSettings, .apply-anim:after { position: absolute; right: 0; }
-			.apply-anim:after {
-				content: 'Настройки сохранены.';
-				-webkit-animation: apply 2s infinite;
-				animation: apply 2s infinite;
+			#resetSettings, .info-line:before { position: absolute; right: 0; }
+			.info-line:before {
+				-webkit-animation: apply 2s linear 1;
+				animation: apply 2s linear 1;
 				color: red;
+				background-color: white;
+				left: 0; top: 0;
+				z-index: 9;
 			}
-			@keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
-			@-webkit-keyframes apply { 0% { opacity: .1; } 50% { opacity: 1; } 100% { opacity: 0; } }
+			.save-msg:before {
+				content: 'Настройки сохранены.';
+				padding: 15px 0;
+				text-align: center;
+			}
+			@media screen and (max-width: 570px) {
+				#loryform { right: 0; }
+			}
+			@keyframes apply {
+				0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
+			}
+			@-webkit-keyframes apply {
+				0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
+			}
 		</style>`}, {
 			click: ({ target }) => {
 				if (target.classList[0] === 'lory-btn') {
@@ -2605,19 +2713,6 @@ const App = (() => {
 				}
 			}
 		});
-		// Определяем статус оповещений:
-		switch (Notification.permission) {
-			case 'granted': // - разрешены
-				break;
-			case 'denied':  // - отклонены
-				sendNotify = () => void 0;
-				break;
-			case 'default': // - требуется подтверждение
-				Notification.requestPermission(granted => {
-					if (granted !== 'granted')
-						sendNotify = () => void 0;
-				});
-		}
 		window.addEventListener('storage', ({ key, newValue }) => {
 			if (key === 'l0rNG-notes') {
 				main_events_count.textContent = newValue ? '('+ newValue +')' : '';

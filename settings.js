@@ -1,53 +1,55 @@
 
 const loryform = document.forms['loryform'];
-const applymsg = document.getElementById('applymsg');
+const savemsg  = () => loryform.classList.add('save-msg');
 const notify   = document.getElementById('notifications');
 
-applymsg.addEventListener('animationend', () => applymsg.classList.remove('apply-anim'));
-
 chrome.runtime.getBackgroundPage( ({ notes, openTab, settings, defaults }) => {
-	
-	var timer = null;
-	
+
 	notify.hidden = !notes;
 	notify.firstElementChild.textContent = notes;
-	notify.firstElementChild.onclick = () => {
+	notify.firstElementChild.onclick = e => {
+		e.preventDefault();
 		notify.hidden = true;
 		openTab();
 	}
 	setValues(settings);
 	
 	loryform.elements.resetSettings.addEventListener('click', () => {
-		chrome.storage.sync.set(defaults, () => applymsg.classList.add('apply-anim'));
+		chrome.storage.sync.set(defaults, savemsg);
 		setValues(defaults);
 	});
-	
-	loryform.onchange = onValueChange;
-	loryform.addEventListener('input', evt => {
-		clearTimeout(timer);
-		timer = setTimeout(() => {
-			loryform.onchange = () => { loryform.onchange = onValueChange };
-			onValueChange(evt);
+
+	var busy_id = -1;
+	loryform.addEventListener('animationend', () => loryform.classList.remove('save-msg'));
+	loryform.addEventListener('change', ({ target }) => {
+		if (busy_id == -1)
+			onValueChange(target);
+	});
+	loryform.addEventListener('input', ({ target }) => {
+		clearTimeout(busy_id);
+		busy_id = setTimeout(() => {
+			busy_id = -1;
+			onValueChange(target);
 		}, 750);
 	});
-
-	function onValueChange({ target }) {
-		clearTimeout(timer);
-		switch (target.type) {
-			case 'checkbox':
-				settings[target.id] = target.checked;
-				break;
-			default:
-				const min = Number (target.min || 0);
-				const val = Number (target.value);
-				settings[target.id] = val >= min ? val : (target.value = min);
-		}
-		chrome.storage.sync.set(settings, () => applymsg.classList.add('apply-anim'));
-	}
 });
 
+function onValueChange(input) {
+	const changes = {};
+	switch (input.type) {
+		case 'checkbox':
+			changes[input.id] = input.checked;
+			break;
+		default:
+			const min = Number (input.min || 0);
+			const val = Number (input.value);
+			changes[input.id] = val >= min ? val : (input.value = min);
+	}
+	chrome.storage.sync.set(changes, savemsg);
+}
+
 function setValues(items) {
-	for (let name in items) {
+	for (const name in items) {
 		loryform.elements[name][
 			loryform.elements[name].type === 'checkbox'
 			? 'checked'

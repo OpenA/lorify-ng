@@ -1,4 +1,4 @@
-
+var notes    = 0;
 var settings = new Object;
 var defaults = { // default settings
 	'Realtime Loader'      : true,
@@ -12,49 +12,56 @@ var defaults = { // default settings
 	'Upload Post Delay'    : 5,
 	'Code Block Short Size': 255
 };
-// load settings
-chrome.storage.onChanged.addListener(items => {
-	for (let name in items) {
-		settings[name] = items[name].newValue;
+
+const openPorts = new Object;
+const initStor  = new Promise(resolve => {
+	// load settings
+	chrome.storage.onChanged.addListener(items => {
+		const data = {};
+		for (const key in items) {
+			data[key] = settings[key] = items[key].newValue;
+		}
+		for (const id in openPorts) {
+			openPorts[id].postMessage({ name: 'settings-change', data });
+		}
+	});
+	chrome.storage.sync.get(defaults, items => {
+		for (const key in items) {
+			settings[key] = items[key];
+		}
+		resolve();
+	});
+});
+
+chrome.runtime.onSuspend && chrome.runtime.onSuspend.addListener(() => {
+	console.log('Unloading.');
+	for (const id in openPorts) {
+		openPorts[id].disconnect();
 	}
+	chrome.browserAction.setBadgeBackgroundColor({ color: '#e5be5b' }); //#369e1b
 });
-chrome.storage.sync.get(defaults, items => {
-	for (let name in items) {
-		settings[name] = items[name];
-	}
-});
-
-const openPorts = new Map;
-const empty_Url = [
-	'about:newtab',
-	'about:blank',
-	'about:home',
-	'chrome://startpage/',
-	'chrome://newtab/'
-];
-
-var notes = 0;
-var dead  = false;
-
-chrome.alarms.onAlarm.addListener(getNotifications);
-chrome.alarms.create('check-lor-notifications', {
-	when: Date.now() + 1e3
-});
-
-//chrome.runtime.onSuspend.addListener(function(){console.log(arguments)})
 chrome.notifications.onClicked.addListener(openTab);
 chrome.runtime.onMessage.addListener(messageHandler);
 chrome.runtime.onConnect.addListener(port => {
-	openPorts.set(port.sender.tab.id, port);
-	port.onDisconnect.addListener(() => {
-		openPorts.delete(port.sender.tab.id);
+	const id = port.sender.tab.id;
+	(openPorts[id] = port).onDisconnect.addListener(() => {
+		delete openPorts[id];
 	});
+	initStor.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
 });
 
 if (chrome.browserAction.setBadgeTextColor !== undefined) {
 	chrome.browserAction.setBadgeTextColor({ color: '#ffffff' });
 }
 chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });
+chrome.browserAction.getBadgeText({}, label => {
+	if (label > 0)
+		notes = Number(label);
+});
+chrome.alarms.onAlarm.addListener(getNotifications);
+chrome.alarms.create('check-lor-notifications', {
+	when: Date.now() + 1e3
+});
 /* chrome.webRequest.onBeforeRequest.addListener(
 	() => new Object({ cancel: true }),
 	{ urls: [
@@ -65,6 +72,14 @@ chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });
 	]},
 	['blocking']
 ); */
+
+const empty_Url = [
+	'about:newtab',
+	'about:blank',
+	'about:home',
+	'chrome://startpage/',
+	'chrome://newtab/'
+];
 
 function onGetTabs(tabs) {
 	// If exists a tab with URL == `notify_Url` then we switches to this tab.
@@ -92,14 +107,16 @@ function openTab() {
 function clearNotes() {
 	notes = 0;
 	chrome.browserAction.setBadgeText({ text: '' });
-	openPorts.forEach(port => port.postMessage(''));
+	for (const id in openPorts) {
+		openPorts[id].postMessage({ name: 'new-notes', data: ''});
+	}
 }
 
 function messageHandler({ action }, { tab }) {
 	// check
 	switch (action) {
 		case 'l0rNG-settings':
-			openPorts.get(tab.id).postMessage( settings );
+			openPorts[tab.id].postMessage({ name: 'settings-change', data: settings });
 			break;
 		case 'l0rNG-reset':
 			clearNotes();
@@ -108,6 +125,7 @@ function messageHandler({ action }, { tab }) {
 			chrome.alarms.get('check-lor-notifications', alarm => {
 				!alarm && getNotifications();
 			});
+			openPorts[tab.id].postMessage({ name: 'new-notes', data: notes ? '('+ notes +')' : '' });
 			break;
 		case 'l0rNG-checkNow':
 			chrome.alarms.clear('check-lor-notifications');
@@ -149,5 +167,7 @@ function sendNotify(count) {
 		});
 	}
 	chrome.browserAction.setBadgeText({ text: count ? count.toString() : '' });
-	openPorts.forEach(port => port.postMessage( count ? '('+ count +')' : '' ));
+	for (const id in openPorts) {
+		openPorts[id].postMessage({ name: 'new-notes', data: count ? '('+ count +')' : '' });
+	}
 }
