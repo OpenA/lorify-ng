@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.9.1
+// @version     2.9.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -66,6 +66,7 @@ const Dynamic_Style = (() => {
 })();
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
+	if (!${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}) {
 		var _= { value: function(){} }; Object.defineProperties(window, { initStarPopovers: _, initNextPrevKeys: _, $script: _, define: { configurable: true, get: define_amd }});
 		var tag_memories_form_setup = topic_memories_form_setup;
 		$script.ready = function(name, call) {
@@ -81,7 +82,7 @@ document.documentElement.append(
 			_.value.amd = true;
 			return 'function';
 		}
-	`}),
+	}`}),
 	_setup('style' , { text: `
 		.newadded  { border: 1px solid #006880; }
 		.msg-error { color: red; font-weight: bold; }
@@ -552,8 +553,51 @@ const Favicon = {
 	}
 }
 
+const ContentFinder = {
+
+	get CodeHiglight () {
+		const hl_engine = new HighlightJS;
+		Object.defineProperty(this, 'CodeHiglight', { value: hl_engine })
+		return hl_engine;
+	},
+
+	get IMAGE_LINKS () {
+		const img_links = ['jpg','jpeg','png','gif','svg','webp'].map(ext => `a[href*=".${ext}?"],a[href$=".${ext}"]`).join(',');
+		Object.defineProperty(this, 'IMAGE_LINKS', { value: img_links })
+		return img_links;
+	},
+
+	check: function(comment) {
+
+		const { IMAGE_LINKS, CodeHiglight } = this;
+
+		CodeHiglight.apply(comment, code => {
+			const shrink_size   = USER_SETTINGS['Code Block Short Size'];
+			const offset_height = code.offsetHeight;
+			const block         = code.parentNode.parentNode.
+				classList[0] === 'code' ? code.parentNode.parentNode : code.parentNode;
+
+			if (shrink_size < 20) {
+				block.classList.add('cutted');
+				block.prepend(
+					_setup('span', { class: 'shrink-text' })
+				);
+			} else if (!offset_height) {
+				block.classList.add('suplied');
+			} else if (offset_height > shrink_size) {
+				block.classList.add('shrinked');
+				block.prepend(
+					_setup('div', { class: 'shrink-line', text: 'Развернуть' })
+				);
+			}
+		});
+		for (const a of comment.querySelectorAll(IMAGE_LINKS)) {
+			a.className = 'link-image';
+		}
+	}
+}
+
 let Navigation = null;
-let Highlight_Code = new HighlightJS;
 let MARKDOWN_MODE = false;
 
 _setup(document, null, {
@@ -622,14 +666,14 @@ _setup(document, null, {
 					}`);
 			}
 
-			Highlight_Code.apply( top );
+			ContentFinder.check( top );
 			addPreviewHandler( top );
 
 		} else {
 
 			for (const tps of this.querySelectorAll('[id^="topic-"]')) {
 
-				Highlight_Code.apply( tps );
+				ContentFinder.check( tps );
 				addPreviewHandler( tps );
 			}
 			window.addEventListener('memories_setup', ({ detail }) => {
@@ -755,7 +799,7 @@ const RealtimeWatcher = {
 
 	start: (comms) => {
 
-		const last_id  = comms.querySelector('.msg[id^="comment-"]:last-child').id.replace('comment-', '');
+		const last     = comms.querySelector('.msg[id^="comment-"]:last-child');
 		const realtime = document.getElementById('realtime');
 		const wS       = (RealtimeWatcher.wS = new WebSocket('wss://www.linux.org.ru:9000/ws'));
 
@@ -782,7 +826,7 @@ const RealtimeWatcher = {
 		}
 		wS.onopen = () => {
 			console.info(`Установлено соединение c ${ wS.url }`);
-			wS.send( LOR.topic +' '+ last_id );
+			wS.send( LOR.topic + (last ? ' '+ last.id.replace('comment-', '') : ''));
 		}
 		wS.onclose = ({ code, reason, wasClean }) => {
 			console.warn(`Соединение c ${ wS.url } было прервано "${ reason }" [код: ${ code }]`);
@@ -790,7 +834,7 @@ const RealtimeWatcher = {
 				Timer.set('WebSocket Data', () => {
 					Favicon.draw(Favicon.index);
 					RealtimeWatcher.start(comms);
-				}, 5e3);
+				}, 15e3);
 			}
 			if (code != 1000)
 				Favicon.draw(Favicon.index || '!', '#ae911c');
@@ -1117,7 +1161,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 		el['last_modifed'] = el.querySelector('.sign_more > time');
 		el['edit_comment'] = el.querySelector('.reply a[href^="/edit_comment"]');
 		
-		Highlight_Code.apply(el);
+		ContentFinder.check(el);
 		
 		addPreviewHandler(
 			(CommentsCache[cid] = el), attrs, !TOUCH_DEVICE
@@ -1201,7 +1245,7 @@ function getCommentsContent(html) {
 		      new_el = topic.querySelector(name);
 		if (old_el.textContent != new_el.textContent) {
 			old_el.parentNode.replaceChild(new_el, old_el);
-			Highlight_Code.apply( new_el );
+			ContentFinder.check( new_el );
 		}
 	}
 	return comms;
@@ -1746,7 +1790,7 @@ function handleCommentForm(form) {
 	const TEXT_AREA    = form.elements['msg'];
 	const ACTION_JSP   = form.getAttribute('action').replace(/^\//, '');
 	const FACT_PANNEL  = form.querySelector('.form-actions');
-	const NODE_PREVIEW = _setup('div', { id: 'commentPreview', html: '<div class=error></div><h2></h2><span></span>' });
+	const NODE_PREVIEW = _setup('div', { id: 'commentPreview', html: '<pre class="error"></pre><h2></h2><span></span>' });
 	const MARKUP_PANEL = _setup('div', {
 		id   : 'markup-panel',
 		class: 'lorcode',
@@ -1797,56 +1841,56 @@ function handleCommentForm(form) {
 		_setup(submit_btn, { type: 'button', name: void 0, id: submit_btn.name, 'do-upload': '' });
 	}
 
-		const refresh_preview = () => {
+	const refresh_preview = () => {
 
-			const formData = new FormData( form );
-			
-			formData.append('preview', '');
+		const formData = new FormData( form );
+		
+		formData.append('preview', '');
 
-			if (form.elements['topic']) {
-				sendFormData('add_comment_ajax', formData).then(
-					({ errors, preview }) => {
-						NODE_PREVIEW.children[0].innerHTML   = errors.join('\n<br>\n');
-						NODE_PREVIEW.children[1].textContent = preview['title'] || '';
-						NODE_PREVIEW.children[2].innerHTML   = preview['processedMessage'];
-						Highlight_Code.apply( NODE_PREVIEW );
-					}
-				);
-			} else {
-				sendFormData(ACTION_JSP, formData, false).then(
-					res => res.text().then(html => {
-						const doc = new DOMParser().parseFromString(html, 'text/html'),
-						      msg = doc.querySelector('.messages');
-						NODE_PREVIEW.replaceChild(msg, NODE_PREVIEW.children[2]);
-						Highlight_Code.apply( msg );
-					})
-				);
-			}
-		}
-
-		const submit_process = (sbtn, y) => {
-			form.elements[ 'cancel'].className = `btn btn-${ y ? 'danger' : 'default' }`;
-			form.elements['preview'].disabled  = sbtn.disabled = y;
-			sbtn.classList[y ? 'add' : 'remove']('process');
-			for (const primary of FACT_PANNEL.querySelectorAll('.btn[do-upload]')) {
-				primary.disabled = y;
-			}
-		}
-
-		const purge_form = (clry) => {
-
-			simulateClick(
-				form.parentNode.parentNode.querySelector('.replyComment')
+		if (form.elements['topic']) {
+			sendFormData('add_comment_ajax', formData).then(
+				({ errors, preview }) => {
+					NODE_PREVIEW.children[0].textContent = errors.join('\n');
+					NODE_PREVIEW.children[1].textContent = preview['title'] || '';
+					NODE_PREVIEW.children[2].innerHTML   = preview['processedMessage'];
+					ContentFinder.check( NODE_PREVIEW.children[2] );
+				}
 			);
-
-			if (clry) {
-				form.elements[ 'msg' ].value = '';
-				form.elements['title'].value = '';
-				NODE_PREVIEW.children[0].innerHTML   = '';
-				NODE_PREVIEW.children[1].textContent = '';
-				NODE_PREVIEW.children[2].innerHTML   = '';
-			}
+		} else {
+			sendFormData(ACTION_JSP, formData, false).then(
+				res => res.text().then(html => {
+					const doc = new DOMParser().parseFromString(html, 'text/html'),
+					      msg = doc.querySelector('.messages');
+					NODE_PREVIEW.replaceChild(msg, NODE_PREVIEW.children[2]);
+					ContentFinder.check( msg );
+				})
+			);
 		}
+	}
+
+	const submit_process = (sbtn, y) => {
+		form.elements[ 'cancel'].className = `btn btn-${ y ? 'danger' : 'default' }`;
+		form.elements['preview'].disabled  = sbtn.disabled = y;
+		sbtn.classList[y ? 'add' : 'remove']('process');
+		for (const primary of FACT_PANNEL.querySelectorAll('.btn[do-upload]')) {
+			primary.disabled = y;
+		}
+	}
+
+	const purge_form = (clry) => {
+
+		simulateClick(
+			form.parentNode.parentNode.querySelector('.replyComment')
+		);
+
+		if (clry) {
+			form.elements[ 'msg' ].value = '';
+			form.elements['title'].value = '';
+			NODE_PREVIEW.children[0].textContent = '';
+			NODE_PREVIEW.children[1].textContent = '';
+			NODE_PREVIEW.children[2].textContent = '';
+		}
+	}
 
 	const doSubmit = {
 
@@ -1885,8 +1929,8 @@ function handleCommentForm(form) {
 					}
 					submit_process(btn, false);
 					purge_form(true);
-				}).catch(({ status, statusText }) => {
-					form.appendChild( NODE_PREVIEW ).children[0].innerHTML = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n(${ status +' '+ statusText })`;
+				}).catch(e => {
+					form.appendChild( NODE_PREVIEW ).children[0].textContent = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n\n(${ e.status ? e.status +' '+ e.statusText : e })`;
 					submit_process(btn, false);
 				});
 			}, USER_SETTINGS['Upload Post Delay'] * 1e3);
@@ -2743,11 +2787,11 @@ const App = (() => {
 function HighlightJS() {
 	var hljs = this;
 	function q(a) {
-		return a.replace(/&/gm, "&amp;").replace(/</gm, "&lt;").replace(/>/gm, "&gt;")
+		return a.replace(/&/gm, '&amp;').replace(/</gm, '&lt;').replace(/>/gm, '&gt;')
 	}
 	function A(a) {
 		for (var b = a.firstChild; b; b = b.nextSibling) {
-			if (b.nodeName.toUpperCase() == "CODE") {
+			if (b.nodeName.toUpperCase() == 'CODE') {
 				return b
 			}
 			if (!(b.nodeType == 3 && b.nodeValue.match(/\s+/))) {
@@ -2758,21 +2802,21 @@ function HighlightJS() {
 	function u(a, b) {
 		return Array.prototype.map.call(a.childNodes, function(c) {
 			if (c.nodeType == 3) {
-				return b ? c.nodeValue.replace(/\n/g, "") : c.nodeValue
+				return b ? c.nodeValue.replace(/\n/g, '') : c.nodeValue
 			}
-			if (c.nodeName.toUpperCase() == "BR") {
-				return "\n"
+			if (c.nodeName.toUpperCase() == 'BR') {
+				return '\n'
 			}
 			return u(c, b)
-		}).join("")
+		}).join('')
 	}
 	function B(a) {
-		var b = (a.className + " " + (a.parentNode ? a.parentNode.className : "")).split(/\s+/);
+		var b = (a.className + ' ' + (a.parentNode ? a.parentNode.className : '')).split(/\s+/);
 		b = b.map(function(d) {
-			return d.replace(/^language-/, "")
+			return d.replace(/^language-/, '')
 		});
 		for (var c = 0; c < b.length; c++) {
-			if (x[b[c]] || b[c] == "no-highlight") {
+			if (x[b[c]] || b[c] == 'no-highlight') {
 				return b[c]
 			}
 		}
@@ -2784,18 +2828,18 @@ function HighlightJS() {
 				if (d.nodeType == 3) {
 					e += d.nodeValue.length
 				} else {
-					if (d.nodeName.toUpperCase() == "BR") {
+					if (d.nodeName.toUpperCase() == 'BR') {
 						e += 1
 					} else {
 						if (d.nodeType == 1) {
 							c.push({
-								event: "start",
+								event: 'start',
 								offset: e,
 								node: d
 							});
 							e = b(d, e);
 							c.push({
-								event: "stop",
+								event: 'stop',
 								offset: e,
 								node: d
 							})
@@ -2809,7 +2853,7 @@ function HighlightJS() {
 	}
 	function s(c, a, h) {
 		var b = 0;
-		var e = "";
+		var e = '';
 		var k = [];
 		function i() {
 			if (!c.length || !a.length) {
@@ -2818,19 +2862,19 @@ function HighlightJS() {
 			if (c[0].offset != a[0].offset) {
 				return (c[0].offset < a[0].offset) ? c : a
 			}
-			return a[0].event == "start" ? c : a
+			return a[0].event == 'start' ? c : a
 		}
 		function j(l) {
 			function m(n) {
-				return " " + n.nodeName + '="' + q(n.value) + '"'
+				return ' ' + n.nodeName + '="' + q(n.value) + '"'
 			}
-			e += "<" + l.nodeName.toLowerCase() + Array.prototype.map.call(l.attributes, m).join("") + ">"
+			e += '<' + l.nodeName.toLowerCase() + Array.prototype.map.call(l.attributes, m).join('') + '>'
 		}
 		function f(l) {
-			e += "</" + l.nodeName.toLowerCase() + ">"
+			e += '</' + l.nodeName.toLowerCase() + '>'
 		}
 		function d(l) {
-			(l.event == "start" ? j : f)(l.node)
+			(l.event == 'start' ? j : f)(l.node)
 		}
 		while (c.length || a.length) {
 			var g = i();
@@ -2844,7 +2888,7 @@ function HighlightJS() {
 				} while (g == c && g.length && g[0].offset == b);
 				k.reverse().forEach(j)
 			} else {
-				if (g[0].event == "start") {
+				if (g[0].event == 'start') {
 					k.push(g[0].node)
 				} else {
 					k.pop()
@@ -2859,7 +2903,7 @@ function HighlightJS() {
 			return (e && e.source) || e
 		}
 		function c(e, f) {
-			return RegExp(d(e), "m" + (a.cI ? "i" : "") + (f ? "g" : ""))
+			return RegExp(d(e), 'm' + (a.cI ? 'i' : '') + (f ? 'g' : ''))
 		}
 		function b(k, f) {
 			if (k.compiled) {
@@ -2873,15 +2917,18 @@ function HighlightJS() {
 					if (a.cI) {
 						m = m.toLowerCase()
 					}
-					m.split(" ").forEach(function(F) {
-						var E = F.split("|");
-						j[E[0]] = [n, E[1] ? Number(E[1]) : 1];
+					m.split(' ').forEach(function(F) {
+						var E = F.split('|');
+						j[E[0]] = [
+							n,
+							E[1] ? Number(E[1]) : 1
+						];
 						i.push(E[0])
 					})
 				}
-				k.lR = c(k.l || "\\b" + hljs.IR + "\\b(?!\\.)", true);
-				if (typeof k.k == "string") {
-					e("keyword", k.k)
+				k.lR = c(k.l || '\\b' + hljs.IR + '\\b(?!\\.)', true);
+				if (typeof k.k == 'string') {
+					e('keyword', k.k)
 				} else {
 					for (var l in k.k) {
 						if (!k.k.hasOwnProperty(l)) {
@@ -2894,18 +2941,18 @@ function HighlightJS() {
 			}
 			if (f) {
 				if (k.bWK) {
-					k.b = "\\b(" + i.join("|") + ")\\b(?!\\.)\\s*"
+					k.b = '\\b(' + i.join('|') + ')\\b(?!\\.)\\s*'
 				}
-				k.bR = c(k.b ? k.b : "\\B|\\b");
+				k.bR = c(k.b ? k.b : '\\B|\\b');
 				if (!k.e && !k.eW) {
-					k.e = "\\B|\\b"
+					k.e = '\\B|\\b'
 				}
 				if (k.e) {
 					k.eR = c(k.e)
 				}
-				k.tE = d(k.e) || "";
+				k.tE = d(k.e) || '';
 				if (k.eW && f.tE) {
-					k.tE += (k.e ? "|" : "") + f.tE
+					k.tE += (k.e ? '|' : '') + f.tE
 				}
 			}
 			if (k.i) {
@@ -2918,7 +2965,7 @@ function HighlightJS() {
 				k.c = []
 			}
 			for (var g = 0; g < k.c.length; g++) {
-				if (k.c[g] == "self") {
+				if (k.c[g] == 'self') {
 					k.c[g] = k
 				}
 				b(k.c[g], k)
@@ -2936,8 +2983,8 @@ function HighlightJS() {
 			if (k.i) {
 				h.push(d(k.i))
 			}
-			k.t = h.length ? c(h.join("|"), true) : {
-				exec: function(m) {
+			k.t = h.length ? c(h.join('|'), true) : {
+				exec: function (m) {
 					return null
 				}
 			}
@@ -2973,7 +3020,7 @@ function HighlightJS() {
 			if (!T.k) {
 				return G
 			}
-			var D = "";
+			var D = '';
 			var C = 0;
 			T.lR.lastIndex = 0;
 			var F = T.lR.exec(G);
@@ -2982,7 +3029,7 @@ function HighlightJS() {
 				var E = f(T, F);
 				if (E) {
 					k += E[1];
-					D += '<span class="' + E[0] + '">' + F[0] + "</span>"
+					D += '<span class="' + E[0] + '">' + F[0] + '</span>'
 				} else {
 					D += F[0]
 				}
@@ -2995,27 +3042,27 @@ function HighlightJS() {
 			if (T.sL && !x[T.sL]) {
 				return q(i)
 			}
-			var D = T.subLanguageMode == "continuous" ? T.top : undefined;
+			var D = T.subLanguageMode == 'continuous' ? T.top : undefined;
 			var C = T.sL ? y(T.sL, i, true, D) : v(i);
 			if (T.r > 0) {
 				k += C.keyword_count;
 				V += C.r
 			}
 			T.top = C.top;
-			return '<span class="' + C.language + '">' + C.value + "</span>"
+			return '<span class="' + C.language + '">' + C.value + '</span>'
 		}
 		function b() {
 			return T.sL !== undefined ? d() : g()
 		}
 		function c(D, C) {
-			var E = D.cN ? '<span class="' + D.cN + '">' : "";
+			var E = D.cN ? '<span class="' + D.cN + '">' : '';
 			if (D.rB) {
 				h += E;
-				i = ""
+				i = ''
 			} else {
 				if (D.eB) {
 					h += q(C) + E;
-					i = ""
+					i = ''
 				} else {
 					h += E;
 					i = C
@@ -3048,7 +3095,7 @@ function HighlightJS() {
 				h += b();
 				do {
 					if (T.cN) {
-						h += "</span>"
+						h += '</span>'
 					}
 					V += T.r;
 					T = T.parent
@@ -3056,14 +3103,14 @@ function HighlightJS() {
 				if (F.eE) {
 					h += q(D)
 				}
-				i = "";
+				i = '';
 				if (C.starts) {
-					c(C.starts, "")
+					c(C.starts, '')
 				}
 				return F.rE ? 0 : D.length
 			}
 			if (O(D, T)) {
-				throw new Error('Illegal lexem "' + D + '" for mode "' + (T.cN || "<unnamed>") + '"')
+				throw new Error('Illegal lexem "' + D + '" for mode "' + (T.cN || '<unnamed>') + '"')
 			}
 			i += D;
 			return D.length || 1
@@ -3074,13 +3121,13 @@ function HighlightJS() {
 		}
 		w(j);
 		var T = a || j;
-		var h = "";
+		var h = '';
 		for (var n = T; n != j; n = n.parent) {
 			if (n.cN) {
 				h = '<span class="' + n.cN + '">' + h
 			}
 		}
-		var i = "";
+		var i = '';
 		var V = 0;
 		var k = 0;
 		try {
@@ -3097,7 +3144,7 @@ function HighlightJS() {
 			Q(l.substr(U));
 			for (var n = T; n.parent; n = n.parent) {
 				if (n.cN) {
-					h += "</span>"
+					h += '</span>'
 				}
 			}
 			return {
@@ -3108,7 +3155,7 @@ function HighlightJS() {
 				top: T
 			}
 		} catch (e) {
-			if (e.message.indexOf("Illegal") != -1) {
+			if (e.message.indexOf('Illegal') != - 1) {
 				return {
 					r: 0,
 					keyword_count: 0,
@@ -3152,28 +3199,28 @@ function HighlightJS() {
 			})
 		}
 		if (c) {
-			a = a.replace(/\n/g, "<br>")
+			a = a.replace(/\n/g, '<br>')
 		}
 		return a
 	}
 	function p(a, g, c) {
 		var f = u(a, c);
 		var h = B(a);
-		if (h == "no-highlight") {
+		if (h == 'no-highlight') {
 			return
 		}
 		var e = h ? y(h, f, true) : v(f);
 		h = e.language;
 		var d = z(a);
 		if (d.length) {
-			var b = document.createElementNS("http://www.w3.org/1999/xhtml", "pre");
+			var b = document.createElementNS('http://www.w3.org/1999/xhtml', 'pre');
 			b.innerHTML = e.value;
 			e.value = s(d, z(b), f)
 		}
 		e.value = t(e.value, g, c);
 		var i = a.className;
-		if (!i.match("(\\s|^)(language-)?" + h + "(\\s|$)")) {
-			i = i ? (i + " " + h) : h
+		if (!i.match('(\\s|^)(language-)?' + h + '(\\s|$)')) {
+			i = i ? (i + ' ' + h) : h
 		}
 		a.innerHTML = e.value;
 		a.className = i;
@@ -3190,35 +3237,9 @@ function HighlightJS() {
 			}
 		}
 	}
-	function o(comment) {
-
-		const shrink_size = USER_SETTINGS['Code Block Short Size'];
-		const addSpoiler  = shrink_size < 20 ? block => {
-			block.classList.add('cutted');
-			block.prepend( _setup('span', { class: 'shrink-text' }) );
-		} : (block, height) => {
-			if (!height) {
-				block.classList.add('suplied');
-			} else if (height > shrink_size) {
-				block.classList.add('shrinked');
-				block.prepend(
-					_setup('div', { class: 'shrink-line', text: 'Развернуть' })
-				);
-			}
-		}
-		Array.prototype.map.call(comment.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "pre"), A).filter(Boolean).forEach(
-			code => {
-				addSpoiler(
-					code.parentNode.parentNode.classList[0] === 'code' ? code.parentNode.parentNode : code.parentNode,
-					code.offsetHeight
-				);
-				p(code, hljs.tabReplace);
-			}
-		);
-		comment.querySelectorAll(
-			['jpg','jpeg','png','gif','svg','webp'].map(ext => `a[href*=".${ext}?"],a[href$=".${ext}"]`).join(',')
-		).forEach(a => {
-			a.className = 'link-image';
+	function o(node, callb) {
+		Array.prototype.map.call(node.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'pre'), A).filter(Boolean).forEach(function(a) {
+			callb(a); p(a, hljs.tabReplace);
 		});
 	}
 	var x = {};
@@ -3228,64 +3249,64 @@ function HighlightJS() {
 	this.fixMarkup = t;
 	this.highlightBlock = p;
 	this.apply = o;
-	this.IR = "[a-zA-Z][a-zA-Z0-9_]*";
-	this.UIR = "[a-zA-Z_][a-zA-Z0-9_]*";
-	this.NR = "\\b\\d+(\\.\\d+)?";
-	this.CNR = "(\\b0[xX][a-fA-F0-9]+|(\\b\\d+(\\.\\d*)?|\\.\\d+)([eE][-+]?\\d+)?)";
-	this.BNR = "\\b(0b[01]+)";
-	this.RSR = "!|!=|!==|%|%=|&|&&|&=|\\*|\\*=|\\+|\\+=|,|\\.|-|-=|/|/=|:|;|<<|<<=|<=|<|===|==|=|>>>=|>>=|>=|>>>|>>|>|\\?|\\[|\\{|\\(|\\^|\\^=|\\||\\|=|\\|\\||~";
+	this.IR = '[a-zA-Z][a-zA-Z0-9_]*';
+	this.UIR = '[a-zA-Z_][a-zA-Z0-9_]*';
+	this.NR = '\\b\\d+(\\.\\d+)?';
+	this.CNR = '(\\b0[xX][a-fA-F0-9]+|(\\b\\d+(\\.\\d*)?|\\.\\d+)([eE][-+]?\\d+)?)';
+	this.BNR = '\\b(0b[01]+)';
+	this.RSR = '!|!=|!==|%|%=|&|&&|&=|\\*|\\*=|\\+|\\+=|,|\\.|-|-=|/|/=|:|;|<<|<<=|<=|<|===|==|=|>>>=|>>=|>=|>>>|>>|>|\\?|\\[|\\{|\\(|\\^|\\^=|\\||\\|=|\\|\\||~';
 	this.BE = {
-		b: "\\\\[\\s\\S]",
+		b: '\\\\[\\s\\S]',
 		r: 0
 	};
 	this.ASM = {
-		cN: "string",
-		b: "'",
-		e: "'",
-		i: "\\n",
+		cN: 'string',
+		b: '\'',
+		e: '\'',
+		i: '\\n',
 		c: [this.BE],
 		r: 0
 	};
 	this.QSM = {
-		cN: "string",
+		cN: 'string',
 		b: '"',
 		e: '"',
-		i: "\\n",
+		i: '\\n',
 		c: [this.BE],
 		r: 0
 	};
 	this.CLCM = {
-		cN: "comment",
-		b: "//",
-		e: "$"
+		cN: 'comment',
+		b: '//',
+		e: '$'
 	};
 	this.CBLCLM = {
-		cN: "comment",
-		b: "/\\*",
-		e: "\\*/"
+		cN: 'comment',
+		b: '/\\*',
+		e: '\\*/'
 	};
 	this.HCM = {
-		cN: "comment",
-		b: "#",
-		e: "$"
+		cN: 'comment',
+		b: '#',
+		e: '$'
 	};
 	this.NM = {
-		cN: "number",
+		cN: 'number',
 		b: this.NR,
 		r: 0
 	};
 	this.CNM = {
-		cN: "number",
+		cN: 'number',
 		b: this.CNR,
 		r: 0
 	};
 	this.BNM = {
-		cN: "number",
+		cN: 'number',
 		b: this.BNR,
 		r: 0
 	};
 	this.REGEXP_MODE = {
-		cN: "regexp",
+		cN: 'regexp',
 		b: /\//,
 		e: /\/[gim]*/,
 		i: /\n/,

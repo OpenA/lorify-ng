@@ -1,10 +1,16 @@
 {
   "manifest_version": 2,
   "name": "lorify-ng",
-  "version": "2.9.1",
+  "version": "2.9.2",
   "description": "Расширение для сайта linux.org.ru поддерживающее загрузку комментариев через технологию WebSocket, а так же уведомления об ответах через системные оповещения и многое другое.",
   "options_ui": {
     "page": "settings.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "OpenA@lorify-ng.git",
+      "strict_min_version": "57.0"
+    }
   },
   "browser_action": {
     "default_icon": "icons/penguin-32.png",
