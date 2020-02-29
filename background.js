@@ -33,13 +33,14 @@ const initStor  = new Promise(resolve => {
 	});
 });
 
-chrome.runtime.onSuspend && chrome.runtime.onSuspend.addListener(() => {
-	console.log('Unloading.');
-	for (const id in openPorts) {
-		openPorts[id].disconnect();
-	}
-	chrome.browserAction.setBadgeBackgroundColor({ color: '#e5be5b' }); //#369e1b
-});
+if ('onSuspend' in chrome.runtime) {
+	chrome.runtime.onSuspend.addListener(() => {
+		chrome.browserAction.setBadgeBackgroundColor({ color: '#e5be5b' }); //#369e1b
+		for (const id in openPorts) {
+			openPorts[id].disconnect();
+		}
+	});
+}
 chrome.notifications.onClicked.addListener(openTab);
 chrome.runtime.onMessage.addListener(messageHandler);
 chrome.runtime.onConnect.addListener(port => {
@@ -50,7 +51,7 @@ chrome.runtime.onConnect.addListener(port => {
 	initStor.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
 });
 
-if (chrome.browserAction.setBadgeTextColor !== undefined) {
+if ('setBadgeTextColor' in chrome.browserAction) {
 	chrome.browserAction.setBadgeTextColor({ color: '#ffffff' });
 }
 chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });

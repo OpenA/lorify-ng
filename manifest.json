@@ -6,12 +6,6 @@
   "options_ui": {
     "page": "settings.html"
   },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "OpenA@lorify-ng.git",
-      "strict_min_version": "57.0"
-    }
-  },
   "browser_action": {
     "default_icon": "icons/penguin-32.png",
     "default_popup": "settings.html"
