@@ -4,7 +4,7 @@
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 		<title>lorify-ng Options</title>
 		<style>
-			#resetSettings, .info-line:before { position: absolute; right: 0; }
+			#note-list, body { margin: 0; padding: 8px; }
 			#loriform { display: table; min-width: 360px; margin: 0 auto; }
 			.tab-row  { display: table-row; }
 			.tab-cell { display: table-cell;
@@ -16,6 +16,12 @@
 			.tab-cell input[type="number"] {
 				max-width: 50%;
 				min-width: 50%;
+			}
+			.tab-row > .tab-cell:first-child{
+				font: bold 14px Arial;
+			}
+			.note-item-topic, .tab-row > .tab-cell:first-child {
+				color: #777;
 			}
 			.step-line, .step-line > input {
 				width: 180px;
@@ -40,27 +46,91 @@
 				-webkit-animation: apply 2s linear 1;
 				animation: apply 2s linear 1;
 				color: red;
+			}
+			.info-line:before, #note-list {
 				background-color: white;
-				left: 0; top: 0;
+				position: absolute;
+				left: 0; top: 0; right: 0;
 				z-index: 9;
 			}
 			.save-msg:before {
 				content: 'Настройки сохранены.';
 				padding: 15px 0;
+			}
+			.nav-menu, .save-msg:before {
 				text-align: center;
 			}
-			#notifications {
-				border-bottom: 1px dashed #bbb;
-				text-align: center;
+			.nav-menu {
+				border-bottom: 1px dashed #aaa;
+				padding-bottom: 6px;
+			}
+			.nav-txt-btn {
+				color: #68b;
+				cursor: pointer;
+				font: italic 16px serif;
+			}
+			#reset-settings {
+				position: absolute;
+				right: 0;
+			}
+			#reset-notes, #go-back {
+				font-size: larger;
+				margin: 0 20px;
+			}
+			#go-back:before {
+				content: "←";
+			}
+			#reset-notes:before {
+				content: "✓";
+			}
+			#note-count:before {
+				content: "Уведомлений: " attr(cnt-new);
+			}
+			#note-list {
+				bottom: 0;
+				overflow-y: auto;
+			}
+			.note-item {
+				border-bottom: 1px dashed #cce0e0;
 				padding-bottom: 4px;
+				position: relative;
+				cursor: pointer;
+				max-width: 560px;
+				margin: auto;
 			}
-			#notifications > *, .apply-anim {
-				font-style: italic;
-				text-decoration: none;
-				font-family: georgian;
+			.note-item-info {
+				font: bold 16px monospace;
+				color: #604949;
+				padding: 4px 0;
 			}
-			#notifications > *:before {
-				content: 'Уведомлений: ';
+			.note-item-info:before {
+				content: attr(answer);
+			}
+			.note-item-time:after, .tab-cell[chr]:after {
+				content: attr(chr) ".";
+				font: italic 14px serif;
+			}
+			.note-item-user {
+				margin: 0 5px;
+				color: #19ad53;
+			}
+			.note-item-tags {
+				font: normal 12px Arial;
+				color: white;
+				position: absolute;
+				max-width: 190px;
+				top: 0; right: 0;
+			}
+			.note-item-tags .tag {
+				background-color: rgba(99,99,99,.7);
+				padding: 0 2px;
+				margin-left: 2px;
+			}
+			.note-item-topic {
+				font: normal 14px serif;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
 			}
 			@keyframes apply {
 				0% { opacity: .2; }
@@ -72,13 +142,14 @@
 				50% { opacity: 1; }
 				100% { opacity: 0; }
 			}
+			@media screen and (max-width: 960px) {
+				#loriform, .note-item { width: 100%; }
+			}
 		</style>
 	</head>
 	<body>
-		<div id="notifications" hidden>
-			<a style="color: #68b;" href="javascript:void(0)"></a>
-		</div>
 		<form id="loryform" class="info-line">
+			<div id="note-count" class="nav-menu nav-txt-btn" hidden></div>
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
 				<span class="tab-cell">
@@ -87,30 +158,26 @@
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
-				<span class="tab-cell">
+				<span class="tab-cell" chr="px">
 					<input type="number" id="Code Block Short Size" min="0" step="1">
-				px
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
-				<span class="tab-cell">
+				<span class="tab-cell" chr="мс">
 					<input type="number" id="Delay Open Preview" min="50" step="25">
-				мс
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка исчезания превью:</span>
-				<span class="tab-cell">
+				<span class="tab-cell" chr="мс">
 					<input type="number" id="Delay Close Preview" min="50" step="25">
-				мс
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Предзагружаемых страниц:</span>
-				<span class="tab-cell">
+				<span class="tab-cell" chr="ст">
 					<input type="number" id="Preloaded Pages Count" min="1" step="1">
-				ст
 				</span>
 			</div>
 			<div class="tab-row">
@@ -145,10 +212,17 @@
 				<span class="tab-cell">CSS анимация:</span>
 				<span class="tab-cell">
 					<input type="checkbox" id="CSS3 Animation">
-					<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
+					<input type="button" id="reset-settings" value="сброс" title="вернуть настройки по умолчанию">
 				</span>
 			</div>
 		</form>
+		<div id="note-list" hidden>
+			<div class="nav-menu">
+				<span id="go-back" class="nav-txt-btn" title="к настройкам"></span>
+				<span id="reset-notes" class="nav-txt-btn" title="отметить как прочитанные"></span>
+			</div>
+			<div></div>
+		</div>
 		<script type="text/javascript" src="settings.js"></script>
 	</body>
 </html>

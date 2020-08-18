@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.9.2
+// @version     2.9.5
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -64,6 +64,9 @@ const Dynamic_Style = (() => {
 		set 'Center Image Rotate'   (v) { img_center_rotate.textContent = v.toString(); }
 	}
 })();
+
+const App = typeof chrome !== 'undefined' && chrome.runtime ? WebExt() : UserScript();
+
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
 	if (!${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}) {
@@ -144,7 +147,7 @@ document.documentElement.append(
 			padding: 3px 10px!important;
 			font-variant: small-caps;
 			margin: 0 5px 5px 0;
-			border: 0;
+			border: 0!important;
 		}
 		.lorcode > .btn:before {
 			content: attr(lorcode);
@@ -293,10 +296,11 @@ document.documentElement.append(
 			.message-w-userpic > *:first-child:not(p) { margin-left: 60px !important; }
 			.msg_body ul, .msg_body ol { margin: 0 0 1em !important; }
 			.userpic { margin-right: 14px !important; }
+			.photo[src="/img/p.gif"] { display: none !important; }
 		}
 		@media screen and (max-width: 460px) {
 			.title > [datetime] { display: none !important; }
-			.sign > [datetime], .sign > .sign_more { font-size: 12px; }
+			.sign  > [datetime], .sign > .sign_more { font-size: 12px; }
 		}
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
@@ -577,7 +581,7 @@ const ContentFinder = {
 			const block         = code.parentNode.parentNode.
 				classList[0] === 'code' ? code.parentNode.parentNode : code.parentNode;
 
-			if (shrink_size < 20) {
+			if (shrink_size < 25) {
 				block.classList.add('cutted');
 				block.prepend(
 					_setup('span', { class: 'shrink-text' })
@@ -601,17 +605,8 @@ let Navigation = null;
 let MARKDOWN_MODE = false;
 
 _setup(document, null, {
-	
-	'DOMContentLoaded': location.pathname == '/notifications' ? function resetNotif() {
-		
-		this.removeEventListener('DOMContentLoaded', resetNotif);
-		
-		if ('reset_form' in this.forms) {
-			sendFormData('notifications-reset', new FormData(
-				_setup(this.forms['reset_form'], { style: 'display: none;' })
-			), false).then( () => App.reset() );
-		}
-	} : function onDOMReady() {
+
+	'DOMContentLoaded': location.pathname === '/notifications' ? ()=>{} : function onDOMReady() {
 		
 		this.removeEventListener('DOMContentLoaded', onDOMReady);
 		
@@ -764,9 +759,11 @@ _setup(document, null, {
 					btn.title = memories ? 'Следить за темой' : 'Добавить в избранное';
 			},
 			dblclick: () => {
-				var newadded = document.querySelectorAll('.newadded');
-				newadded.forEach(nwc => nwc.classList.remove('newadded'));
-				document.querySelectorAll('#page_'+ LOR.page).forEach(pg => pg.removeAttribute('cnt-new'));
+				const newadded = Array.from( document.getElementsByClassName('newadded') );
+				for (const { classList } of newadded)
+					classList.remove('newadded');
+				for (const el of document.querySelectorAll(`#page_${LOR.page}[cnt-new]`))
+					el.removeAttribute('cnt-new');
 				Favicon.draw(
 					(Favicon.index -= newadded.length)
 				);
@@ -1068,84 +1065,82 @@ function lorcodeMarkup(open, close, blur) {
 function onWSData(dbCiD) {
 	// Get an HTML containing the comment
 	getDataResponse(`${LOR.path}?filter=list&cid=${dbCiD[0]}&skipdeleted=true`,
-		({ response, responseURL }) => { // => OK
+		( html, rURL ) => { // => OK
 
-			const { page } = parseLORUrl(responseURL);
-			const comms    = getCommentsContent(response);
-			
-			if (pagesCache.has(page)) {
-			
-				const parent = pagesCache.get(page);
-				
-				for (let msg of parent.querySelectorAll('.msg[id^="comment-"]')) {
-					if (msg.id in comms.children) {
-						var cand = comms.children[msg.id],
-						    sign = cand.querySelector('.sign_more > time');
-						if (sign && sign.dateTime !== (msg['last_modifed'] || {}).dateTime) {
-							msg['last_modifed']    = sign;
-							msg['edit_comment']    = cand.querySelector('.reply a[href^="/edit_comment"]');
-							msg['response_block'] && cand.querySelector('.reply > ul')
-								.appendChild(msg['response_block']);
-							
-							const form = msg.querySelector('#commentForm');
-							for (var R = cand.children.length; 0 < (R--);) {
-								msg.replaceChild(cand.children[R], msg.children[R]);
-							}
-							form && msg.querySelector('.msg_body').appendChild( form.parentNode ).firstElementChild.elements['msg'].focus();
-							
-						} else if (msg['edit_comment']) {
-							msg['edit_comment'].parentNode.hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
+		const { page } = parseLORUrl(rURL);
+		const comms    = getCommentsContent(html);
+
+		if (pagesCache.has(page)) {
+
+			const parent = pagesCache.get(page);
+
+			for (let msg of parent.querySelectorAll('.msg[id^="comment-"]')) {
+				if (msg.id in comms.children) {
+					var cand = comms.children[msg.id],
+					    sign = cand.querySelector('.sign_more > time');
+					if (sign && sign.dateTime !== (msg['last_modifed'] || {}).dateTime) {
+						msg['last_modifed']    = sign;
+						msg['edit_comment']    = cand.querySelector('.reply a[href^="/edit_comment"]');
+						msg['response_block'] && cand.querySelector('.reply > ul')
+							.appendChild(msg['response_block']);
+						
+						const form = msg.querySelector('#commentForm');
+						for (var R = cand.children.length; 0 < (R--);) {
+							msg.replaceChild(cand.children[R], msg.children[R]);
 						}
-					} else {
-						msg.classList.add('deleted');
-						msg.id = 'deleted'+ msg.id.substr(7);
+						form && msg.querySelector('.msg_body').appendChild( form.parentNode ).firstElementChild.elements['msg'].focus();
+						
+					} else if (msg['edit_comment']) {
+						msg['edit_comment'].parentNode.hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
 					}
-				}
-				
-				for (var i = 0; i < dbCiD.length; i++) {
-				
-					let comment = comms.children['comment-'+ dbCiD[i]];
-					
-					if (!comment) {
-						onWSData( dbCiD.splice(i) );
-						break;
-					}
-					dbCiD[i] = parent.appendChild(comment);
-				}
-				addToCommentsCache( dbCiD, { class: 'msg newadded' } );
-				if (Navigation) {
-					Navigation.addBouble(page, i);
-				}
-				Favicon.index += i;
-			} else {
-				
-				pagesCache.set(page, comms);
-				pagesCache.set(comms, page);
-				
-				const nav = comms.querySelectorAll('.nav > .page-number'),
-				  nav_cnt = nav.length - 2;
-				const msg = comms.querySelectorAll('.msg[id^="comment-"]'),
-				  msg_cnt = msg.length;
-				
-				if (!Navigation) {
-					const { bar, mir } = (Navigation = new TopicNavigation(nav_cnt));
-					document.getElementById('realtime').after(bar);
-					document.querySelector('#comments > .msg[id^="comment-"]').before(mir);
 				} else {
-					const mir = Navigation.mir;
-					const bar = Navigation.extendBar(nav_cnt);
-					
-					mir.parentNode.replaceChild((
-						Navigation.mir = _setup(bar.cloneNode(true), { id: 'top-nav' }, { click: Navigation })
-					), mir);
+					msg.classList.add('deleted');
+					msg.id = 'deleted'+ msg.id.substr(7);
 				}
-				Navigation.addBouble(page, msg_cnt);
-				addToCommentsCache( msg, { class: 'msg newadded' } );
-				Favicon.index += msg_cnt;
 			}
-			Favicon.draw(Favicon.index);
-			history.replaceState(null, null, location.pathname + location.hash);
-		});
+
+			for (var i = 0; i < dbCiD.length; i++) {
+				 let comment = comms.children['comment-'+ dbCiD[i]];
+				if (!comment ) {
+					onWSData( dbCiD.splice(i) );
+					break;
+				}
+				dbCiD[i] = parent.appendChild(comment);
+			}
+			addToCommentsCache( dbCiD, { class: 'msg newadded' } );
+			if (Navigation) {
+				Navigation.addBouble(page, i);
+			}
+			Favicon.index += i;
+		} else {
+
+			pagesCache.set(page, comms);
+			pagesCache.set(comms, page);
+
+			const nav = comms.querySelectorAll('.nav > .page-number'),
+			  nav_cnt = nav.length - 2;
+			const msg = comms.querySelectorAll('.msg[id^="comment-"]'),
+			  msg_cnt = msg.length;
+			
+			if (!Navigation) {
+				const { bar, mir } = (Navigation = new TopicNavigation(nav_cnt));
+				document.getElementById('realtime').after(bar);
+				document.querySelector('#comments > .msg[id^="comment-"]').before(mir);
+			} else {
+				const mir = Navigation.mir;
+				const bar = Navigation.extendBar(nav_cnt);
+
+				mir.parentNode.replaceChild((
+					Navigation.mir = _setup(bar.cloneNode(true), { id: 'top-nav' }, { click: Navigation })
+				), mir);
+			}
+			Navigation.addBouble(page, msg_cnt);
+			addToCommentsCache( msg, { class: 'msg newadded' } );
+			Favicon.index += msg_cnt;
+		}
+		Favicon.draw(Favicon.index);
+		history.replaceState(null, null, location.pathname + location.hash);
+	});
 }
 
 function addToCommentsCache(els, attrs, jqfix) {
@@ -1473,7 +1468,8 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 		switch (aClass) {
 		case 'shrink-line':
 			el.textContent = `${ parent.classList.toggle('shrinked') ? 'Раз' : 'С' }вернуть`;
-			parent.scrollIntoView();
+			if (parent.scrollHeight > window.innerHeight)
+				parent.scrollIntoView();
 			break;
 		case 'shrink-text':
 			parent.classList.toggle('cutted');
@@ -1542,9 +1538,9 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 
 function loadFullPage(href) {
 	return new Promise((resolve, reject) => {
-		getDataResponse(href, ({ response, responseURL }) => { // => OK
-			const { page } = parseLORUrl(responseURL);
-			const comms    = getCommentsContent(response);
+		getDataResponse(href, ( html, rURL ) => { // => OK
+			const { page } = parseLORUrl(rURL);
+			const comms    = getCommentsContent(html);
 			
 			pagesCache.set(page, comms);
 			pagesCache.set(comms, page);
@@ -1752,7 +1748,7 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.onreadystatechange = () => {
 		if (xhr.readyState !== 4)
 			return;
-		xhr.status === 200 ? resolve(xhr) : reject(xhr);
+		xhr.status === 200 ? resolve(xhr.responseText, xhr.responseURL) : reject(xhr);
 	}
 	xhr.send(null);
 }
@@ -1939,7 +1935,7 @@ function handleCommentForm(form) {
 		'do_preview': function() {
 
 			if (NODE_PREVIEW.hasAttribute('opened')) {
-				NODE_PREVIEW.removeAttribute('opened', '');
+				NODE_PREVIEW.removeAttribute('opened');
 				NODE_PREVIEW.remove();
 				TEXT_AREA.oninput = null;
 			} else {
@@ -2029,9 +2025,9 @@ function handleTagsInput(TAGS_INPUT) {
 			focus && TAGS_INPUT.after(tagList);
 		}
 		else if (term) {
-			getDataResponse(`/tags?term=${(keywd = term)}`, ({ responseText }) => {
+			getDataResponse(`/tags?term=${(keywd = term)}`, response => {
 
-				const possibleTags = JSON.parse(responseText);
+				const possibleTags = JSON.parse(response);
 				
 				for (var i = 0; i < possibleTags.length; i++) {
 					const text = possibleTags[i];
@@ -2443,346 +2439,406 @@ function domToMarkdown(childNodes, deep = 0) {
 	return text;
 }
 
-const App = (() => {
-	
+function WebExt() {
+
 	var main_events_count;
-	var opened = true;
-	
-	if (typeof chrome !== 'undefined' && chrome.runtime) {
+	var opened;
 
-		const portConnect = resolve => {
-			const port = chrome.runtime.connect();
-			port.onMessage.addListener(({ name, data }) => {
-				switch (name) {
-					case 'new-notes':
-						if (main_events_count)
-							main_events_count.textContent = data;
-						break;
-					case 'connection-resolve':
-						console.info('WebExt Runtime Connected!');
-						resolve((opened = true));
-					case 'settings-change':
-						for (const key in data) {
-							Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
-						}
-				}
-			});
-			port.onDisconnect.addListener(() => {
-				console.warn('WebExt Runtime Disconnected!');
-				opened = false;
-			});
-		}
-
-		const sendMessage = action => {
-			if (opened) {
-				chrome.runtime.sendMessage({ action });
-			} else {
-				new Promise(portConnect).then(() => chrome.runtime.sendMessage({ action }));
-			}
-		}
-
-		const sync = new Promise(portConnect);
-
-		return {
-			checkNow : () => sendMessage( 'l0rNG-checkNow' ),
-			reset    : () => sendMessage( 'l0rNG-reset' ),
-			init     : () => {
-				if ( (main_events_count = document.getElementById('main_events_count')) ) {
-					// We can't show notification from the content script directly,
-					// so let's send a corresponding message to the background script
-					sync.then(() => sendMessage( 'l0rNG-reval' ));
-				}
-				return sync;
-			}
-		}
-	} else {
-
-		let notes = localStorage.getItem('l0rNG-notes') || '';
-		let delay = 55e3 + Math.floor(Math.random() * 1765);
-
-		const sendNotify = (permission => {
-			// Определяем статус оповещений:
-			var granted = (permission === 'granted'); // - разрешены
-
-			switch (permission) {
-				case 'denied':  // - отклонены
-					return () => void 0;
-				case 'default': // - требуется подтверждение
-					Notification.requestPermission(p => { granted = (p === 'granted'); });
-			}
-			return count => {
-				if (USER_SETTINGS['Desktop Notification'] && granted) {
-					const notif = new Notification('LINUX.ORG.RU', {
-						icon: '/tango/img/linux-logo.png',
-						body: `\n${ count } новых ответов`,
-					});
-					notif.onclick = () => { window.focus() };
-				}
-			}
-		})( window.Notification ? Notification.permission : 'denied' );
-		
-		const defaults   = Object.assign({}, USER_SETTINGS);
-		const startWatch = getDataResponse.bind(null, '/notifications-count',
-			({ response }) => {
-				if (response != 0) {
-					if (notes != response) {
-						localStorage.setItem('l0rNG-notes', (notes = response));
-						sendNotify(response);
-					}
-					main_events_count.textContent = '('+ response +')';
-					lorypanel.children['lorynotify'].setAttribute('notes-cnt', response);
-				} else {
-					main_events_count.textContent = '';
-					lorypanel.children['lorynotify'].removeAttribute('notes-cnt');
-					notes != '' && App.reset();
-				}
-				Timer.set('Check Notifications', startWatch, delay);
-			}, ({ status }) => {
-				if (status < 400 || status >= 500)
-					Timer.set('Check Notifications', startWatch, delay * (status >= 500 ? 5 : 1));
-			});
-		
-		const setValues = items => {
-			for (const name in Object.assign(USER_SETTINGS, items)) {
-				 const input   = loryform.elements[name],
-				       param   = input.type === 'checkbox' ? 'checked' : 'value';
-				input[ param ] = Dynamic_Style[name] = USER_SETTINGS[name];
-			}
-		}
-
-		const onValueChange = input => {
-			switch (input.type) {
-				case 'checkbox':
-					USER_SETTINGS[input.id] = input.checked;
+	const portConnect = resolve => {
+		const port = chrome.runtime.connect();
+		port.onMessage.addListener(({ name, data }) => {
+			switch (name) {
+				case 'notes-count-update':
+					if (main_events_count)
+						main_events_count.textContent = data ? `(${data})`: '';
 					break;
-				default:
-					const min = Number (input.min || 0);
-					const val = Number (input.value);
-					Dynamic_Style[input.id] = USER_SETTINGS[input.id] = val >= min ? val : (input.value = min);
+				case 'scroll-to-comment':
+					goToCommentPage(data);
+					break;
+				case 'connection-resolve':
+					console.info('WebExt Runtime Connected!');
+					resolve(port);
+				case 'settings-change':
+					for (const key in data) {
+						Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
+					}
 			}
-			localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
-			loryform.classList.add('save-msg');
-		}
-		
-		const loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
-			<div class="tab-row">
-				<span class="tab-cell">Автоподгрузка комментариев:</span>
-				<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
-				<span class="tab-cell"><input type="number" id="Code Block Short Size" min="0" step="1">
-				px
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Задержка появления превью:</span>
-				<span class="tab-cell"><input type="number" id="Delay Open Preview" min="50" step="25">
-				мс
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Задержка исчезания превью:</span>
-				<span class="tab-cell"><input type="number" id="Delay Close Preview" min="50" step="25">
-				мс
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Предзагружаемых страниц:</span>
-				<span class="tab-cell"><input type="number" id="Preloaded Pages Count" min="1" step="1">
-				ст
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Оповещения на рабочий стол:</span>
-				<span class="tab-cell"><input type="checkbox" id="Desktop Notification">
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Просмотр картинок:</span>
-				<span class="tab-cell">
-					<select id="Picture Viewer">
-						<option value="0">Откл.</option>
-						<option value="1">Только для превью</option>
-						<option value="2">Для превью и ссылок</option>
-					</select>
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Задержка перед отправкой:</span>
-				<span class="tab-cell step-line">
-					<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
-					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Перемещать в начало страницы:</span>
-				<span class="tab-cell"><input type="checkbox" id="Scroll Top View">
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">CSS анимация:</span>
-				<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
-					<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
-				</span>
-			</div>`}, {
-				animationend: () => loryform.classList.remove('save-msg'),
-				change: ({ target }) => {
-					opened && onValueChange(target);
-				},
-				input : ({ target }) => {
-					opened = false;
-					Timer.set('Settings on Changed', () => {
-						opened = true;
-						onValueChange(target);
-					}, 750)
-				}
-			});
-			
-		setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
-		loryform.elements.resetSettings.onclick = () => {
-			setValues( defaults );
-			localStorage.setItem('lorify-ng', JSON.stringify(defaults));
-			loryform.classList.add('save-msg');
-		}
+		});
+		port.onDisconnect.addListener(() => {
+			console.info('WebExt Runtime Disconnected!');
+			opened = null;
+		});
+	}
 
-		const lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
-		<div id="lorynotify" class="lory-btn"></div>
-		<div id="lorytoggle" class="lory-btn"></div>
-		<style>
-			#lorynotify {
-				top: -4px;
-				left: -2px;
-				color: white;
-				font: bold 16px "Open Sans";
-				background-color: #3e85a8;
-				border-radius: 5px;
-				z-index: 1;
+	opened = new Promise(portConnect);
+
+	const sendMessage = (action, data) => {
+		(opened || (opened = new Promise(portConnect))).then(
+			port => port.postMessage({ action, data })
+		);
+	}
+
+	return {
+		checkNow : () => sendMessage( 'l0rNG-checkNow' ),
+		init     : () => {
+			if ( (main_events_count = document.getElementById('main_events_count')) ) {
+				const notes = Number(main_events_count.textContent.match(/\d+/));
+				sendMessage('l0rNG-reval', notes);
 			}
-			#lorynotify[notes-cnt]:before {
-				content: attr(notes-cnt);
-				padding: 0 4px;
-			}
-			#lorytoggle {
-				left: 0;
-				top: 0;
-				right: 0;
-				bottom: 0;
-				background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
-				opacity: .5;
-			}
-			#loryform {
-				display: table;
-				min-width: 360px;
-				padding: 3px 6px;
-				position: fixed;
-				right: 5px;
-				top: 40px;
-				background: #eee;
-				border-radius: 5px;
-				box-shadow: -1px 2px 8px rgba(0,0,0,.3);
-			}
-			.lorify-settings-panel {
-				position: fixed;
-				top: 5px;
-				right: 5px;
-				padding: 16px;
-			}
-			.lorify-settings-panel:hover > *, .pushed { opacity: 1!important; }
-			.lory-btn { position: absolute; cursor: pointer; }
-			.tab-row  { display: table-row; font-size: 85%; color: #666; }
-			.tab-cell { display: table-cell;
-				position: relative;
-				padding: 4px 2px;
-				max-width: 180px;
-				vertical-align: middle;
-			}
-			.tab-cell input[type="number"] {
-				max-width: 50%;
-				min-width: 50%;
-			}
-			.step-line, .step-line > input {
-				width: 180px;
-			}
-			st:before, .step-line > input {
-				position: absolute;
-			}
-			st + st {
-				margin-left: 10%;
-			}
-			st {
-				padding: 5px 0;
-				border: 0 solid #ccc;
-				counter-increment: stepIdx;
-				border-left-width: 1px;
-			}
-			st:before {
-				content: counter(stepIdx);
-				font: italic 10px Arial;
-			}
-			#loginGreating { margin-right: 42px!important; }
-			#resetSettings, .info-line:before { position: absolute; right: 0; }
-			.info-line:before {
-				-webkit-animation: apply 2s linear 1;
-				animation: apply 2s linear 1;
-				color: red;
-				background-color: white;
-				left: 0; top: 0;
-				z-index: 9;
-			}
-			.save-msg:before {
-				content: 'Настройки сохранены.';
-				padding: 15px 0;
-				text-align: center;
-			}
-			@media screen and (max-width: 570px) {
-				#loryform { right: 0; }
-			}
-			@keyframes apply {
-				0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
-			}
-			@-webkit-keyframes apply {
-				0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
-			}
-		</style>`}, {
-			click: ({ target }) => {
-				if (target.classList[0] === 'lory-btn') {
-					switch (target.id) {
-						case 'lorynotify':
-							window.open('/notifications', '_blank');
-							break;
-						case 'lorytoggle':
-							target.classList.toggle('pushed') ? target.parentNode.after(loryform) : loryform.remove();
-					}
-				}
-			}
-		});
-		window.addEventListener('storage', ({ key, newValue }) => {
-			if (key === 'l0rNG-notes') {
-				main_events_count.textContent = newValue ? '('+ newValue +')' : '';
-				lorypanel.children['lorynotify'][`${newValue ? 'set' : 'remove'}Attribute`]('notes-cnt', (notes = newValue));
-				Timer.set('Check Notifications', startWatch, delay);
-			} else if (key === 'lorify-ng') {
-				setValues( JSON.parse(newValue) );
-			}
-		});
-		return {
-			checkNow: () => void 0,
-			reset: () => localStorage.setItem('l0rNG-notes', (notes = '')),
-			init: function() {
-				if ( (main_events_count = document.getElementById('main_events_count')) ) {
-					if (notes) {
-						lorypanel.children['lorynotify'].setAttribute('notes-cnt', notes);
-						main_events_count.textContent = '('+ notes +')';
-					}
-					(this.checkNow = startWatch)();
-				}
-				document.body.appendChild(lorypanel);
-				return Promise.resolve();
-			}
+			return opened;
 		}
 	}
-})();
+}
+
+function UserScript() {
+
+	var main_events_count, reset_form;
+	var changed = true;
+	var notes   = localStorage.getItem('l0rNG-notes') || '';
+
+	const self = {
+		checkNow: () => void 0,
+		init    : () => {
+			if ( (main_events_count = document.getElementById('main_events_count')) ) {
+				if ( (notes = main_events_count.textContent.replace(/[\(\)]/g, '')) ) {
+					lorypanel.children['lorynotify'].setAttribute('cnt-new', notes);
+				}
+				(self.checkNow = startWatch)();
+			}
+			document.body.append(lorypanel);
+			return Promise.resolve();
+		}
+	}
+
+	const resetNotif = () => {
+		if (reset_form) {
+			const fd = new FormData( reset_form );
+			sendFormData('notifications-reset', fd, false).then(() => {
+				localStorage.setItem('l0rNG-notes', (notes = ''));
+				reset_form = setNotes(''); lorylist.remove();
+				if ('notify-list' in lorylist.children)
+					lorylist.children['notify-list'].remove();
+			});
+		}
+	}
+	const sendNotify = (permission => {
+		// Определяем статус оповещений:
+		var granted = (permission === 'granted'); // - разрешены
+
+		switch (permission) {
+			case 'denied':  // - отклонены
+				return () => void 0;
+			case 'default': // - требуется подтверждение
+				Notification.requestPermission(p => { granted = (p === 'granted'); });
+		}
+		return count => {
+			if (USER_SETTINGS['Desktop Notification'] && granted) {
+				const notif = new Notification('LINUX.ORG.RU', {
+					icon: '/tango/img/linux-logo.png',
+					body: `\n${ count } новых сообщений`,
+				});
+				notif.onclick = () => { window.focus() };
+			}
+		}
+	})( window.Notification ? Notification.permission : 'denied' );
+
+	const delay      = 55e3 + Math.floor(Math.random() * 1765);
+	const defaults   = Object.assign({}, USER_SETTINGS);
+	const startWatch = getDataResponse.bind(null, '/notifications-count',
+		( response ) => {
+			if (response == 0)
+				response = '';
+			if (response > notes)
+				sendNotify(response);
+			localStorage.setItem('l0rNG-notes', (notes = response));
+			setNotes(response);
+		}, ({ status }) => {
+			if (status < 400 || status >= 500)
+				Timer.set('Check Notifications', startWatch, delay * (status >= 500 ? 5 : 1));
+		});
+
+	const setNotes = count => {
+		if (main_events_count)
+			main_events_count.textContent = count ? `(${count})` : '';
+		lorypanel.children.lorynotify[
+			`${ count ? 'set' : 'remove' }Attribute`
+		]('cnt-new', (notes = count));
+		Timer.set('Check Notifications', startWatch, delay);
+	}
+
+	const setValues = items => {
+		for (const name in Object.assign(USER_SETTINGS, items)) {
+			 const input   = loryform.elements[name],
+			       param   = input.type === 'checkbox' ? 'checked' : 'value';
+			input[ param ] = Dynamic_Style[name] = USER_SETTINGS[name];
+		}
+	}
+
+	const onValueChange = input => {
+		switch (input.type) {
+			case 'checkbox':
+				USER_SETTINGS[input.id] = input.checked;
+				break;
+			default:
+				const min = Number (input.min || 0);
+				const val = Number (input.value);
+				Dynamic_Style[input.id] = USER_SETTINGS[input.id] = val >= min ? val : (input.value = min);
+		}
+		localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
+		loryform.classList.add('save-msg');
+	}
+
+	const loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
+		<div class="tab-row">
+			<span class="tab-cell">Автоподгрузка комментариев:</span>
+			<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Укорачивать блоки кода свыше:</span>
+			<span class="tab-cell" chr="px"><input type="number" id="Code Block Short Size" min="0" step="1"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Задержка появления превью:</span>
+			<span class="tab-cell" chr="мс"><input type="number" id="Delay Open Preview" min="50" step="25"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Задержка исчезания превью:</span>
+			<span class="tab-cell" chr="мс"><input type="number" id="Delay Close Preview" min="50" step="25"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Предзагружаемых страниц:</span>
+			<span class="tab-cell" chr="ст"><input type="number" id="Preloaded Pages Count" min="1" step="1"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Оповещения на рабочий стол:</span>
+			<span class="tab-cell"><input type="checkbox" id="Desktop Notification"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Просмотр картинок:</span>
+			<span class="tab-cell">
+				<select id="Picture Viewer">
+					<option value="0">Откл.</option>
+					<option value="1">Только для превью</option>
+					<option value="2">Для превью и ссылок</option>
+				</select>
+			</span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Задержка перед отправкой:</span>
+			<span class="tab-cell step-line">
+				<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
+				<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
+			</span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">Перемещать в начало страницы:</span>
+			<span class="tab-cell"><input type="checkbox" id="Scroll Top View"></span>
+		</div>
+		<div class="tab-row">
+			<span class="tab-cell">CSS анимация:</span>
+			<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
+				<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
+			</span>
+		</div>`}, {
+			animationend: () => loryform.classList.remove('save-msg'),
+			change: ({ target }) => {
+				changed && onValueChange(target);
+			},
+			input : ({ target }) => {
+				changed = false;
+				Timer.set('Settings on Changed', () => {
+					changed = true;
+					onValueChange(target);
+				}, 750)
+			}
+		});
+
+	setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
+
+	loryform.elements.resetSettings.onclick = () => {
+		setValues( defaults );
+		localStorage.setItem('lorify-ng', JSON.stringify(defaults));
+		loryform.classList.add('save-msg');
+	}
+
+	const lorylist  = _setup('div', { class: 'lorify-notes-panel', html: `
+		<div id="notify-clear" class="lory-btn">Очистить уведомления</a>
+	`});
+	const lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
+	<div id="lorynotify" class="lory-btn"></div>
+	<div id="lorytoggle" class="lory-btn"></div>
+	<style>
+		#lorynotify {
+			top: -4px;
+			left: -2px;
+			font: bold 16px "Open Sans";
+			background-color: #3e85a8;
+			border-radius: 5px;
+			z-index: 1;
+		}
+		#lorynotify[cnt-new]:before {
+			content: attr(cnt-new);
+			padding: 0 4px;
+		}
+		#lorytoggle {
+			left: 0; top: 0;
+			right: 0; bottom: 0;
+			background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
+			opacity: .5;
+		}
+		#loryform {
+			display: table;
+			min-width: 360px;
+			right: 5px;
+			top: 40px;
+			padding: 4px 6px;
+		}
+		#loryform, .lorify-notes-panel {
+			background: #eee;
+			border-radius: 5px;
+			box-shadow: -1px 2px 8px rgba(0,0,0,.3);
+			position: fixed;
+		}
+		.tab-row, .lorify-notes-panel {
+			font-size: 85%;
+			color: #666;
+		}
+		.lorify-notes-panel {
+			top: 5px;
+			right: 34px;
+			overflow-x: hidden;
+			overflow-y: auto;
+		}
+		.lorify-notes-panel > * {
+			padding: 6px 8px;
+		}
+		.lorify-notes-panel > .lory-btn:hover,
+		.lorify-notes-panel tr:hover {
+			background: #e1e1e1;
+		}
+		#notify-clear {
+			text-align: center;
+			font-size: 18px;
+			color: #299a7b;
+			text-decoration: underline dashed;
+		}
+		.note-target {
+			font-size: 12px;
+			max-width: 360px;
+		}
+		#lorynotify, .note-target .tag {
+			color: white;
+		}
+		.lorify-settings-panel {
+			position: fixed;
+			top: 5px;
+			right: 5px;
+			padding: 16px;
+		}
+		#lorytoggle:hover, #lorytoggle.pushed { opacity: 1!important; }
+		.lory-btn { cursor: pointer; }
+		.tab-row  { display: table-row; }
+		.tab-cell { display: table-cell;
+			position: relative;
+			padding: 4px 2px;
+			max-width: 180px;
+			vertical-align: middle;
+		}
+		.tab-cell input[type="number"] {
+			max-width: 50%;
+			min-width: 50%;
+		}
+		.tab-cell[chr]:after {
+			content: attr(chr) ".";
+			font: italic 14px serif;
+		}
+		.step-line, .step-line > input {
+			width: 180px;
+		}
+		st:before, .step-line > input, #lorynotify, #lorytoggle {
+			position: absolute;
+		}
+		st + st {
+			margin-left: 10%;
+		}
+		st {
+			padding: 5px 0;
+			border: 0 solid #ccc;
+			counter-increment: stepIdx;
+			border-left-width: 1px;
+		}
+		st:before {
+			content: counter(stepIdx);
+			font: italic 10px Arial;
+		}
+		#loginGreating { margin-right: 42px!important; }
+		#resetSettings, .info-line:before { position: absolute; right: 0; }
+		.info-line:before {
+			-webkit-animation: apply 2s linear 1;
+			animation: apply 2s linear 1;
+			color: red;
+			background-color: white;
+			left: 0; top: 0;
+			z-index: 9;
+		}
+		.save-msg:before {
+			content: 'Настройки сохранены.';
+			padding: 15px 0;
+			text-align: center;
+		}
+		@media screen and (max-width: 570px) {
+			#loryform, .lorify-notes-panel { right: 0; }
+		}
+		@keyframes apply {
+			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
+		}
+		@-webkit-keyframes apply {
+			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
+		}
+	</style>`}, {
+		click: ({ target }) => {
+			if (target.classList[0] === 'lory-btn') {
+				switch (target.id) {
+					case 'notify-clear':
+						resetNotif();
+						lorylist.classList.remove('pushed');
+						break;
+					case 'lorynotify':
+						if (target.classList.toggle('pushed')) {
+							target.parentNode.append(lorylist);
+							const max = Number(notes), list = lorylist.children['notify-list'];
+							if (max > 0 && (!list || list.rows.length !== max)) {
+								list && list.remove();
+								getDataResponse('/notifications', html => {
+									const doc = new DOMParser().parseFromString(html, 'text/html'),
+										  tab = _setup(doc.querySelector('.message-table'), { id: 'notify-list' });
+									reset_form = doc.forms.reset_form;
+									for (let i = 0; i < max; i++) {
+										tab.rows[i].children[1].className = 'note-target';
+										tab.rows[i].children[1].firstElementChild.target = '_blank';
+									}
+									while (tab.rows[max])
+										   tab.rows[max].remove();
+									lorylist.append(tab);
+								});
+							}
+						} else
+							lorylist.remove()
+						break;
+					case 'lorytoggle':
+						target.classList.toggle('pushed') ? target.parentNode.append(loryform) : loryform.remove();
+				}
+			}
+		}
+	});
+	window.addEventListener('storage', ({ key, newValue }) => {
+		switch(key) {
+			case 'lorify-ng'  : setValues( JSON.parse( newValue ) ); break;
+			case 'l0rNG-notes': setNotes (             newValue   ); break;
+		}
+	});
+	return self;
+}
 
 function HighlightJS() {
 	var hljs = this;

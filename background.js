@@ -1,6 +1,6 @@
-var notes    = 0;
-var settings = new Object;
-var defaults = { // default settings
+const android  = (window.screen.orientation.angle !== 0 || window.screen.orientation.type !== 'landscape-primary');
+const settings = new Object;
+const defaults = { // default settings
 	'Realtime Loader'      : true,
 	'CSS3 Animation'       : true,
 	'Delay Open Preview'   : 50,
@@ -13,42 +13,37 @@ var defaults = { // default settings
 	'Code Block Short Size': 255
 };
 
-const openPorts = new Object;
-const initStor  = new Promise(resolve => {
+var notes = 0;
+
+const openPorts = new Array;
+const loadStore = typeof browser === 'object' ?
 	// load settings
-	chrome.storage.onChanged.addListener(items => {
-		const data = {};
-		for (const key in items) {
-			data[key] = settings[key] = items[key].newValue;
-		}
-		for (const id in openPorts) {
-			openPorts[id].postMessage({ name: 'settings-change', data });
-		}
+	browser.storage.local.get(defaults) : new Promise(resolve => {
+		chrome.storage.local.get(defaults, resolve)
 	});
-	chrome.storage.sync.get(defaults, items => {
+	loadStore.then(items => {
 		for (const key in items) {
 			settings[key] = items[key];
 		}
-		resolve();
 	});
-});
 
 if ('onSuspend' in chrome.runtime) {
 	chrome.runtime.onSuspend.addListener(() => {
 		chrome.browserAction.setBadgeBackgroundColor({ color: '#e5be5b' }); //#369e1b
-		for (const id in openPorts) {
-			openPorts[id].disconnect();
+		for (const port of openPorts) {
+			port.disconnect();
 		}
 	});
 }
-chrome.notifications.onClicked.addListener(openTab);
-chrome.runtime.onMessage.addListener(messageHandler);
+
+chrome.notifications.onClicked.addListener(openTab.bind(null, android ? '/settings.html' : ''));
 chrome.runtime.onConnect.addListener(port => {
-	const id = port.sender.tab.id;
-	(openPorts[id] = port).onDisconnect.addListener(() => {
-		delete openPorts[id];
+	port.onMessage.addListener(messageHandler);
+	port.onDisconnect.addListener(discon => {
+		openPorts.splice(openPorts.indexOf(discon), 1);
 	});
-	initStor.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
+	openPorts.push(port);
+	loadStore.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
 });
 
 if ('setBadgeTextColor' in chrome.browserAction) {
@@ -74,60 +69,62 @@ chrome.alarms.create('check-lor-notifications', {
 	['blocking']
 ); */
 
-const empty_Url = [
-	'about:newtab',
-	'about:blank',
-	'about:home',
-	'chrome://startpage/',
-	'chrome://newtab/'
-];
+function openTab(uri) {
 
-function onGetTabs(tabs) {
-	// If exists a tab with URL == `notify_Url` then we switches to this tab.
-	var tab = tabs[0];
-	if (tab) {
-		chrome.tabs.reload(tab.id);
-		chrome.tabs.update(tab.id, { active: true }, clearNotes);
-	} else {
-		chrome.tabs.query({}, onGetAllTabs);
-	}
-}
-function onGetAllTabs(tabs) {
-	/// If opened a new tab (or the start page) then we goes to the `notify_Url`.
-	for (let tab of tabs) {
-		if (empty_Url.includes(tab.url)) {
-			chrome.tabs.update(tab.id, { url: 'https://www.linux.org.ru/notifications', active: true }, clearNotes);
+	const [ path, cid = '' ] = uri.split('?cid=');
+
+	for (const port of openPorts) {
+		if ('tab' in port.sender && port.sender.tab.url.includes(path)) {
+			chrome.tabs.update(port.sender.tab.id , { active: true });
+			port.postMessage({ name: 'scroll-to-comment', data: cid });
 			return;
 		}
 	}
-	chrome.tabs.create({ url: 'https://www.linux.org.ru/notifications' }, clearNotes);
-}
-function openTab() {
-	chrome.tabs.query({ url: '*://www.linux.org.ru/notifications' }, onGetTabs);
-}
-function clearNotes() {
-	notes = 0;
-	chrome.browserAction.setBadgeText({ text: '' });
-	for (const id in openPorts) {
-		openPorts[id].postMessage({ name: 'new-notes', data: ''});
-	}
+	chrome.tabs.query({}, tabs => {
+
+		const full_url = { url: (uri !== '/settings.html' ? `https://www.linux.org.ru${uri}` : `${uri}#notifications`), active: true };
+		const empty_Rx = new RegExp('^'+
+			'about:(?:newtab|blank|home)|'+
+			'chrome://(?:newtab|startpage)/?'+ (uri !== '/settings.html' ? 
+			'|https?://www.linux.org.ru/?' : '')+
+		'$');
+
+		let tab_id = -1, empty_not_found = true;
+		for (const { id, url } of tabs) {
+			if (url.includes('://www.linux.org.ru'+ path)) {
+				tab_id = id;
+				break;
+			} else if (empty_not_found && empty_Rx.test(url)) {
+				tab_id = id;
+				empty_not_found = false;
+			}
+		}
+		if (tab_id !== -1) {
+			chrome.tabs.update(tab_id, full_url);
+		} else {
+			chrome.tabs.create(full_url);
+		}
+	});
 }
 
-function messageHandler({ action }, { tab }) {
+function messageHandler({ action, data }, port) {
 	// check
 	switch (action) {
-		case 'l0rNG-settings':
-			openPorts[tab.id].postMessage({ name: 'settings-change', data: settings });
+		case 'l0rNG-setts-reset':
+			changeSettings(defaults);
 			break;
-		case 'l0rNG-reset':
-			clearNotes();
+		case 'l0rNG-setts-change':
+			changeSettings(data, openPorts.indexOf(port));
+			break;
+		case 'l0rNG-notes-reset':
+			updNoteStatus(0);
+			break;
+		case 'l0rNG-open-tab':
+			openTab(data);
 			break;
 		case 'l0rNG-reval':
-			chrome.alarms.get('check-lor-notifications', alarm => {
-				!alarm && getNotifications();
-			});
-			openPorts[tab.id].postMessage({ name: 'new-notes', data: notes ? '('+ notes +')' : '' });
-			break;
+			if ( notes !== data )
+				updNoteStatus(data);
 		case 'l0rNG-checkNow':
 			chrome.alarms.clear('check-lor-notifications');
 			getNotifications();
@@ -143,7 +140,10 @@ function getNotifications() {
 	}).then(
 		response => {
 			if (response.ok) {
-				response.json().then(sendNotify);
+				response.json().then( count => {
+					if ( notes !== count )
+						updNoteStatus(count);
+				});
 			}
 			if (response.status < 400) {
 				chrome.alarms.create('check-lor-notifications', {
@@ -158,17 +158,25 @@ function getNotifications() {
 	);
 }
 
-function sendNotify(count) {
-	if ((notes = count) && settings['Desktop Notification']) {
+function updNoteStatus(count) {
+	if ( count > notes && settings['Desktop Notification'] ) {
 		chrome.notifications.create('lorify-ng', {
 			type    : 'basic',
 			title   : 'LINUX.ORG.RU',
-			message : count +' новых ответов',
+			message : count +' новых сообщений',
 			iconUrl : './icons/penguin-64.png'
 		});
 	}
-	chrome.browserAction.setBadgeText({ text: count ? count.toString() : '' });
-	for (const id in openPorts) {
-		openPorts[id].postMessage({ name: 'new-notes', data: count ? '('+ count +')' : '' });
+	chrome.browserAction.setBadgeText({ text: (notes = count) ? count.toString() : '' });
+	openPorts.forEach(port => {
+		port.postMessage({ name: 'notes-count-update', data: count })
+	});
+}
+function changeSettings(newSetts, sIdx = -1) {
+	for (let i  =  0; i < openPorts.length; i++) {
+		if ( i !== sIdx )
+			openPorts[i].postMessage({ name: 'settings-change', data: newSetts });
 	}
+	Object.assign(settings, newSetts);
+	chrome.storage.local.set(newSetts);
 }
