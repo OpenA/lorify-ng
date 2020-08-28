@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.9.5
+// @version     2.9.6
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -31,6 +31,7 @@ const CommentsCache = new Object;
 const LOR           = parseLORUrl(location.pathname);
 const anonymous     = { innerText: 'anonymous' };
 const TOUCH_DEVICE  = 'ontouchstart' in window;
+const RESIZE_FUNCT  = 'onorientationchange' in window ? 'orientationchange' : 'resize';
 const [,TOKEN = ''] = document.cookie.match(/CSRF_TOKEN="?([^;"]*)/);
 const Timer         = {
 	// clear timer by name
@@ -196,10 +197,9 @@ document.documentElement.append(
 		}
 		.shrink-line {
 			position: absolute;
-			bottom: 0;
-			left: 25%;
-			right: 25%;
-			border-radius: 15px 15px 0 0;
+			bottom: 0; right: 0;
+			padding: 5px 15px;
+			border-radius: 15px 0 0 0;
 			background: rgba(0,0,0,.5);
 			text-align: center;
 			color: white;
@@ -581,7 +581,7 @@ const ContentFinder = {
 			const block         = code.parentNode.parentNode.
 				classList[0] === 'code' ? code.parentNode.parentNode : code.parentNode;
 
-			if (shrink_size < 25) {
+			if (shrink_size < 35) {
 				block.classList.add('cutted');
 				block.prepend(
 					_setup('span', { class: 'shrink-text' })
@@ -595,6 +595,9 @@ const ContentFinder = {
 				);
 			}
 		});
+		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply):not(.sign) a[href*="?cid="]')) {
+			_setup(a, { class: 'link-navs', target: '_blank', cid: a.search.replace('?cid=', '') })
+		}
 		for (const a of comment.querySelectorAll(IMAGE_LINKS)) {
 			a.className = 'link-image';
 		}
@@ -615,14 +618,9 @@ _setup(document, null, {
 		const form = this.forms['commentForm'] || this.forms['messageForm'];
 		const init = App.init();
 
-		if (user) {
-			LOR.Login = new RegExp(user.innerText);
-		} else {
-			this.querySelectorAll('.fav-buttons > a').forEach(a => { a.href = 'javascript:void(0)' });
-			LOR.Login = /(!^)/;
-		}
-		// add scroll top button
-		this.body.appendChild(
+		LOR.Login = user ? new RegExp(user.innerText) : /(!^)/;
+		this.querySelectorAll('.fav-buttons > a').forEach(a => { a.href = 'javascript:void(0)' });
+		this.body.append( // add scroll top button
 			_setup('div', { class: 'scrolltop-btn' }, { click: () => document.documentElement.scrollIntoView({ block: 'start', behavior: 'smooth' }) })
 		);
 		
@@ -1161,11 +1159,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 		addPreviewHandler(
 			(CommentsCache[cid] = el), attrs, !TOUCH_DEVICE
 		);
-		
-		el.querySelectorAll(`.msg_body > *:not(.reply):not(.sign) a[href*="${ path }?cid="]`).forEach(a => {
-			_setup(a, { class: 'link-navs', cid: a.search.replace('?cid=', '') })
-		});
-		
+
 		let acid = _setup(el.querySelector(`.title > a[href^="${ path }?cid="]`), { class: 'link-pref' });
 		let self = _setup(el.querySelector(`.reply > ul > li > a[href="${ path }?cid=${ cid }"]`), { class: 'link-self', cid });
 		
@@ -1321,7 +1315,7 @@ class CentralPicture {
 			_IMG.style.top  = _Y = 0;
 			Dynamic_Style['Center Image Scale'] = _Scale = 1;
 			Dynamic_Style['Center Image Rotate'] = _Rdeg = 0;
-			window.removeEventListener('resize', self, false);
+			window.removeEventListener(RESIZE_FUNCT, self, false);
 		}
 		const handler = e => {
 			switch (e.target.classList[0]) {
@@ -1449,7 +1443,7 @@ class CentralPicture {
 		this._IMG.style.visibility = 'hidden';
 		this._IMG.src = src;
 
-		window.addEventListener('resize', this, false);
+		window.addEventListener(RESIZE_FUNCT, this, false);
 
 		document.body.append( this._Overlay );
 	}
@@ -1474,8 +1468,14 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 		case 'shrink-text':
 			parent.classList.toggle('cutted');
 			break;
-		case 'link-self':
 		case 'link-navs':
+			if (el.pathname !== LOR.path) {
+				if (App.openUrl(el.pathname + el.search)) {
+					return;
+				} else
+					break;
+			}
+		case 'link-self':
 		case 'link-pref':
 			var cid  = el.getAttribute('cid');
 			_offset_ = 1;
@@ -2480,6 +2480,7 @@ function WebExt() {
 
 	return {
 		checkNow : () => sendMessage( 'l0rNG-checkNow' ),
+		openUrl  : al => sendMessage( 'l0rNG-open-tab', al ),
 		init     : () => {
 			if ( (main_events_count = document.getElementById('main_events_count')) ) {
 				const notes = Number(main_events_count.textContent.match(/\d+/));
@@ -2493,11 +2494,12 @@ function WebExt() {
 function UserScript() {
 
 	var main_events_count, reset_form;
-	var changed = true;
-	var notes   = localStorage.getItem('l0rNG-notes') || '';
+	var iterate = 2,
+		notes   = localStorage.getItem('l0rNG-notes') || '';
 
 	const self = {
 		checkNow: () => void 0,
+		openUrl : () => true,
 		init    : () => {
 			if ( (main_events_count = document.getElementById('main_events_count')) ) {
 				if ( (notes = main_events_count.textContent.replace(/[\(\)]/g, '')) ) {
@@ -2510,17 +2512,6 @@ function UserScript() {
 		}
 	}
 
-	const resetNotif = () => {
-		if (reset_form) {
-			const fd = new FormData( reset_form );
-			sendFormData('notifications-reset', fd, false).then(() => {
-				localStorage.setItem('l0rNG-notes', (notes = ''));
-				reset_form = setNotes(''); lorylist.remove();
-				if ('notify-list' in lorylist.children)
-					lorylist.children['notify-list'].remove();
-			});
-		}
-	}
 	const sendNotify = (permission => {
 		// Определяем статус оповещений:
 		var granted = (permission === 'granted'); // - разрешены
@@ -2550,7 +2541,7 @@ function UserScript() {
 				response = '';
 			if (response > notes)
 				sendNotify(response);
-			localStorage.setItem('l0rNG-notes', (notes = response));
+			localStorage.setItem('l0rNG-notes', response);
 			setNotes(response);
 		}, ({ status }) => {
 			if (status < 400 || status >= 500)
@@ -2558,11 +2549,21 @@ function UserScript() {
 		});
 
 	const setNotes = count => {
+		const lorynotify = lorypanel.children.lorynotify,
+			  cleared    = !(notes = count);
 		if (main_events_count)
-			main_events_count.textContent = count ? `(${count})` : '';
-		lorypanel.children.lorynotify[
-			`${ count ? 'set' : 'remove' }Attribute`
-		]('cnt-new', (notes = count));
+			main_events_count.textContent = cleared ? '' : `(${count})`;
+		if (cleared) {
+			lorynotify.removeAttribute('cnt-new');
+			lorynotify.classList.remove('pushed');
+			lorylist.remove();
+			if ('notify-list' in lorylist.children)
+				lorylist.children['notify-list'].remove();
+		} else {
+			if (lorynotify.classList.contains('pushed'))
+				pullNotes();
+			lorynotify.setAttribute('cnt-new', count);
+		}
 		Timer.set('Check Notifications', startWatch, delay);
 	}
 
@@ -2572,6 +2573,12 @@ function UserScript() {
 			       param   = input.type === 'checkbox' ? 'checked' : 'value';
 			input[ param ] = Dynamic_Style[name] = USER_SETTINGS[name];
 		}
+	}
+
+	const saveParams = changes => {
+		iterate = 2;
+		loryform.classList.add('save-msg');
+		localStorage.setItem('lorify-ng', JSON.stringify(changes));
 	}
 
 	const onValueChange = input => {
@@ -2584,8 +2591,32 @@ function UserScript() {
 				const val = Number (input.value);
 				Dynamic_Style[input.id] = USER_SETTINGS[input.id] = val >= min ? val : (input.value = min);
 		}
-		localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS));
-		loryform.classList.add('save-msg');
+		saveParams(USER_SETTINGS);
+	}
+
+	const pullNotes = () => {
+		const max = Number(notes);
+		let empty = true;
+		if ('notify-list' in lorylist.children) {
+			const list = lorylist.children['notify-list'];
+			if ((empty = list.rows.length !== max))
+				list.remove();
+		}
+		if (max > 0 && empty) {
+			getDataResponse('/notifications', html => {
+				const doc = new DOMParser().parseFromString(html, 'text/html'),
+					  tab = _setup(doc.querySelector('.message-table'), { id: 'notify-list' });
+				reset_form = doc.forms.reset_form;
+				for (let i = 0; i < max; i++) {
+					tab.rows[i].children[1].className                = 'note-target';
+					tab.rows[i].children[1].firstElementChild.id     = 'note-link';
+					tab.rows[i].children[1].firstElementChild.target = '_blank';
+				}
+				while (tab.rows[max])
+					   tab.rows[max].remove();
+				lorylist.append(tab);
+			});
+		}
 	}
 
 	const loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
@@ -2637,29 +2668,27 @@ function UserScript() {
 		<div class="tab-row">
 			<span class="tab-cell">CSS анимация:</span>
 			<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
-				<input type="button" id="resetSettings" value="сброс" title="вернуть настройки по умолчанию">
+				<button type="button" id="reset-setts" title="вернуть настройки по умолчанию">сброс</button>
 			</span>
 		</div>`}, {
-			animationend: () => loryform.classList.remove('save-msg'),
+			animationiteration: () => {
+				if ((iterate--) > 0)
+					loryform.classList.remove('save-msg');
+			},
 			change: ({ target }) => {
-				changed && onValueChange(target);
+				if (!target.hasAttribute('input-hold'))
+					onValueChange(target);
 			},
 			input : ({ target }) => {
-				changed = false;
+				target.setAttribute('input-hold','');
 				Timer.set('Settings on Changed', () => {
-					changed = true;
+					target.removeAttribute('input-hold');
 					onValueChange(target);
 				}, 750)
 			}
 		});
 
 	setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
-
-	loryform.elements.resetSettings.onclick = () => {
-		setValues( defaults );
-		localStorage.setItem('lorify-ng', JSON.stringify(defaults));
-		loryform.classList.add('save-msg');
-	}
 
 	const lorylist  = _setup('div', { class: 'lorify-notes-panel', html: `
 		<div id="notify-clear" class="lory-btn">Очистить уведомления</a>
@@ -2669,8 +2698,8 @@ function UserScript() {
 	<div id="lorytoggle" class="lory-btn"></div>
 	<style>
 		#lorynotify {
-			top: -4px;
-			left: -2px;
+			top: -5px;
+			left: -3px;
 			font: bold 16px "Open Sans";
 			background-color: #3e85a8;
 			border-radius: 5px;
@@ -2772,11 +2801,11 @@ function UserScript() {
 			font: italic 10px Arial;
 		}
 		#loginGreating { margin-right: 42px!important; }
-		#resetSettings, .info-line:before { position: absolute; right: 0; }
+		#reset-setts, .info-line:before { position: absolute; right: 0; }
 		.info-line:before {
-			-webkit-animation: apply 2s linear 1;
-			animation: apply 2s linear 1;
-			color: red;
+			-webkit-animation: apply 2s ease-in infinite;
+			animation: apply 2s ease-in infinite;
+			color: #d25555;
 			background-color: white;
 			left: 0; top: 0;
 			z-index: 9;
@@ -2788,6 +2817,7 @@ function UserScript() {
 		}
 		@media screen and (max-width: 570px) {
 			#loryform, .lorify-notes-panel { right: 0; }
+			#lorynotify.pushed { border-radius: 0 0 5px 5px; padding: 2px 6px; }
 		}
 		@keyframes apply {
 			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
@@ -2796,37 +2826,40 @@ function UserScript() {
 			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
 		}
 	</style>`}, {
-		click: ({ target }) => {
-			if (target.classList[0] === 'lory-btn') {
-				switch (target.id) {
-					case 'notify-clear':
-						resetNotif();
-						lorylist.classList.remove('pushed');
-						break;
-					case 'lorynotify':
-						if (target.classList.toggle('pushed')) {
-							target.parentNode.append(lorylist);
-							const max = Number(notes), list = lorylist.children['notify-list'];
-							if (max > 0 && (!list || list.rows.length !== max)) {
-								list && list.remove();
-								getDataResponse('/notifications', html => {
-									const doc = new DOMParser().parseFromString(html, 'text/html'),
-										  tab = _setup(doc.querySelector('.message-table'), { id: 'notify-list' });
-									reset_form = doc.forms.reset_form;
-									for (let i = 0; i < max; i++) {
-										tab.rows[i].children[1].className = 'note-target';
-										tab.rows[i].children[1].firstElementChild.target = '_blank';
-									}
-									while (tab.rows[max])
-										   tab.rows[max].remove();
-									lorylist.append(tab);
-								});
-							}
-						} else
-							lorylist.remove()
-						break;
-					case 'lorytoggle':
-						target.classList.toggle('pushed') ? target.parentNode.append(loryform) : loryform.remove();
+		click: e => {
+			const btn = e.target;
+			switch (btn.id) {
+			case 'notify-clear':
+				if (!btn.disabled && reset_form) {
+					 btn.disabled = true;
+					sendFormData('notifications-reset', new FormData( reset_form ), false).then(() => {
+						localStorage.setItem('l0rNG-notes', '');
+						reset_form = setNotes('');
+						btn.disabled = false;
+					});
+				}
+				break;
+			case 'lorynotify':
+				if (btn.classList.toggle('pushed')) {
+					btn.parentNode.append(lorylist);
+					pullNotes();
+				} else
+					lorylist.remove();
+				break;
+			case 'lorytoggle':
+				if (btn.classList.toggle('pushed')) {
+					btn.parentNode.append(loryform);
+				} else
+					loryform.remove();
+				break;
+			case 'reset-setts':
+				setValues( defaults );
+				saveParams( defaults );
+				break;
+			case 'note-link':
+				if (btn.pathname === LOR.path) {
+					goToCommentPage(btn.search.substring(5));
+					e.preventDefault();
 				}
 			}
 		}

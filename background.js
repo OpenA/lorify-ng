@@ -29,7 +29,7 @@ const loadStore = typeof browser === 'object' ?
 
 if ('onSuspend' in chrome.runtime) {
 	chrome.runtime.onSuspend.addListener(() => {
-		chrome.browserAction.setBadgeBackgroundColor({ color: '#e5be5b' }); //#369e1b
+		setBadge({ color: '#e5be5b' });
 		for (const port of openPorts) {
 			port.disconnect();
 		}
@@ -46,14 +46,23 @@ chrome.runtime.onConnect.addListener(port => {
 	loadStore.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
 });
 
-if ('setBadgeTextColor' in chrome.browserAction) {
-	chrome.browserAction.setBadgeTextColor({ color: '#ffffff' });
-}
-chrome.browserAction.setBadgeBackgroundColor({ color: '#3d96ab' });
-chrome.browserAction.getBadgeText({}, label => {
-	if (label > 0)
-		notes = Number(label);
-});
+const setBadge = 'setBadgeText' in chrome.browserAction ? (
+	badge => {
+		if ('setBadgeTextColor' in badge) {
+			badge.setBadgeTextColor({ color: '#ffffff' });
+		}
+		badge.setBadgeBackgroundColor({ color: '#3d96ab' });
+		badge.getBadgeText({}, label => {
+			if (label > 0)
+				notes = Number(label);
+		});
+		return opts => {
+			if ('text'  in opts) badge.setBadgeText(opts); else
+			if ('color' in opts) badge.setBadgeBackgroundColor(opts);
+		}
+	}
+)(chrome.browserAction) : () => void 0;
+
 chrome.alarms.onAlarm.addListener(getNotifications);
 chrome.alarms.create('check-lor-notifications', {
 	when: Date.now() + 1e3
@@ -164,10 +173,10 @@ function updNoteStatus(count) {
 			type    : 'basic',
 			title   : 'LINUX.ORG.RU',
 			message : count +' новых сообщений',
-			iconUrl : './icons/penguin-64.png'
+			iconUrl : 'icons/penguin-mono.svg'
 		});
 	}
-	chrome.browserAction.setBadgeText({ text: (notes = count) ? count.toString() : '' });
+	setBadge({ text: (notes = count) ? count.toString() : '' });
 	openPorts.forEach(port => {
 		port.postMessage({ name: 'notes-count-update', data: count })
 	});

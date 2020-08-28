@@ -2,13 +2,14 @@
 const loryform = document.forms['loryform'];
 const n_count  = document.getElementById('note-count');
 const note_lst = document.getElementById('note-list');
-const port     = chrome.runtime.connect();
 
 var busy_id    = -1,
+	iterate    =  2,
 	cnt_new    =  0,
 	empty_list = true,
-	reset_form = null;
-	
+	reset_form = null,
+	port       = createPort();
+
 chrome.runtime.getBackgroundPage(({ notes }) => {
 	
 	if (notes > 0) {
@@ -19,7 +20,10 @@ chrome.runtime.getBackgroundPage(({ notes }) => {
 	}
 });
 
-loryform.addEventListener('animationend', () => loryform.classList.remove('save-msg'));
+loryform.addEventListener('animationiteration', () => {
+	if ((iterate--) > 0)
+		loryform.classList.remove('save-msg');
+});
 loryform.addEventListener('change', ({ target }) => {
 	if (busy_id === -1)
 		onValueChange(target);
@@ -32,13 +36,17 @@ loryform.addEventListener('input', ({ target }) => {
 	}, 750);
 });
 
-port.onMessage.addListener(({ name, data }) => {
+document.getElementById('reset-settings').addEventListener('click', applyAnim.bind(null, { action: 'l0rNG-setts-reset' }));
+n_count.addEventListener('click', showNotifications);
+note_lst.addEventListener('click', navClickHandler);
+
+function msgPortHadler({ name, data }) {
 	switch (name)
 	{
 	case 'notes-count-update':
 		if (!empty_list) {
-			for (const item of Array.from( note_lst.lastElementChild.children ))
-				item.remove();
+			while (note_lst.lastElementChild.children[0])
+				   note_lst.lastElementChild.children[0].remove();
 			if (data > 0)
 				pullNotes(data);
 		}
@@ -49,15 +57,16 @@ port.onMessage.addListener(({ name, data }) => {
 	case 'settings-change':
 		setValues(data);
 	}
-});
-n_count.addEventListener('click', showNotifications);
-note_lst.addEventListener('click', function(e) {
+}
+
+function navClickHandler(e) {
 	switch (e.target.id)
 	{
-	case 'go-back'    : this.hidden = true; break;
+	case 'go-back'    : this.hidden = true;
+	case 'do-wait'    : break;
 	case 'reset-notes':
-		if (reset_form && !e.target.disabled) {
-			e.target.disabled = true;
+		if (reset_form) {
+			e.target.id = 'do-wait';
 			fetch('https://www.linux.org.ru/notifications-reset', {
 				credentials: 'same-origin',
 				method: 'POST',
@@ -67,7 +76,7 @@ note_lst.addEventListener('click', function(e) {
 					port.postMessage({ action: 'l0rNG-notes-reset' });
 					reset_form = null;
 				}
-				e.target.disabled = false;
+				e.target.id = 'reset-notes';
 			});
 		}
 		break;
@@ -82,11 +91,28 @@ note_lst.addEventListener('click', function(e) {
 			});
 		}
 	}
-});
-document.getElementById('reset-settings').addEventListener('click', () => {
-	port.postMessage({ action: 'l0rNG-setts-reset' });
+}
+
+function createPort() {
+	const port = chrome.runtime.connect();
+	port.onMessage.addListener(msgPortHadler);
+	port.onDisconnect.addListener(() => {
+		Object.defineProperty(window, 'port', {
+			configurable: true,
+			get: () => {
+				console.log('this is working')
+				return createPort();
+			}
+		});
+	});
+	return port;
+}
+
+function applyAnim(changes) {
+	iterate = 2;
 	loryform.classList.add('save-msg');
-});
+	port.postMessage(changes);
+}
 
 function showNotifications() {
 	if (empty_list) {
@@ -107,8 +133,7 @@ function onValueChange(input) {
 			const val = Number (input.value);
 			changes[input.id] = val >= min ? val : (input.value = min);
 	}
-	port.postMessage({ action: 'l0rNG-setts-change', data: changes });
-	loryform.classList.add('save-msg');
+	applyAnim({ action: 'l0rNG-setts-change', data: changes });
 }
 
 function setValues(items) {

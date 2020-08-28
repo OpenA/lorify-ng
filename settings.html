@@ -2,9 +2,10 @@
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<meta name="viewport" content="initial-scale=1.0">
 		<title>lorify-ng Options</title>
 		<style>
-			#note-list, body { margin: 0; padding: 8px; }
+			#note-list, body { margin: 0; padding: 8px; background-color: white; }
 			#loriform { display: table; min-width: 360px; margin: 0 auto; }
 			.tab-row  { display: table-row; }
 			.tab-cell { display: table-cell;
@@ -42,10 +43,10 @@
 				content: counter(stepIdx);
 				font: italic 10px Arial;
 			}
-			.info-line:before {
-				-webkit-animation: apply 2s linear 1;
-				animation: apply 2s linear 1;
-				color: red;
+			.info-line:before, #do-wait:before {
+				-webkit-animation: apply 2s ease-in infinite;
+				animation: apply 2s ease-in infinite;
+				color: #d25555;
 			}
 			.info-line:before, #note-list {
 				background-color: white;
@@ -67,24 +68,29 @@
 			.nav-txt-btn {
 				color: #68b;
 				cursor: pointer;
-				font: italic 16px serif;
+				user-select: none;
 			}
 			#reset-settings {
 				position: absolute;
 				right: 0;
 			}
-			#reset-notes, #go-back {
-				font-size: larger;
-				margin: 0 20px;
+			.nav-cell {
+				margin: 0 10%;
+				padding: 2px 10px;
+				font: normal 20px sans;
+				display: inline-block;
 			}
-			#go-back:before {
-				content: "←";
+			#go-back:hover, #reset-notes:hover {
+				background-color: #369e1b;
+				border-radius: 3px;
+				color: white;
 			}
-			#reset-notes:before {
-				content: "✓";
-			}
-			#note-count:before {
+			#do-wait:before     { content: "..."; }
+			#go-back:before     { content: "←";   }
+			#reset-notes:before { content: "✓";   }
+			#note-count:before  {
 				content: "Уведомлений: " attr(cnt-new);
+				font: italic 16px serif;
 			}
 			#note-list {
 				bottom: 0;
@@ -120,6 +126,7 @@
 				position: absolute;
 				max-width: 190px;
 				top: 0; right: 0;
+				text-align: right;
 			}
 			.note-item-tags .tag {
 				background-color: rgba(99,99,99,.7);
@@ -218,8 +225,8 @@
 		</form>
 		<div id="note-list" hidden>
 			<div class="nav-menu">
-				<span id="go-back" class="nav-txt-btn" title="к настройкам"></span>
-				<span id="reset-notes" class="nav-txt-btn" title="отметить как прочитанные"></span>
+				<span id="go-back" class="nav-txt-btn nav-cell" title="к настройкам"></span>
+				<span id="reset-notes" class="nav-txt-btn nav-cell" title="отметить как прочитанные"></span>
 			</div>
 			<div></div>
 		</div>
