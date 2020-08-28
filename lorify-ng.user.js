@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     2.9.6
+// @version     2.9.7
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -66,7 +66,7 @@ const Dynamic_Style = (() => {
 	}
 })();
 
-const App = typeof chrome !== 'undefined' && chrome.runtime ? WebExt() : UserScript();
+const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id ? WebExt() : UserScript();
 
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
