@@ -10,13 +10,19 @@ var busy_id    = -1,
 	reset_form = null,
 	port       = createPort();
 
-chrome.runtime.getBackgroundPage(({ notes }) => {
+chrome.runtime.getBackgroundPage(({ notes, codestyles }) => {
 	
 	if (notes > 0) {
 		n_count.setAttribute('cnt-new', (cnt_new = notes));
 		n_count.hidden = false;
 		if (location.hash === '#notifications')
 			showNotifications();
+	}
+	if (codestyles) {
+		const input = loryform.elements['Code Highlight Style'];
+		for(const name of codestyles) {
+			input.appendChild( document.createElement('option') ).textContent = name;
+		}
 	}
 });
 
@@ -100,8 +106,9 @@ function createPort() {
 		Object.defineProperty(window, 'port', {
 			configurable: true,
 			get: () => {
-				console.log('this is working')
-				return createPort();
+				const value = createPort();
+				Object.defineProperty(window, 'port', { configurable: true, value });
+				return value;
 			}
 		});
 	});
@@ -125,9 +132,8 @@ function showNotifications() {
 function onValueChange(input) {
 	const changes = {};
 	switch (input.type) {
-		case 'checkbox':
-			changes[input.id] = input.checked;
-			break;
+		case 'select-one': changes[input.id] = input.selectedIndex; break;
+		case 'checkbox'  : changes[input.id] = input.checked; break;
 		default:
 			const min = Number (input.min || 0);
 			const val = Number (input.value);
@@ -138,10 +144,9 @@ function onValueChange(input) {
 
 function setValues(items) {
 	for (const name in items) {
-		loryform.elements[name][
-			loryform.elements[name].type === 'checkbox'
-			? 'checked'
-			: 'value'] = items[name];
+		 const type = loryform.elements[name].type,
+		      param = type === 'checkbox' ? 'checked' : type === 'select-one' ? 'selectedIndex' : 'value';
+		loryform.elements[name][param] = items[name];
 	}
 }
 

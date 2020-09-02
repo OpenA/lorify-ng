@@ -14,6 +14,7 @@
 				padding: 4px 2px;
 				vertical-align: middle;
 			}
+			.tab-cell select { width: 160px; }
 			.tab-cell input[type="number"] {
 				max-width: 50%;
 				min-width: 50%;
@@ -170,6 +171,12 @@
 				</span>
 			</div>
 			<div class="tab-row">
+				<span class="tab-cell">Стиль подсветки кода:</span>
+				<span class="tab-cell">
+					<select id="Code Highlight Style"></select>
+				</span>
+			</div>
+			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
 				<span class="tab-cell" chr="мс">
 					<input type="number" id="Delay Open Preview" min="50" step="25">
@@ -197,9 +204,9 @@
 				<span class="tab-cell">Просмотр картинок:</span>
 				<span class="tab-cell">
 					<select id="Picture Viewer">
-						<option value="0">Откл.</option>
-						<option value="1">Только для превью</option>
-						<option value="2">Для превью и ссылок</option>
+						<option>Откл.</option>
+						<option>Только для превью</option>
+						<option>Для превью и ссылок</option>
 					</select>
 				</span>
 			</div>

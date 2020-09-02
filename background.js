@@ -1,6 +1,5 @@
 const android  = (window.screen.orientation.angle !== 0 || window.screen.orientation.type !== 'landscape-primary');
-const settings = new Object;
-const defaults = { // default settings
+const defaults = Object.freeze({ // default settings
 	'Realtime Loader'      : true,
 	'CSS3 Animation'       : true,
 	'Delay Open Preview'   : 50,
@@ -10,16 +9,19 @@ const defaults = { // default settings
 	'Picture Viewer'       : 2,
 	'Scroll Top View'      : true,
 	'Upload Post Delay'    : 5,
-	'Code Block Short Size': 255
-};
+	'Code Block Short Size': 255,
+	'Code Highlight Style' : 0
+});
 
 var notes = 0;
 
+var codestyles  = null;
+const settings  = Object.assign({}, defaults);
 const openPorts = new Array;
 const loadStore = typeof browser === 'object' ?
 	// load settings
-	browser.storage.local.get(defaults) : new Promise(resolve => {
-		chrome.storage.local.get(defaults, resolve)
+	browser.storage.local.get() : new Promise(resolve => {
+		chrome.storage.local.get(null, resolve)
 	});
 	loadStore.then(items => {
 		for (const key in items) {
@@ -44,6 +46,8 @@ chrome.runtime.onConnect.addListener(port => {
 	});
 	openPorts.push(port);
 	loadStore.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
+	if (!codestyles)
+		port.postMessage({ name: 'need-codestyles' })
 });
 
 const setBadge = 'setBadgeText' in chrome.browserAction ? (
@@ -80,12 +84,12 @@ chrome.alarms.create('check-lor-notifications', {
 
 function openTab(uri) {
 
-	const [ path, cid = '' ] = uri.split('?cid=');
+	const path = uri.substring(0, uri.indexOf('?'));
 
 	for (const port of openPorts) {
 		if ('tab' in port.sender && port.sender.tab.url.includes(path)) {
 			chrome.tabs.update(port.sender.tab.id , { active: true });
-			port.postMessage({ name: 'scroll-to-comment', data: cid });
+			port.postMessage({ name: 'scroll-to-comment', data: uri });
 			return;
 		}
 	}
@@ -127,6 +131,9 @@ function messageHandler({ action, data }, port) {
 			break;
 		case 'l0rNG-notes-reset':
 			updNoteStatus(0);
+			break;
+		case 'l0rNG-codestyles':
+			codestyles = data;
 			break;
 		case 'l0rNG-open-tab':
 			openTab(data);
