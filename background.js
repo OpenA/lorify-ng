@@ -9,7 +9,7 @@ const defaults = Object.freeze({ // default settings
 	'Picture Viewer'       : 2,
 	'Scroll Top View'      : true,
 	'Upload Post Delay'    : 5,
-	'Code Block Short Size': 255,
+	'Code Block Short Size': 15,
 	'Code Highlight Style' : 0
 });
 
