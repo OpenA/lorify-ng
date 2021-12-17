@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.0.0
+// @version     3.0.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -123,20 +123,27 @@ const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id 
 document.documentElement.append(
 	_setup('script', { id: 'start-rws', text: `
 	if (!${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}) {
-		var _= { value: function(){} }; Object.defineProperties(window, { hljs: _, initStarPopovers: _, initNextPrevKeys: _, $script: _, define: { configurable: true, get: define_amd }});
-		var tag_memories_form_setup = topic_memories_form_setup;
-		$script.ready = function(name, call) {
+
+		var initNextPrevKeys,  initStarPopovers,  hljs,  $script;
+		    initNextPrevKeys = initStarPopovers = hljs = $script = function(){};
+
+		var tag_memories_form_setup,  topic_memories_form_setup;
+		    tag_memories_form_setup = topic_memories_form_setup = (a,b,c,d) => {
+				window.dispatchEvent(
+					new CustomEvent('memories_setup', { bubbles: true, detail: [a,b,c,d] }) );
+			};
+
+		Object.defineProperty(window, 'define', {
+			configurable: true, get: () => {
+				if ($script.amd)
+					Object.defineProperty(window, 'define', { value: $script });
+				$script.amd = true;
+				return 'function';
+			}
+		});
+		$script.ready = (name, call) => {
 			if (name == 'lorjs')
 				document.addEventListener('DOMContentLoaded', call);
-		}
-		function topic_memories_form_setup(a,b,c,d) {
-			window.dispatchEvent( new CustomEvent('memories_setup', { bubbles: true, detail: [a,b,c,d] }) );
-		}
-		function define_amd() {
-			if (_.value.amd)
-				Object.defineProperty(window, 'define', _);
-			_.value.amd = true;
-			return 'function';
 		}
 	}`}),
 	_setup('style' , { text: `
@@ -528,7 +535,7 @@ const Favicon = {
 		}
 	},
 	
-	draw: function(label = '', color = '#48de3d') {
+	draw: function(label = '', color = 0) {
 		
 		const { icon, size, image, tabname, canvas } = this;
 		const context = canvas.getContext('2d');
@@ -556,7 +563,7 @@ const Favicon = {
 			
 				// webkit seems to render fonts lighter than firefox
 				context.font = 'bold '+ fontPix +'px arial';
-				context.fillStyle = color;
+				context.fillStyle = ['#48de3d', '#e47702', '#F00'][color]; // ok, warn, error
 				context.strokeStyle = 'rgba(0,0,0,.2)';
 			
 				// bubble
@@ -729,7 +736,7 @@ const DOC_Handlers = {
 		);
 		
 		if (topicDel.booleanValue) {
-			Favicon.draw('\u2013', '#F00');
+			Favicon.draw('\u2013', 2);
 		} else
 		if (!topicArc.booleanValue) {
 			if (page != lastPageIdx) {
@@ -802,49 +809,76 @@ const RealtimeWatcher = {
 
 		const last     = comms.querySelector('.msg[id^="comment-"]:last-of-type');
 		const realtime = document.getElementById('realtime');
-		const wS       = (RealtimeWatcher.wS = new WebSocket('wss://www.linux.org.ru:9000/ws'));
+		const last_id  = last ? last.id.substring('comment-'.length) : '';
 
 		var dbCiD = [];
 
-		wS.onmessage =  e => {
-			dbCiD.push( e.data );
+		if (!realtime.childNodes.length) {
+			realtime.append(
+				document.createTextNode(' '),
+				_setup('a', { text: 'Обновить.', href: LOR.path + (last_id ? '?cid='+ last_id : '') })
+			);
+		}
+		Favicon.draw(1, 1);
+		window.addEventListener('wsData', ({ detail }) => {
+			if (!detail || detail === '!') {
+				Favicon.draw(Favicon.index || detail, Number(detail === '!'));
+				return;
+			}
+			dbCiD.push( detail );
 			Timer.set('WebSocket Data', () => {
 				if (USER_SETTINGS['Realtime Loader']) {
 					realtime.style.display = 'none';
 					onWSData(dbCiD);
 					dbCiD = [];
 				} else {
-					(realtime.lastElementChild || _setup(realtime, {
-						text: 'Был добавлен новый комментарий.\n'
-					}).appendChild(
-						_setup('a', { text: 'Обновить.' })
-					)).setAttribute(
-						'href', LOR.path +'?cid='+ dbCiD[0]
-					);
+					let cnt = dbCiD.length;
+					realtime.childNodes[0].textContent = 'Добавлено ('+ cnt +') новых.\n';
+					realtime.childNodes[1].href = LOR.path +'?cid='+ dbCiD[0];
 					realtime.style.display = null;
 				}
 			}, 2e3);
+		});
+
+		document.head.appendChild(
+
+_setup('script', { text: `
+	const startRealtimeWS = (tid, cid) => {
+		const wS = new window.WebSocket('wss://www.linux.org.ru:9000/ws');
+		const _stop = ({ detail }) => wS.close(1000, detail);
+		wS.onmessage = ({ data }) => {
+			window.dispatchEvent(
+				new CustomEvent('wsData', { bubbles: true, detail: (cid = data) }) );
 		}
 		wS.onopen = () => {
-			console.info(`Установлено соединение c ${ wS.url }`);
-			wS.send( LOR.topic + (last ? ' '+ last.id.replace('comment-', '') : ''));
+			console.info('Установлено соединение c '+ wS.url);
+			wS.send((cid ? tid +' '+ cid : tid));
+			window.addEventListener('wsStop', _stop);
 		}
-		wS.onclose = ({ code, reason, wasClean }) => {
-			console.warn(`Соединение c ${ wS.url } было прервано "${ reason }" [код: ${ code }]`);
-			if(!wasClean || code == 1008) {
-				Timer.set('WebSocket Data', () => {
-					Favicon.draw(Favicon.index);
-					RealtimeWatcher.start(comms);
-				}, 15e3);
+		wS.onclose = ({ code, reason }) => {
+			if (code === 1000 || code === 1001) {
+				console.info('Закрыто соединение c '+ wS.url +' ('+ reason +')');
+			} else {
+				console.warn('Соединение c '+ wS.url +' было прервано "'+ reason +'" [код: '+ code +']');
 			}
-			if (code != 1000)
-				Favicon.draw(Favicon.index || '!', '#ae911c');
+			if (code === 1008 || code === 1012 || code === 1013) {
+				setTimeout(() => {
+					window.dispatchEvent( new CustomEvent('wsData', { bubbles: true, detail: '' }) );
+					startRealtimeWS(tid, cid);
+				}, 15e3);
+				window.dispatchEvent( new CustomEvent('wsData', { bubbles: true, detail: '!' }) );
+			}
+			window.removeEventListener('wsStop', _stop);
 		}
 		wS.onerror = e => console.error(e);
+	};
+	startRealtimeWS('${LOR.topic}', '${last_id}');
+`})
+		);
 	},
 	terminate: (reason) => {
-		RealtimeWatcher.wS.close(1000, reason);
-		Favicon.draw('\u2013', '#F00');
+		window.dispatchEvent( new CustomEvent('wsStop', { bubbles: true, detail: reason }) );
+		Favicon.draw('\u2013', 2);
 	}
 }
 
@@ -1244,8 +1278,8 @@ function getCommentsContent(html) {
 	if (isDel.booleanValue)
 		RealtimeWatcher.terminate('Тема удалена');
 	// Replace topic if modifed
-	const _NEWlastMod = old.querySelector('.sign > .sign_more > time');
-	const _OLDlastMod = topic.querySelector('.sign > .sign_more > time');
+	const _OLDlastMod = old.querySelector('.sign > .sign_more > time');
+	const _NEWlastMod = topic.querySelector('.sign > .sign_more > time');
 	if (_NEWlastMod && (!_OLDlastMod || _NEWlastMod.dateTime !== _OLDlastMod.dateTime)) {
 		const new_body = newfv.nextElementSibling; // .msg_body > [itemprop="articleBody"]
 		fav.parentNode.replaceChild(new_body, fav.nextElementSibling);
