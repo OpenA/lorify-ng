@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.0.1
+// @version     3.0.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -121,7 +121,7 @@ const Dynamic_Style = (() => {
 const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id ? WebExt() : UserScript();
 
 document.documentElement.append(
-	_setup('script', { id: 'start-rws', text: `
+	_setup('script', { text: `
 	if (!${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}) {
 
 		var initNextPrevKeys,  initStarPopovers,  hljs,  $script;
@@ -146,7 +146,7 @@ document.documentElement.append(
 				document.addEventListener('DOMContentLoaded', call);
 		}
 	}`}),
-	_setup('style' , { text: `
+	_setup('style' , { id: 'loryCSS', text: `
 		.newadded  { border: 1px solid #006880; }
 		.msg-error { color: red; font-weight: bold; }
 		.broken    { color: inherit !important; cursor: default; }
@@ -235,24 +235,32 @@ document.documentElement.append(
 			animation: process 3s linear infinite;
 			-webkit-animation: process 3s linear infinite;
 		}
-		.scrolltop-btn {
-			transform: rotate(90deg);
+		.scroll-nav {
 			position: fixed;
-			cursor: pointer;
+			background-color: rgba(0,0,0,.5);
+			border-radius: 7px;
 			right: 15px;
 			bottom: 15px;
-			padding: 6px;
-			opacity: .3;
+			overflow: hidden;
+			opacity: .5;
 		}
-		.scrolltop-btn:before {
+		.scroll-nav:hover {
+			opacity: .8;
+		}
+		#scroll_up:before   { transform: rotate(90deg); }
+		#scroll_down:before { transform: rotate(-90deg); }
+		.scroll-btn {
+			cursor: pointer;
+			padding: 6px;
+		}
+		.scroll-btn:before {
 			content: '\x52';
+			display: block;
 			font: bold 22px fontello;
 		}
-		.scrolltop-btn:hover {
+		.scroll-btn:hover {
 			background-color: black;
-			border-radius: 7px;
 			filter: invert(100%);
-			opacity: .5;
 		}
 		.suplied:after {
 			content: '';
@@ -633,175 +641,180 @@ let Navigation = null;
 let CommentForm = null;
 let MARKDOWN_MODE = false;
 
-const DOC_Handlers = {
+const onDOMReady = () => {
 
-	'DOMContentLoaded': function onDOMReady() {
+	const { path, page, lastmod, cid, topic } = LOR;
 
-		this.removeEventListener('DOMContentLoaded', onDOMReady);
-		
-		const top  = this.getElementById(`topic-${ LOR.topic }`);
-		const user = this.querySelector('#loginGreating > a[href$="/profile"]');
-		const init = App.init();
+	const body = document.body;
+	const init = App.init();
 
-		LOR.Login = user ? new RegExp(user.innerText) : /(!^)/;
-		this.querySelectorAll('.fav-buttons > a').forEach(a => { a.href = 'javascript:void(0)' });
-		this.body.append( // add scroll top button
-			_setup('div', { class: 'scrolltop-btn' }, { click: () => document.documentElement.scrollIntoView({ block: 'start', behavior: 'smooth' }) })
-		);
-		
-		if ((CommentForm = this.forms.commentForm || this.forms.messageForm)) {
-			
-			handleCommentForm(CommentForm);
-			this.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
-			
-			let { topic, replyto } = parseReplyUrl(location.search);
-			let bd_rep = this.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
-			if (bd_rep) {
-				bd_rep.append('\n(', _setup('a', {
-					text : 'с цитатой',
-					style: 'color: indianred!important;',
-					href : 'javascript:void(0)'
-				},{
-					click: convMsgBody.bind(null, this.querySelector(`#topic-${ topic } .msg_body > div:not([class]), #comment-${ replyto } .msg_body`))
-				}), ')\n');
-			}
-		}
-		
-		if (top) {
+	body.appendChild( // add scroll top button
+		_setup('div', { class: 'scroll-nav' }, { click: ({ target: { id } }) => {
+			if (!id) return;
+			let up = id === 'scroll_up', el = document.getElementById(up ? 'hd' : 'bd');
+			if (!el) el = document.body; else
+			if (!up) el = el.querySelector('hr:last-of-type') || el;
+			el.scrollIntoView({ block: up ? 'start' : 'end', behavior: 'smooth' });
+		}})
+	).append(
+		_setup('div', { id: 'scroll_up',   class: 'scroll-btn' }),
+		_setup('div', { id: 'scroll_down', class: 'scroll-btn' })
+	);
 
-			const ts = top.querySelector(`a[itemprop="creator"]`);
+	const favBtns  = body.querySelectorAll('.fav-buttons > a');
 
-			if (ts) {
-				LOR.TopicStarter = ts.innerText;
-				this.getElementById('start-rws').nextElementSibling.append(`\n
-					a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
-					a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
-						content: "тс";
-						font-size: 75%;
-						color: dimgrey!important;
-						display: inline-block;
-						vertical-align: super;
-					}`);
-			}
+	for (const fav of favBtns)
+		fav.href = 'javascript:void(0)';
 
-			ContentFinder.check( top );
-			addPreviewHandler( top );
+	if ((CommentForm = document.forms.commentForm || document.forms.messageForm)) {
 
-		} else {
+		handleCommentForm(CommentForm);
+		body.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 
-			for (const tps of this.querySelectorAll('[id^="topic-"]')) {
-
-				ContentFinder.check( tps );
-				addPreviewHandler( tps );
-			}
-			window.addEventListener('memories_setup', ({ detail }) => {
-				_setup(document.getElementById('tagFavAdd'), { 'data-tag': detail[0], onclick: tagMemories });
-				_setup(document.getElementById('tagIgnore'), { 'data-tag': detail[0], onclick: tagMemories });
-			});
-			return;
-		}
-
-		const { path, page, lastmod, cid } = LOR;
-		const navPages = this.querySelectorAll('.messages > .nav > .page-number');
-		const comments = this.getElementById('comments');
-
-		let lastPageIdx = 0;
-
-		if (navPages.length) {
-
-			const { bar, mir } = (Navigation = new TopicNavigation(navPages.length - 2));
-			const nav = navPages[0].parentNode;
-			lastPageIdx = navPages.length - 3;
-
-			nav.parentNode.replaceChild(bar, nav);
-			comments.replaceChild(mir, comments.querySelector('.nav'));
-		}
-		if (cid)
-			this.getElementById('comment-'+ cid).scrollIntoView();
-
-		history.replaceState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod, cid));
-
-		pagesCache.set(page, comments);
-		pagesCache.set(comments, page);
-		
-		addToCommentsCache(
-			comments.querySelectorAll('.msg[id^="comment-"]'), null, true
-		);
-		
-		const topicArc = this.evaluate(
-			'//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема перемещена в архив")]', this.body, null, 3, null
-		);
-		const topicDel = this.evaluate(
-			'//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема удалена")]', this.body, null, 3, null
-		);
-		
-		if (topicDel.booleanValue) {
-			Favicon.draw('\u2013', 2);
-		} else
-		if (!topicArc.booleanValue) {
-			if (page != lastPageIdx) {
-				preloadPage(path +'/page'+ lastPageIdx, lastPageIdx).then(RealtimeWatcher.start);
-			} else {
-				RealtimeWatcher.start(comments);
-			}
-		}
-		
-		init.then(() => {
-			const PL_COUNT = USER_SETTINGS['Preloaded Pages Count'];
-			let g = 1 + (page != lastPageIdx);
-
-			for (let i = page + 1; g < PL_COUNT && i < lastPageIdx; i++, g++) {
-				preloadPage(path +'/page'+ i, i);
-			}
-			for (let i = page - 1; g < PL_COUNT && i >= 0; i--, g++) {
-				preloadPage(path +'/page'+ i, i);
-			}
-		});
-		
-		_setup(window, null, {
-			memories_setup: ({ detail: [rm_id, memories] }) => {
-				_setup(document.getElementById(`${ memories ? 'memories' : 'favs' }_button`),
-				    (rm_id ? {
-					'rm-id': rm_id,
-					 class : 'selected',
-					 title : (memories ? 'Отслеживается' : 'В избранном')
-				}:{  title : (memories ? 'Следить за темой' : 'Добавить в избранное')
-				}),{ click : topicMemories });
-			},
-			dblclick: () => {
-				const newadded = document.querySelectorAll('.newadded[id^="comment-"]');
-				for (const { classList } of newadded)
-					classList.remove('newadded');
-				if (Navigation) {
-					Navigation.bar.children[`page_${LOR.page}`].removeAttribute('cnt-new');
-					Navigation.mir.children[`page_${LOR.page}`].removeAttribute('cnt-new');
+		let bd_rep = body.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
+		if (bd_rep) {
+			bd_rep.append('\n(', _setup('a', {
+				text : 'с цитатой',
+				style: 'color: indianred!important;',
+				href : 'javascript:void(0)'
+			},{
+				click: () => {
+					let l = parseReplyUrl(location.search);
+					convMsgBody(
+						body.querySelector(`#topic-${ l.topic } .msg_body > div:not([class]), #comment-${ l.replyto } .msg_body`)
+					);
 				}
-				Favicon.draw(
-					(Favicon.index -= newadded.length)
-				);
-			},
-			popstate: e => {
-				const { page, cid } = parseLORUrl(location.href);
-				const scrollTo = (LOR.cid = cid) ? () => {
-					document.getElementById(`comment-${cid}`).scrollIntoView()
-				} : () => {
-					if (e.state && e.state.lorYoffset)
-						document.documentElement.scrollTop = e.state.lorYoffset;
-				};
-				if (LOR.page != page) {
-					Navigation.gotoPage(page).then(scrollTo);
-				} else
-					scrollTo();
-			}
-		});
-	}/*,
-	animationstart: ({ target }) => {
-		if (target.classList.contains('suplied')) {
-			target.classList.remove('suplied');
-			// do some stuff
+			}), ')\n');
 		}
 	}
-*/}
+
+	if (topic) {
+
+		const top = document.getElementById(`topic-${ topic }`);
+		const ts = top.querySelector(`a[itemprop="creator"]`);
+
+		if (ts) {
+			LOR.TopicStarter = ts.innerText;
+			document.getElementById('loryCSS').append(`\n
+				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
+				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
+					content: "тс";
+					font-size: 75%;
+					color: dimgrey!important;
+					display: inline-block;
+					vertical-align: super;
+				}`);
+		}
+
+		ContentFinder.check( top );
+		addPreviewHandler( top );
+
+	} else {
+
+		for (const tps of body.querySelectorAll('[id^="topic-"]')) {
+
+			ContentFinder.check( tps );
+			addPreviewHandler( tps );
+		}
+		window.addEventListener('memories_setup', ({ detail }) => {
+			_setup(document.getElementById('tagFavAdd'), { 'data-tag': detail[0], onclick: tagMemories });
+			_setup(document.getElementById('tagIgnore'), { 'data-tag': detail[0], onclick: tagMemories });
+		});
+		return;
+	}
+
+	const comments = document.getElementById('comments');
+	const navPages = body.querySelectorAll('.messages > .nav > .page-number');
+	const infBlock = body.querySelector('.messages > .infoblock');
+	const user     = body.querySelector('#loginGreating > a[href$="/profile"]');
+
+	LOR.Login = user ? new RegExp(user.innerText) : /(!^)/;
+	let lastPageIdx = 0;
+
+	if (navPages.length) {
+
+		const { bar, mir } = (Navigation = new TopicNavigation(navPages.length - 2));
+		const nav = navPages[0].parentNode;
+		lastPageIdx = navPages.length - 3;
+
+		nav.parentNode.replaceChild(bar, nav);
+		comments.replaceChild(mir, comments.querySelector('.nav'));
+	}
+	if (cid)
+		document.getElementById('comment-'+ cid).scrollIntoView();
+
+	history.replaceState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod, cid));
+
+	pagesCache.set(page, comments);
+	pagesCache.set(comments, page);
+
+	addToCommentsCache(
+		comments.querySelectorAll('.msg[id^="comment-"]'), null, true
+	);
+
+	const topicDel = infBlock && infBlock.textContent.includes('Тема удалена');
+	const topicArc = infBlock && infBlock.textContent.includes('Тема перемещена в архив');
+
+	if (topicDel) {
+		Favicon.draw('\u2013', 2);
+	} else
+	if (!topicArc) {
+		if (page != lastPageIdx) {
+			preloadPage(path +'/page'+ lastPageIdx, lastPageIdx).then(RealtimeWatcher.start);
+		} else {
+			RealtimeWatcher.start(comments);
+		}
+	}
+
+	init.then(() => {
+		const PL_COUNT = USER_SETTINGS['Preloaded Pages Count'];
+		let g = 1 + (page != lastPageIdx);
+
+		for (let i = page + 1; g < PL_COUNT && i < lastPageIdx; i++, g++) {
+			preloadPage(path +'/page'+ i, i);
+		}
+		for (let i = page - 1; g < PL_COUNT && i >= 0; i--, g++) {
+			preloadPage(path +'/page'+ i, i);
+		}
+	});
+
+	_setup(window, null, {
+		memories_setup: ({ detail: [rm_id, memories] }) => {
+			_setup(document.getElementById(`${ memories ? 'memories' : 'favs' }_button`),
+			    (rm_id ? {
+				'rm-id': rm_id,
+				 class : 'selected',
+				 title : (memories ? 'Отслеживается' : 'В избранном')
+			}:{  title : (memories ? 'Следить за темой' : 'Добавить в избранное')
+			}),{ click : topicMemories });
+		},
+		dblclick: () => {
+			const newadded = document.querySelectorAll('.newadded[id^="comment-"]');
+			for (const { classList } of newadded)
+				classList.remove('newadded');
+			if (Navigation) {
+				Navigation.bar.children[`page_${LOR.page}`].removeAttribute('cnt-new');
+				Navigation.mir.children[`page_${LOR.page}`].removeAttribute('cnt-new');
+			}
+			Favicon.draw(
+				(Favicon.index -= newadded.length)
+			);
+		},
+		popstate: e => {
+			const { page, cid } = parseLORUrl(location.href);
+			const scrollTo = (LOR.cid = cid) ? () => {
+				document.getElementById(`comment-${cid}`).scrollIntoView()
+			} : () => {
+				if (e.state && e.state.lorYoffset)
+					document.documentElement.scrollTop = e.state.lorYoffset;
+			};
+			if (LOR.page != page) {
+				Navigation.gotoPage(page).then(scrollTo);
+			} else
+				scrollTo();
+		}
+	});
+};
 
 const RealtimeWatcher = {
 
@@ -819,7 +832,6 @@ const RealtimeWatcher = {
 				_setup('a', { text: 'Обновить.', href: LOR.path + (last_id ? '?cid='+ last_id : '') })
 			);
 		}
-		Favicon.draw(1, 1);
 		window.addEventListener('wsData', ({ detail }) => {
 			if (!detail || detail === '!') {
 				Favicon.draw(Favicon.index || detail, Number(detail === '!'));
@@ -888,11 +900,10 @@ var _sign_ = false;
 var _ctrl_ = false;
 var _offs_ = 1;
 
-if (document.readyState !== 'loading') {
-	DOC_Handlers['DOMContentLoaded'].call(document);
-	delete DOC_Handlers['DOMContentLoaded'];
-}
-_setup(document, null, DOC_Handlers);
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', onDOMReady);
+} else
+	onDOMReady();
 
 function winKeyHandler(e) {
 
@@ -1264,8 +1275,7 @@ function getCommentsContent(html) {
 	const doc = new DOMParser().parseFromString(html, 'text/html'),
 	    topic = doc.getElementById('topic-'+ LOR.topic),
 	    newfv = topic.querySelector('.fav-buttons'),
-	    comms = doc.getElementById('comments'),
-	    isDel = doc.evaluate('//*[@class="messages"]/*[@class="infoblock" and contains(., "Тема удалена")]', doc.body, null, 3, null);
+	    comms = doc.getElementById('comments');
 	// Remove banner scripts
 	comms.querySelectorAll('script, style').forEach(s => s.remove());
 	// Add reply button action
@@ -1275,8 +1285,16 @@ function getCommentsContent(html) {
 	fav.children[  'favs_count'  ].textContent = newfv.children[  'favs_count'  ].textContent;
 	fav.children['memories_count'].textContent = newfv.children['memories_count'].textContent;
 	// stop watch if topic deleted
-	if (isDel.booleanValue)
+	const tinfo = doc.body.querySelector('.messages > .infoblock');
+	if (tinfo && tinfo.textContent.includes('Тема удалена')) {
+		let msgs = document.body.querySelector('.messages'),
+			info = msgs.querySelector('#comments ~ .infoblock');
+		if (info)
+			msgs.replaceChild(tinfo, info);
+		else
+			msgs.insertBefore(tinfo, msgs.lastElementChild);
 		RealtimeWatcher.terminate('Тема удалена');
+	}
 	// Replace topic if modifed
 	const _OLDlastMod = old.querySelector('.sign > .sign_more > time');
 	const _NEWlastMod = topic.querySelector('.sign > .sign_more > time');
