@@ -639,7 +639,7 @@ const ContentFinder = {
 
 let Navigation = null;
 let CommentForm = null;
-let MARKDOWN_MODE = false;
+let LORCODE_MODE = 0;
 
 const onDOMReady = () => {
 
@@ -894,10 +894,23 @@ _setup('script', { text: `
 	}
 }
 
-const isInsideATag = (str, sp, ep) => (str.split(sp).length - 1) > (str.split(ep).length - 1);
-var _char_ = '';
-var _sign_ = false;
-var _ctrl_ = false;
+const injectText = (str, nl = false) => {
+	const txtArea = CommentForm.elements.msg;
+	
+	let val = txtArea.value,
+	    len = txtArea.value.length,
+	  start = txtArea.selectionStart,
+	    end = txtArea.selectionEnd;
+
+	if (start === end && nl) {
+		if (len && val.charAt(len - 1) !== '\n')
+			str = '\n'+ str;
+		txtArea.value += str +'\n';
+	} else {
+		txtArea.value = val.substring(0, start) + str + val.substring(end);
+	}
+	txtArea.selectionStart = txtArea.selectionEnd = 0;
+};
 var _offs_ = 1;
 
 if (document.readyState === 'loading') {
@@ -905,108 +918,143 @@ if (document.readyState === 'loading') {
 } else
 	onDOMReady();
 
-function winKeyHandler(e) {
+function locKeyHandler(e) {
 
-	const $this = CommentForm.elements['msg'];
-	const key   = e.key || String.fromCharCode(e.charCode);
-	
-	if (e.keyCode === 13 && _ctrl_) {
-		return simulateClick(
-			CommentForm.querySelector('.form-actions > [do-upload]')
-		);
+	const { target, key, ctrlKey } = e;
+
+	const val = target.value,
+	    start = target.selectionStart,
+	      end = target.selectionEnd,
+	     char = val.charAt(start - 1);
+
+	let isValidMark = false, isNColl = start !== end,
+	    isBackspace = false, isEnter = false;
+
+	let op = '', ed = '', ic = -1;
+
+	e.stopPropagation();
+
+	switch (key) {
+	case 'Enter':
+		isEnter = true;
+		if (ctrlKey) {
+			target.dispatchEvent(new CustomEvent('doAction', { detail: 'upload' }));
+			return e.preventDefault();
+		}
+		break;
+	case 'Backspace':
+		isBackspace = true;
+		break;
+	case 'Tab': isValidMark = isNColl = true;
+		op = '    ', ed = '\n    ';
+		break;
+	case '>': isValidMark = true, isNColl &= !char || char === '\n';
+		op = '>', ed = '\n>';
+		break;
+	case '*': isValidMark = true;
+		if (LORCODE_MODE) {
+			op = '[*]', ed = '[/*]';
+		} else if (!char || char === '\n')
+			op = '* ', ed = '\n* ';
+		else
+			op = '*';
+		break;
+	case '@': isValidMark = true;
+		if (LORCODE_MODE)
+			op = '[user]', ed = '[/user]';
+		else
+			op = '@';
+		break;
+	case '~': isValidMark = true;
+		if (LORCODE_MODE)
+			op = '[s]', ed = '[/s]';
+		else
+			op = '~~';
+		break;
+	case '`': isValidMark = isNColl && !LORCODE_MODE
+		if (isValidMark) {
+			op = /\n/gm.test(val.substring(start, end)) ? '```' : '`';
+			break;
+		}
+	default:
+		ic = '({[\'"`)}]'.indexOf(key);
 	}
-	
-	if (e.target === $this) {
-		
-		const val = $this.value;
-		const end = $this.selectionEnd;
-		let start = $this.selectionStart,
-		   before = val.substring(0, start);
-		
-		let _STOP_ = true;
-		
-		const validKeys = MARKDOWN_MODE ? '>*@`~' : '>*@';
-		const codePlay  = MARKDOWN_MODE ?
-			isInsideATag(before, /```[^\n]*\n/, '\n```') :
-			isInsideATag(before, /\[code(?:=[^\]]*)?\]/, '[/code]');
-		
-		if (codePlay) {
-			const C = '{[(\'"'.indexOf(key);
-		
-			if (C >= 0 && !_sign_) {
-				_char_ = '}])\'"'[C];
-				_sign_ = true;
-				lorcodeMarkup.call($this, key, _char_);
-			} else {
-				switch (e.keyCode) {
-					case 13:
-						var ln = before.split('\n').pop();
-							ln = '\n'+ ln.replace(/^([\s]*).*/, '$1');
-						
-						start += ln.length;
-						
-						if (_sign_) {
-							ln    += '   '+ ln;
-							start += 3;
-						}
-						
-						$this.value = before + ln + val.substring(end);
-						$this.setSelectionRange(start, start);
-						break;
-					case 8:
-						if (_sign_) {
-							$this.value = val.slice(0, (start -= 1)) + val.slice(end + 1);
-							$this.setSelectionRange(start, start);
-							break;
-						}
-					default:
-						if ((_STOP_ = key === _char_)) {
-							$this.setSelectionRange((start += 1), start);
-						}
+
+	if (isValidMark) {
+		if (!isNColl)
+			isValidMark = false;
+		else if (ed)
+			lorcodeMarkup.call(target, op, ed);
+		else
+			markdownMarkup.call(target, op);
+	} else if (!isNColl && (isEnter || isBackspace) || ic >= 0) {
+
+		let prev = val.substring(0, start),
+		    next = val.substring(end),
+			xni  = ')}]\'"`'.indexOf(isNColl ? val.charAt(end - 1) :  next.charAt(0));
+
+		let codeSp = prev.split(LORCODE_MODE ? /\[code(?:=[^\]]*)?\]/ : /```[^\n]*\n/);
+		let codeEp = prev.split(LORCODE_MODE ? '[/code]' : '\n```');
+
+		if (codeSp.length > codeEp.length) {
+
+			if (isEnter) {
+				codeSp = codeSp[codeSp.length - 1];
+				let li = codeSp.lastIndexOf('\n'),
+				    ln = codeSp.substring(li + 1).replace(/^([\s]*).*/, '$1'),
+				   sig = xni >= 0 && xni === '({['.indexOf(char);
+				    li = ln.length;
+
+				if ((isValidMark = li > 0 || sig)) {
+					ln  = '\n'+ ln,
+					li += 1;
+					if (sig) {
+						ln += '    '+ ln;
+						li += 4;
+					}
+					target.value = prev + ln + next;
+					target.setSelectionRange(start + li, start + li);
 				}
-				_char_ = '';
-				_sign_ = false;
-			}
-		} else if ((_STOP_ = end !== start && validKeys.includes(key))) {
-			
-			if (key === '>') {
-				lorcodeMarkup.call($this, '>', '\n>')
-			} else if (MARKDOWN_MODE) {
-				switch (key) {
-					case '`':
-						markdownMarkup.call($this, /\n/gm.test(val.substring(start, end)) ? '```' : key);
-						break;
-					case '*':
-						if (start == 0 || val.substring(start - 1, start) == '\n') {
-							lorcodeMarkup.call($this, '* ', '\n* ');
-							break;
-						}
-					case '~': case '@':
-						markdownMarkup.call($this, key);
+			} else if (isBackspace) {
+				if (xni >= 0 && xni === '({[\'"`'.indexOf(char)) {
+					isValidMark = true;
+					target.value = prev.substring(0, start - 1) + next.substring(1);
+					target.setSelectionRange(start - 1, start - 1);
 				}
 			} else {
-				lorcodeMarkup.apply($this, key === '@' ? ['[user]', '[/user]'] : ['[*]','[/*]']);
+				if ((isValidMark = ic <= 5)) {
+					let ln = isNColl ? val.substring(start, end) : '',
+					    sp = isNColl ? start - 1 : start + 1;
+					target.value = prev + key + ln + ')}]\'"`'.charAt(ic) + next;
+					target.setSelectionRange(sp, end + 1);
+				} else
+				if ((isValidMark = ic - 6 === xni)) {
+					target.setSelectionRange(end + 1, end + 1);
+				}
 			}
 		}
-		
-		if (_STOP_) {
-			e.preventDefault();
-		} else if ($this.classList.contains('select-break') && e.keyCode != 8) {
-			$this.setSelectionRange(end, end);
-			$this.classList.remove('select-break');
-		}
-		
-	} else if ('@>'.includes(key)) {
-		
-		const wSelect = window.getSelection().toString();
-		
-		if (wSelect.length) {
-			e.preventDefault();
-			lorcodeMarkup.apply($this,
-				key === '>'   ? ['>', '\n>', wSelect] :
-				MARKDOWN_MODE ? ['@',    '', wSelect] :
-					   ['[user]', '[/user]', wSelect]);
-		}
+	}
+	if (isValidMark) {
+		e.preventDefault();
+	} else if (target.classList.contains('select-break')) {
+		if (!isBackspace)
+			target.setSelectionRange(end, end);
+		target.classList.remove('select-break');
+	}
+}
+
+function winKeyHandler(e) {
+	const key = e.key, tag = e.target.tagName;
+	if (key === '>' || key === '@' && !/input|textarea/i.test(tag)) {
+		const wSelect = window.getSelection();
+		if (  wSelect.isCollapsed  )
+			return;
+		let text = wSelect.toString().trim();
+		if (key === '>')
+			injectText('>'+ text.replace(/\n/gm, '\n>'), true);
+		else
+			injectText(LORCODE_MODE ? '[user]'+ text +'[/user]' : key + text);
+		e.preventDefault();
 	}
 }
 
@@ -1058,63 +1106,47 @@ function markdownMarkup(open) {
 	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
-function lorcodeMarkup(open, close, blur) {
+function lorcodeMarkup(open, close) {
 	
-	var val    = this.value;
-	var end    = this.selectionEnd;
-	var start  = this.selectionStart;
+	const val = this.value,
+	      end = this.selectionEnd,
+	    start = this.selectionStart,
+	    collp = start === end;
+
+	let mtext = '', soff = 0, eoff = 0;
 	
-	var wins, lorcText, select;
-	var pins = start === end;
-	
-	if (blur) {
-		select = blur;
-		
-		switch (open) {
-			case '>':
-				if ((wins = pins) && val.length) {
-					start = end = val.length;
-					open  = close;
-				}
-				break;
-			default:
-				pins = false;
-		}
-	} else {
-		select = val.substring(start, end);
-	}
-	
-	switch (open) {
-		case '\n   ': case '   ': case '\n>': case '>': case '* ': case '\n* ':
-			select = select.replace(/\n/gm, close);
+	if (collp) {
+		if (open === '[br]' || close.charAt(0) === '\n')
 			close = '';
-			break;
-		case '[br]':
-			select = select.replace(/\n/gm, (close = open) +'\n' );
-			open = '';
-			break;
-		case '[*]':
-			select = select.replace(/\[\/?\*\]/g, '').replace(/\n/gm, '\n'+ open);
-			break;
-		case '[url]':
-			const [ uri ] = /(?:ht|f)tps?:\/\/[^\s]+/.exec(select) || '';
-			if (uri) {
-				open = `[url=${ uri }]`;
-				select = select.replace(uri, '');
-			}
-	}
-	
-	this.value = val.substring(0, start) + (lorcText = open + select + close) + val.substring(end);
-	if (wins) {
-		this.selectionStart = this.selectionEnd = this.value.length;
+		soff = eoff = open.length;
 	} else {
-		this.setSelectionRange(
-			start + (pins ? open.length : 0),
-			start + (pins ? open.length + select.length : lorcText.length)
-		);
-		this.classList.add('select-break');
-		this.focus();
+		mtext = val.substring(start, end);
+		switch (open) {
+			case '[br]':
+				mtext = mtext.replace(/\n/gm, open +'\n'),
+				open  = '';
+				break;
+			case '[*]':
+				mtext = mtext.replace(/\[\/?\*\]/g, '').replace(/\n/gm, '\n'+ open);
+				break;
+			case '[url]':
+				const [ uri ] = /(?:ht|f)tps?:\/\/[^\s]+/.exec(mtext) || '';
+				if (uri) {
+					open  = `[url=${ uri }]`;
+					mtext = mtext.replace(uri, '');
+				}
+			default:
+				if (close.charAt(0) === '\n') {
+					mtext = mtext.replace(/\n/gm, close);
+					close = '';
+				}
+		}
+		eoff = open.length + mtext.length + close.length;
 	}
+	this.value = val.substring(0, start) + open + mtext + close + val.substring(end);
+	this.classList.add('select-break');
+	this.focus();
+	this.setSelectionRange(start + soff, start + eoff);
 	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
@@ -1864,54 +1896,53 @@ function sendFormData(uri, formData, json = true) {
 	);
 }
 
-function simulateClick(el) {
-	el && el.dispatchEvent(
-		new MouseEvent('click', {
-			cancelable: true,
-			bubbles   : true,
-			view      : window
-		})
-	);
-}
-
 function handleCommentForm(form) {
 	
-	const TEXT_AREA    = form.elements['msg'];
+	const TEXT_AREA    = form.elements.msg, TITLE_AREA = form.elements.title || { value: '' };
 	const ACTION_JSP   = form.getAttribute('action').replace(/^\//, '');
 	const FACT_PANNEL  = form.querySelector('.form-actions');
-	const NODE_PREVIEW = _setup('div', { id: 'commentPreview', html: '<pre class="error"></pre><h2></h2><span></span>' });
-	const MARKUP_PANEL = _setup('div', {
-		id   : 'markup-panel',
-		class: 'lorcode',
-		html : ''+
-			'<button type="button" class="btn btn-default" lorcode="b"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="i" markdown="*"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="u"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="s" markdown="~~"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="em"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="br"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="cut" markdown="&gt;&gt;&gt;"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="list" markdown="1."></button>'+
-			'<button type="button" class="btn btn-default" lorcode="strong"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="pre" markdown="* "></button>'+
-			'<button type="button" class="btn btn-default" lorcode="user" markdown="@"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="code" markdown="&#96;&#96;&#96;"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="inline" markdown="&#96;"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="quote" markdown="&gt;"></button>'+
-			'<button type="button" class="btn btn-default" lorcode="url" markdown="http://"></button>'}, {
-		click: e => {
-			e.preventDefault();
-			if (e.target.type === 'button') {
-				if (MARKDOWN_MODE) {
-					const mkdwn = e.target.getAttribute('markdown');
-					if (mkdwn === '>' || mkdwn === '* ')
-						lorcodeMarkup.call(TEXT_AREA, mkdwn, `\n${ mkdwn }`);
-					else
-						markdownMarkup.call(TEXT_AREA, mkdwn);
-				} else {
-					const bbtag = e.target.getAttribute('lorcode');
-					lorcodeMarkup.call(TEXT_AREA, '['+ bbtag +']', '[/'+ bbtag +']');
-				}
+	const NODE_PREVIEW = _setup('div', { id: 'commentPreview' });
+	const MARKUP_PANEL = _setup('div', { id: 'markup-panel', class: 'lorcode'});
+
+	for (let attrs of [
+		{ lorcode: 'b'  },
+		{ lorcode: 'i'     , markdown: '*'  },
+		{ lorcode: 'u'  },
+		{ lorcode: 's'     , markdown: '~~' },
+		{ lorcode: 'em' },
+		{ lorcode: 'br' },
+		{ lorcode: 'cut'   , markdown: '>>>'},
+		{ lorcode: 'list'  , markdown: '1.' },
+		{ lorcode: 'strong' },
+		{ lorcode: 'pre'   , markdown: '* ' },
+		{ lorcode: 'user'  , markdown: '@'  },
+		{ lorcode: 'code'  , markdown: '```'},
+		{ lorcode: 'inline', markdown: '`'  },
+		{ lorcode: 'quote' , markdown: '>'  },
+		{ lorcode: 'url'   , markdown: 'http://'}
+	]) {
+		attrs.type  = 'button';
+		attrs.class = 'btn btn-default';
+		MARKUP_PANEL.append( _setup('button', attrs) )
+	}
+
+	NODE_PREVIEW.append(
+		_setup('pre', { class: 'error' }),
+		document.createElement('h2'),
+		document.createElement('span')
+	);
+
+	MARKUP_PANEL.addEventListener('click', e => {
+		e.preventDefault();
+		if (e.target.type === 'button') {
+			const tag = e.target.getAttribute(LORCODE_MODE ? 'lorcode' : 'markdown')
+			if (!LORCODE_MODE && tag) {
+				if (tag === '>' || tag === '* ')
+					lorcodeMarkup.call(TEXT_AREA, tag, `\n${ tag }`);
+				else
+					markdownMarkup.call(TEXT_AREA, tag);
+			} else {
+				lorcodeMarkup.call(TEXT_AREA, '['+ tag +']', '[/'+ tag +']');
 			}
 		}
 	});
@@ -1958,45 +1989,53 @@ function handleCommentForm(form) {
 	}
 
 	const submit_process = (sbtn, y) => {
+		const btns = FACT_PANNEL.querySelectorAll('.btn[do-upload]');
+		if (!sbtn) sbtn = btns[0];
 		form.elements[ 'cancel'].className = `btn btn-${ y ? 'danger' : 'default' }`;
 		form.elements['preview'].disabled  = sbtn.disabled = y;
 		sbtn.classList[y ? 'add' : 'remove']('process');
-		for (const primary of FACT_PANNEL.querySelectorAll('.btn[do-upload]')) {
+		for (const primary of btns) {
 			primary.disabled = y;
 		}
 	}
 
-	const purge_form = (clry) => {
-
-		simulateClick(
-			form.parentNode.parentNode.querySelector('.replyComment')
-		);
-
-		if (clry) {
-			form.elements[ 'msg' ].value = '';
-			form.elements['title'].value = '';
-			NODE_PREVIEW.children[0].textContent = '';
-			NODE_PREVIEW.children[1].textContent = '';
-			NODE_PREVIEW.children[2].textContent = '';
-		}
+	const purge_form = () => {
+		NODE_PREVIEW.remove();
+		NODE_PREVIEW.removeAttribute('opened');
+		NODE_PREVIEW.children[0].textContent = TITLE_AREA.value = '';
+		NODE_PREVIEW.children[1].textContent = TEXT_AREA.value = '';
+		NODE_PREVIEW.children[2].textContent = '';
+		TEXT_AREA.oninput = null;
 	}
 
-	const doSubmit = {
+	const doAction = {
 
-		handleEvent: function({ target }) {
-
-			const { type, id } = target;
-
-			if (type === 'button') {
-				if (`do_${id}` in this) {
-					this[`do_${id}`]();
-				} else if (target.hasAttribute('do-upload')) {
-					this.do_upload(target, id);
-				}
+		'do_open': () => {
+			const parent = form.parentNode;
+			const slideCompl = () => {
+				TEXT_AREA.focus();
+				parent.classList.remove('slide-down');
+				parent.removeEventListener('animationend', slideCompl);
 			}
+			parent.style.display = null;
+			parent.className = 'form-container slide-down';
+			parent.addEventListener('animationend', slideCompl);
+			window.addEventListener('keypress', winKeyHandler);
 		},
 
-		'do_upload': function(btn, param) {
+		'do_close': () => {
+			const parent = form.parentNode;
+			const slideCompl = () => {
+				parent.style.display = 'none';
+				parent.classList.remove('slide-up');
+				parent.removeEventListener('animationend', slideCompl);
+			}
+			parent.className = 'form-container slide-up';
+			parent.addEventListener('animationend', slideCompl);
+			window.removeEventListener('keypress', winKeyHandler);
+		},
+
+		'do_upload': (btn, param) => {
 
 			submit_process(btn, true);
 
@@ -2017,7 +2056,8 @@ function handleCommentForm(form) {
 						return;
 					}
 					submit_process(btn, false);
-					purge_form(true);
+					purge_form();
+					doAction.do_close();
 				}).catch(e => {
 					form.appendChild( NODE_PREVIEW ).children[0].textContent = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n\n(${ e.status ? e.status +' '+ e.statusText : e })`;
 					submit_process(btn, false);
@@ -2025,7 +2065,7 @@ function handleCommentForm(form) {
 			}, USER_SETTINGS['Upload Post Delay'] * 1e3);
 		},
 
-		'do_preview': function() {
+		'do_preview': () => {
 
 			if (NODE_PREVIEW.hasAttribute('opened')) {
 				NODE_PREVIEW.removeAttribute('opened');
@@ -2038,39 +2078,50 @@ function handleCommentForm(form) {
 			}
 		},
 
-		'do_cancel': function() {
+		'do_cancel': () => {
 
 			if (form.elements['cancel'].classList.contains('btn-danger')) {
 				Timer.delete('Upload Post Delay');
 				submit_process(FACT_PANNEL.querySelector('.process[do-upload]'), false);
 				alert('Отправка прервана.');
 			} else {
-				const length = TEXT_AREA.textLength + form.elements['title'].value.length;
-				const answer = length > 0 && confirm('Очистить форму?');
-				purge_form(answer);
+				const length = TEXT_AREA.textLength + TITLE_AREA.value.length;
+				if (length > 0 && window.confirm('Очистить форму?'))
+					purge_form();
+				doAction.do_close();
 			}
 		}
 	}
 
-	FACT_PANNEL.addEventListener('click', doSubmit);
 	TEXT_AREA.addEventListener('click', ({ target }) => target.classList.remove('select-break'));
-	
-	window.addEventListener('keyup', () => { _ctrl_ = false });
-	window.addEventListener('keydown', e => {
-		if (!(_ctrl_ = e.ctrlKey) && e.keyCode == 9 && e.target === TEXT_AREA) {
-			e.preventDefault();
-			lorcodeMarkup.call(e.target, '   ', '\n   ');
+	FACT_PANNEL.addEventListener('click', e => {
+
+		const { type, id } = e.target;
+
+		if (type === 'button') {
+			if (`do_${id}` in doAction) {
+				doAction[`do_${id}`]();
+			} else if (e.target.hasAttribute('do-upload')) {
+				doAction.do_upload(e.target, id);
+			}
 		}
+		e.preventDefault();
 	});
-	window.addEventListener('keypress', winKeyHandler);
+
+	form.addEventListener('doAction', ({ detail }) => {
+		if (`do_${detail}` in doAction)
+			doAction[`do_${detail}`]();
+	});
+	TEXT_AREA.addEventListener('keydown', locKeyHandler);
 	window.onbeforeunload = () => (
 		TEXT_AREA.value != '' && form.parentNode.style['display'] != 'none'
 			? 'Вы что-то напечатали в форме. Все введенные данные будут потеряны при закрытии страницы.'
 			: void 0
 	);
 
-	const mode_change = ({ target }) => {
-		MARKUP_PANEL.className = (MARKDOWN_MODE = /markdown/i.test(target.value)) ? 'markdown' : 'lorcode';
+	const mode_change = ({ target: { value } }) => {
+		LORCODE_MODE = /markdown/i.test(value) ? 0 : /lorcode/i.test(value) ? 1 : 2;
+		MARKUP_PANEL.className = LORCODE_MODE ? 'lorcode' : 'markdown';
 	};
 	
 	let mode = form.elements['mode'] || form.querySelector('select[disabled]');
@@ -2080,13 +2131,13 @@ function handleCommentForm(form) {
 	} else {
 		let tags = [], lcm = false;
 		form.firstElementChild.before((
-			mode = _setup('select', { style: 'display: block;', html: '<option>Markdown</option><option>LORCODE</option>' }, { change: mode_change })
+			mode = _setup('select', { style: 'display: block;', html: '<option>LORCODE</option><option>Markdown</option>' }, { change: mode_change })
 		));
 		for (const b of MARKUP_PANEL.children)
 			tags.push(b.getAttribute('lorcode'));
 		lcm = new RegExp(`\\[\\/?(?:${tags.join('|')})(?:=[^\\]]*)?\\]`).test(TEXT_AREA.value);
-		MARKUP_PANEL.className = (MARKDOWN_MODE = !lcm) ? 'markdown' : 'lorcode';
-		mode.selectedIndex = Number(lcm);
+		mode.selectedIndex = LORCODE_MODE = Number(lcm);
+		MARKUP_PANEL.className = LORCODE_MODE ? 'lorcode' : 'markdown';
 	}
 	if ('tags' in form.elements) {
 		handleTagsInput(form.elements['tags']);
@@ -2331,10 +2382,11 @@ function toggleForm(underc, href, quote) {
 
 	const { topic, replyto } = parseReplyUrl(href);
 
-	const formel = CommentForm.elements;
+	const frepto = CommentForm.elements.replyto;
+	const ftopic = CommentForm.elements.topic;
 	const parent = CommentForm.parentNode;
 
-	let toshow = (parent.style['display'] == 'none');
+	let toshow = (parent.style['display'] === 'none');
 
 	if (quote) {
 		convMsgBody(
@@ -2343,26 +2395,18 @@ function toggleForm(underc, href, quote) {
 		if (parent.parentNode === underc && !toshow)
 			return;
 	}
-	if (formel.replyto.value != replyto) {
+	if (frepto.value != replyto) {
 		parent.style['display'] = 'none';
 		toshow = true;
 	}
 
-	const slideCompl = () => {
-		if (!toshow) {
-			parent.style['display'] = 'none';
-		} else
-			formel.msg.focus();
-		parent.className = 'form-container';
-		parent.removeEventListener('animationend', slideCompl);
-	}
 	if (toshow) {
-		_setup(parent, { class: 'form-container slide-down' }, { 'animationend': slideCompl });
-		underc.appendChild(parent).style['display'] = null;
-		formel['replyto'].value = replyto;
-		formel[ 'topic' ].value = topic;
+		frepto.value = replyto;
+		ftopic.value = topic;
+		underc.append(parent);
+		CommentForm.dispatchEvent( new CustomEvent('doAction', { detail: 'open' }) );
 	} else {
-		_setup(parent, { class: 'form-container slide-up' }, { 'animationend': slideCompl });
+		CommentForm.dispatchEvent( new CustomEvent('doAction', { detail: 'close' }) );
 	}
 }
 
@@ -2380,19 +2424,22 @@ function handleReplyToBtn(btn) {
 
 function convMsgBody(msg) {
 
-	let open = '>',
-	   close = '\n>',
-	    text = '';
+	let text = '', qt = true, br = '\n\n', reg = /(?:[\n]+){3,}/g;
 	
-	if (!MARKDOWN_MODE) { // lorcode, line-break
+	if (LORCODE_MODE) { // lorcode, line-break
 		let nobl = msg.querySelector('div.code,pre,ul,ol,table');
-		if (nobl && (nobl = nobl.parentNode.className != 'reply'))
-			open = '[quote]', close = '[/quote]';
-		text = domToLORCODE(msg.childNodes, !nobl);
+		      qt = !nobl || nobl.parentNode.className === 'reply';
+		    text = domToLORCODE(msg.childNodes, qt).trim();
+		if (LORCODE_MODE === 2)
+			br = '\n', reg = /(?:[\n]+){2,}/g
 	} else
-		text = domToMarkdown(msg.childNodes); // markdown
+		text = domToMarkdown(msg.childNodes).trim(); // markdown
+	if (qt)
+		text = '>'+ text.replace(reg, br).replace(/\n/g, '\n>');
+	else
+		text = '[quote]'+ text.replace(reg, br) +'[/quote]';
 	
-	lorcodeMarkup.call(CommentForm.elements['msg'], open, close, text.replace(/(?:[\n]+){3,}/g, '\n\n').trim());
+	injectText(text, true);
 }
 
 function getRawText(el) {
