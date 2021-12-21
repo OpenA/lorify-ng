@@ -53,14 +53,14 @@ function msgPortHadler({ name, data }) {
 	switch (name)
 	{
 	case 'notes-count-update':
+		n_count.setAttribute('cnt-new', data);
+		n_count.hidden = !(cnt_new = Number(data));
 		if (!empty_list) {
 			while (note_lst.lastElementChild.children[0])
 				   note_lst.lastElementChild.children[0].remove();
-			if (data > 0)
-				pullNotes(data);
+			if (cnt_new > 0)
+				pullNotes(cnt_new);
 		}
-		n_count.setAttribute('cnt-new', (cnt_new = data));
-		n_count.hidden = data === 0;
 		break;
 	case 'connection-resolve':
 	case 'settings-change':

@@ -17,7 +17,7 @@ var notes = 0;
 
 var codestyles  = null;
 const settings  = Object.assign({}, defaults);
-const openPorts = new Array;
+const openPorts = new Set;
 const loadStore = typeof browser === 'object' ?
 	// load settings
 	browser.storage.local.get() : new Promise(resolve => {
@@ -32,21 +32,19 @@ const loadStore = typeof browser === 'object' ?
 if ('onSuspend' in chrome.runtime) {
 	chrome.runtime.onSuspend.addListener(() => {
 		setBadge({ color: '#e5be5b' });
-		for (const port of openPorts) {
-			port.disconnect();
-		}
+		openPorts.clear();
 	});
 }
 
 chrome.notifications.onClicked.addListener(() => openTab(
-	`${ settings['Desktop Notification'] == 2 ? '#' : '/' }notifications`, 'reload-page')
-);
+	`${ settings['Desktop Notification'] == 2 ? '#' : '/' }notifications`, 'reload-page'
+));
 chrome.runtime.onConnect.addListener(port => {
 	port.onMessage.addListener(messageHandler);
-	port.onDisconnect.addListener(discon => {
-		openPorts.splice(openPorts.indexOf(discon), 1);
+	port.onDisconnect.addListener(() => {
+		openPorts.delete(port);
 	});
-	openPorts.push(port);
+	openPorts.add(port);
 	loadStore.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
 	if (!codestyles)
 		port.postMessage({ name: 'need-codestyles' })
@@ -95,7 +93,6 @@ function openTab(uri = '', action = '') {
 		if (url && url.includes((path || origin))) {
 			chrome.tabs.update(id, { active: true });
 			if (action === 'reload-page') {
-				port.disconnect();
 				chrome.tabs.reload(id);
 			} else
 				port.postMessage({ name: action, data: uri });
@@ -107,7 +104,7 @@ function openTab(uri = '', action = '') {
 		const full_url = { active: true, url: origin + uri };
 		const empty_Rx = new RegExp('^'+
 			'about:(?:newtab|blank|home)|'+
-			'chrome://(?:newtab|startpage)/?'+ 
+			'chrome://(?:newtab|startpage)/?'+
 			(path ? '|https?://www.linux.org.ru/?' : '')+
 		'$');
 
@@ -141,7 +138,7 @@ function messageHandler({ action, data }, port) {
 			changeSettings(defaults);
 			break;
 		case 'l0rNG-setts-change':
-			changeSettings(data, openPorts.indexOf(port));
+			changeSettings(data, port);
 			break;
 		case 'l0rNG-notes-reset':
 			updNoteStatus(0);
@@ -153,8 +150,8 @@ function messageHandler({ action, data }, port) {
 			openTab(data, 'scroll-to-comment');
 			break;
 		case 'l0rNG-reval':
-			if ( notes !== data )
-				updNoteStatus(data);
+			if ( notes < data || data > notes )
+				updNoteStatus(Number(data));
 		case 'l0rNG-checkNow':
 			chrome.alarms.clear('check-lor-notifications');
 			getNotifications();
@@ -171,8 +168,8 @@ function getNotifications() {
 		response => {
 			if (response.ok) {
 				response.json().then( count => {
-					if ( notes !== count )
-						updNoteStatus(count);
+					if ( notes < count || count > notes )
+						updNoteStatus(Number(count));
 				});
 			}
 			if (response.status < 400) {
@@ -188,7 +185,7 @@ function getNotifications() {
 	);
 }
 
-function updNoteStatus(count) {
+function updNoteStatus(count = 0) {
 	if ( count > notes && settings['Desktop Notification'] ) {
 		chrome.notifications.create('lorify-ng', {
 			type    : 'basic',
@@ -198,14 +195,14 @@ function updNoteStatus(count) {
 		});
 	}
 	setBadge({ text: (notes = count) ? count.toString() : '' });
-	openPorts.forEach(port => {
-		port.postMessage({ name: 'notes-count-update', data: count })
-	});
+	for (const port of openPorts) {
+		port.postMessage({ name: 'notes-count-update', data: count });
+	}
 }
-function changeSettings(newSetts, sIdx = -1) {
-	for (let i  =  0; i < openPorts.length; i++) {
-		if ( i !== sIdx )
-			openPorts[i].postMessage({ name: 'settings-change', data: newSetts });
+function changeSettings(newSetts, exclupe = null) {
+	for (const port of openPorts) {
+		if ( port !== exclupe )
+			port.postMessage({ name: 'settings-change', data: newSetts });
 	}
 	Object.assign(settings, newSetts);
 	chrome.storage.local.set(newSetts);

@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.0.5
+// @version     3.0.6
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -969,7 +969,7 @@ function locKeyHandler(e) {
 	case 'Enter':
 		isEnter = true;
 		if (ctrlKey) {
-			target.dispatchEvent(new CustomEvent('doAction', { detail: 'upload' }));
+			target.dispatchEvent(new CustomEvent('doAction', { bubbles: true, detail: 'upload' }));
 			return e.preventDefault();
 		}
 		break;
@@ -2410,7 +2410,6 @@ function toggleForm(underc, href, quote) {
 		parent.style['display'] = 'none';
 		toshow = true;
 	}
-
 	if (toshow) {
 		frepto.value = replyto;
 		ftopic.value = topic;
@@ -2641,7 +2640,7 @@ function WebExt() {
 	return {
 		checkNow : () => sendMessage( 'l0rNG-checkNow' ),
 		openUrl  : al => sendMessage( 'l0rNG-open-tab', al ),
-		reset    : () => sendMessage( 'l0rNG-reset' ),
+		reset    : () => sendMessage( 'l0rNG-notes-reset' ),
 		init     : () => {
 			if ( (main_events_count = document.getElementById('main_events_count')) ) {
 				const notes = Number(main_events_count.textContent.match(/\d+/));
@@ -2661,10 +2660,10 @@ function UserScript() {
 	const self = {
 		checkNow: () => void 0,
 		openUrl : () => true,
-		reset   : () => localStorage.setItem('l0rNG-notes', (notes = '')),
+		reset   : () => setNotes(true, ''),
 		init    : () => {
 			if ( (main_events_count = document.getElementById('main_events_count')) ) {
-				if ( (notes = main_events_count.textContent.replace(/[\(\)]/g, '')) ) {
+				if ( (notes = main_events_count.textContent.replace(/(\d+)/, '$1')) ) {
 					lorypanel.children['lorynotify'].setAttribute('cnt-new', notes);
 				}
 				(self.checkNow = startWatch)();
@@ -2703,18 +2702,19 @@ function UserScript() {
 				response = '';
 			if (response > notes)
 				sendNotify(response);
-			localStorage.setItem('l0rNG-notes', response);
-			setNotes(response);
+			setNotes(true, response);
 		}, ({ status }) => {
 			if (status < 400 || status >= 500)
 				Timer.set('Check Notifications', startWatch, delay * (status >= 500 ? 5 : 1));
 		});
 
-	const setNotes = count => {
+	const setNotes = (save, count) => {
 		const lorynotify = lorypanel.children.lorynotify,
 			  cleared    = !(notes = count);
 		if (main_events_count)
 			main_events_count.textContent = cleared ? '' : `(${count})`;
+		if (save)
+			localStorage.setItem('l0rNG-notes', count);
 		if (cleared) {
 			lorynotify.removeAttribute('cnt-new');
 			lorynotify.classList.remove('pushed');
@@ -3006,8 +3006,7 @@ function UserScript() {
 				if (!btn.disabled && reset_form) {
 					 btn.disabled = true;
 					sendFormData('notifications-reset', new FormData( reset_form ), false).then(() => {
-						localStorage.setItem('l0rNG-notes', '');
-						reset_form = setNotes('');
+						reset_form = setNotes(true, '');
 						btn.disabled = false;
 					});
 				}
@@ -3040,7 +3039,7 @@ function UserScript() {
 	window.addEventListener('storage', ({ key, newValue }) => {
 		switch(key) {
 			case 'lorify-ng'  : setValues( JSON.parse( newValue ) ); break;
-			case 'l0rNG-notes': setNotes (             newValue   ); break;
+			case 'l0rNG-notes': setNotes ( false,      newValue   ); break;
 		}
 	});
 	return self;
