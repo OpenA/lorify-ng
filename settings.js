@@ -7,17 +7,20 @@ var busy_id    = -1,
 	iterate    =  2,
 	cnt_new    =  0,
 	empty_list = true,
-	reset_form = null,
-	port       = createPort();
+	reset_form = null;
+
+Object.defineProperty(loryform, '_port_', {
+	configurable: true, value: createPort()
+});
 
 chrome.runtime.getBackgroundPage(({ notes, codestyles }) => {
 	
 	if (notes > 0) {
 		n_count.setAttribute('cnt-new', (cnt_new = notes));
 		n_count.hidden = false;
-		if (location.hash === '#notifications')
-			showNotifications();
 	}
+	if (location.hash === '#notifications')
+		showNotifications();
 	if (codestyles) {
 		const input = loryform.elements['Code Highlight Style'];
 		for(const name of codestyles) {
@@ -68,7 +71,7 @@ function msgPortHadler({ name, data }) {
 function navClickHandler(e) {
 	switch (e.target.id)
 	{
-	case 'go-back'    : this.hidden = true;
+	case 'go-back'    : this.hidden = true; history.replaceState(null, null, location.pathname);
 	case 'do-wait'    : break;
 	case 'reset-notes':
 		if (reset_form) {
@@ -79,7 +82,7 @@ function navClickHandler(e) {
 				body: new FormData( reset_form )
 			}).then(({ ok }) => {
 				if (ok) {
-					port.postMessage({ action: 'l0rNG-notes-reset' });
+					loryform._port_.postMessage({ action: 'l0rNG-notes-reset' });
 					reset_form = null;
 				}
 				e.target.id = 'reset-notes';
@@ -91,7 +94,7 @@ function navClickHandler(e) {
 		while( el != this && el.classList[0] !== 'note-item' )
 		       el  = el.parentNode;
 		if(    el.hasAttribute('comment-link') ) {
-			port.postMessage({
+			loryform._port_.postMessage({
 				action : 'l0rNG-open-tab',
 				data   : el.getAttribute('comment-link')
 			});
@@ -103,11 +106,11 @@ function createPort() {
 	const port = chrome.runtime.connect();
 	port.onMessage.addListener(msgPortHadler);
 	port.onDisconnect.addListener(() => {
-		Object.defineProperty(window, 'port', {
+		Object.defineProperty(loryform, '_port_', {
 			configurable: true,
 			get: () => {
 				const value = createPort();
-				Object.defineProperty(window, 'port', { configurable: true, value });
+				Object.defineProperty(loryform, '_port_', { configurable: true, value });
 				return value;
 			}
 		});
@@ -118,35 +121,37 @@ function createPort() {
 function applyAnim(changes) {
 	iterate = 2;
 	loryform.classList.add('save-msg');
-	port.postMessage(changes);
+	loryform._port_.postMessage(changes);
 }
 
 function showNotifications() {
 	if (empty_list) {
 		empty_list = false;
-		pullNotes(cnt_new);
+		if (cnt_new > 0)
+			pullNotes(cnt_new);
 	}
+	history.replaceState(null, null, location.pathname +'#notifications');
 	note_lst.hidden = false;
 }
 
 function onValueChange(input) {
 	const changes = {};
-	switch (input.type) {
-		case 'select-one': changes[input.id] = input.selectedIndex; break;
-		case 'checkbox'  : changes[input.id] = input.checked; break;
-		default:
-			const min = Number (input.min || 0);
-			const val = Number (input.value);
-			changes[input.id] = val >= min ? val : (input.value = min);
-	}
+	let { name, type, value, min, max } = input;
+	if (min && Number(value) < Number(min)) input.value = value = min; else
+	if (max && Number(value) > Number(max)) input.value = value = max;
+	changes[name] = (
+		type === 'select-one' ? input.selectedIndex :
+		type === 'checkbox'   ? input.checked : Number(value)
+	);
 	applyAnim({ action: 'l0rNG-setts-change', data: changes });
 }
 
 function setValues(items) {
 	for (const name in items) {
-		 const type = loryform.elements[name].type,
-		      param = type === 'checkbox' ? 'checked' : type === 'select-one' ? 'selectedIndex' : 'value';
-		loryform.elements[name][param] = items[name];
+		 const i_el = loryform.elements[name], type = i_el.type,
+		      param = type === 'select-one' ? 'selectedIndex' :
+			          type === 'checkbox' ? 'checked' : 'value';
+		i_el[param] = type ? items[name] : Number(items[name]);
 	}
 }
 

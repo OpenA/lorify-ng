@@ -22,6 +22,17 @@
 			.tab-row > .tab-cell:first-child{
 				font: bold 14px Arial;
 			}
+			.con-flex > * { margin: 0 auto 0 0; }
+			.con-flex {
+				width: 100%;
+				display: flex;
+				text-align: center;
+			}
+			*[txblk]:before {
+				content: attr(txblk);
+				display: block;
+				font: italic 12px serif;
+			}
 			.note-item-topic, .tab-row > .tab-cell:first-child {
 				color: #777;
 			}
@@ -161,49 +172,59 @@
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
 				<span class="tab-cell">
-					<input type="checkbox" id="Realtime Loader">
+					<input type="checkbox" name="Realtime Loader">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
 				<span class="tab-cell" chr="px">
-					<input type="number" id="Code Block Short Size" min="0" step="1">
+					<input type="number" name="Code Block Short Size" min="0" step="1">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Стиль подсветки кода:</span>
 				<span class="tab-cell">
-					<select id="Code Highlight Style"></select>
+					<select name="Code Highlight Style"></select>
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка появления превью:</span>
 				<span class="tab-cell" chr="мс">
-					<input type="number" id="Delay Open Preview" min="50" step="25">
+					<input type="number" name="Delay Open Preview" min="50" step="25">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Задержка исчезания превью:</span>
 				<span class="tab-cell" chr="мс">
-					<input type="number" id="Delay Close Preview" min="50" step="25">
+					<input type="number" name="Delay Close Preview" min="50" step="25">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Предзагружаемых страниц:</span>
 				<span class="tab-cell" chr="ст">
-					<input type="number" id="Preloaded Pages Count" min="1" step="1">
+					<input type="number" name="Preloaded Pages Count" min="1" step="1">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Оповещения на рабочий стол:</span>
 				<span class="tab-cell">
-					<input type="checkbox" id="Desktop Notification">
+					<div class="con-flex">
+					<label txblk="Откл.">
+						<input type="radio" name="Desktop Notification" value="0">
+					</label>
+					<label txblk="LOR">
+						<input type="radio" name="Desktop Notification" value="1">
+					</label>
+					<label txblk="Mobile">
+						<input type="radio" name="Desktop Notification" value="2">
+					</label>
+					</div>
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Просмотр картинок:</span>
 				<span class="tab-cell">
-					<select id="Picture Viewer">
+					<select name="Picture Viewer">
 						<option>Откл.</option>
 						<option>Только для превью</option>
 						<option>Для превью и ссылок</option>
@@ -213,19 +234,19 @@
 			<div class="tab-row">
 				<span class="tab-cell">Задержка перед отправкой:</span>
 				<span class="tab-cell step-line">
-					<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
+					<input type="range" min="1" max="10" step="1" name="Upload Post Delay">
 					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Перемещать в начало страницы:</span>
-				<span class="tab-cell"><input type="checkbox" id="Scroll Top View">
+				<span class="tab-cell"><input type="checkbox" name="Scroll Top View">
 				</span>
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">CSS анимация:</span>
 				<span class="tab-cell">
-					<input type="checkbox" id="CSS3 Animation">
+					<input type="checkbox" name="CSS3 Animation">
 					<input type="button" id="reset-settings" value="сброс" title="вернуть настройки по умолчанию">
 				</span>
 			</div>

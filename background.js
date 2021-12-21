@@ -1,10 +1,10 @@
-const android  = (window.screen.orientation.angle !== 0 || window.screen.orientation.type !== 'landscape-primary');
+/* lorify-ng background script */
 const defaults = Object.freeze({ // default settings
 	'Realtime Loader'      : true,
 	'CSS3 Animation'       : true,
 	'Delay Open Preview'   : 50,
 	'Delay Close Preview'  : 800,
-	'Desktop Notification' : true,
+	'Desktop Notification' : 1,
 	'Preloaded Pages Count': 1,
 	'Picture Viewer'       : 2,
 	'Scroll Top View'      : true,
@@ -38,7 +38,9 @@ if ('onSuspend' in chrome.runtime) {
 	});
 }
 
-chrome.notifications.onClicked.addListener(openTab.bind(null, android ? '/settings.html' : ''));
+chrome.notifications.onClicked.addListener(() => openTab(
+	`${ settings['Desktop Notification'] == 2 ? '#' : '/' }notifications`, 'reload-page')
+);
 chrome.runtime.onConnect.addListener(port => {
 	port.onMessage.addListener(messageHandler);
 	port.onDisconnect.addListener(discon => {
@@ -82,38 +84,50 @@ chrome.alarms.create('check-lor-notifications', {
 	['blocking']
 ); */
 
-function openTab(uri) {
+function openTab(uri = '', action = '') {
 
-	const path = uri.substring(0, uri.indexOf('?'));
+	const idx = uri.search(/\?|\#/),
+	     path = idx < 0 ? uri : uri.substring(0, idx),
+	   origin = path ? 'https://www.linux.org.ru' : chrome.runtime.getURL('/settings.html');
 
 	for (const port of openPorts) {
-		if ('tab' in port.sender && port.sender.tab.url.includes(path)) {
-			chrome.tabs.update(port.sender.tab.id , { active: true });
-			port.postMessage({ name: 'scroll-to-comment', data: uri });
+		const { url, id } = port.sender.tab || '';
+		if (url && url.includes((path || origin))) {
+			chrome.tabs.update(id, { active: true });
+			if (action === 'reload-page') {
+				port.disconnect();
+				chrome.tabs.reload(id);
+			} else
+				port.postMessage({ name: action, data: uri });
 			return;
 		}
 	}
 	chrome.tabs.query({}, tabs => {
 
-		const full_url = { url: (uri !== '/settings.html' ? `https://www.linux.org.ru${uri}` : `${uri}#notifications`), active: true };
+		const full_url = { active: true, url: origin + uri };
 		const empty_Rx = new RegExp('^'+
 			'about:(?:newtab|blank|home)|'+
-			'chrome://(?:newtab|startpage)/?'+ (uri !== '/settings.html' ? 
-			'|https?://www.linux.org.ru/?' : '')+
+			'chrome://(?:newtab|startpage)/?'+ 
+			(path ? '|https?://www.linux.org.ru/?' : '')+
 		'$');
 
-		let tab_id = -1, empty_not_found = true;
+		let tab_id = -1, empty_id = -1;
 		for (const { id, url } of tabs) {
-			if (url.includes('://www.linux.org.ru'+ path)) {
-				tab_id = id;
+			if (empty_Rx.test(url)) {
+				empty_id = id;
 				break;
-			} else if (empty_not_found && empty_Rx.test(url)) {
-				tab_id = id;
-				empty_not_found = false;
 			}
 		}
-		if (tab_id !== -1) {
-			chrome.tabs.update(tab_id, full_url);
+		if (path) {
+			for (const { id, url } of tabs) {
+				if (url.includes('://www.linux.org.ru'+ path)) {
+					tab_id = id;
+					break;
+				}
+			}
+		}
+		if (tab_id !== -1 || empty_id !== -1) {
+			chrome.tabs.update(tab_id !== -1 ? tab_id : empty_id, full_url);
 		} else {
 			chrome.tabs.create(full_url);
 		}
@@ -136,7 +150,7 @@ function messageHandler({ action, data }, port) {
 			codestyles = data;
 			break;
 		case 'l0rNG-open-tab':
-			openTab(data);
+			openTab(data, 'scroll-to-comment');
 			break;
 		case 'l0rNG-reval':
 			if ( notes !== data )
