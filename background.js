@@ -184,7 +184,7 @@ function getNotifications() {
 		}
 	);
 }
-updNoteStatus(10);
+
 function updNoteStatus(count = 0) {
 	if ( count > notes && settings['Desktop Notification'] ) {
 		chrome.notifications.create('lorify-ng', {
