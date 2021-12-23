@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   viewBox="0 0 48 48"
+   width="48"
+   height="48"
+   version="1.1"
+   id="svg6"
+   sodipodi:docname="loriko.svg"
+   inkscape:version="1.0.2 (e86c870, 2021-01-15)">
+  <title
+     id="title19">Penguin named Loriko</title>
+  <metadata
+     id="metadata10">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Penguin named Loriko</dc:title>
+        <dc:date>22.12.2021</dc:date>
+        <dc:creator>
+          <cc:Agent>
+            <dc:title>OpenA</dc:title>
+          </cc:Agent>
+        </dc:creator>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview
+     pagecolor="#505050"
+     bordercolor="#ffffff"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1590"
+     inkscape:window-height="1079"
+     id="namedview8"
+     showgrid="false"
+     inkscape:zoom="7.9710583"
+     inkscape:cx="-20.421178"
+     inkscape:cy="14.968619"
+     inkscape:window-x="48"
+     inkscape:window-y="66"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg6"
+     inkscape:document-rotation="0" />
+  <defs
+     id="defs2" />
+  <g
+     id="g867">
+    <g
+       id="g949" />
+    <g
+       id="g945-6" />
+  </g>
+  <g
+     id="g942"
+     transform="matrix(1.3017099,0,0,1.3017099,-6.655995,-8.2346016)"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96">
+    <g
+       id="g949-9">
+      <path
+         fill="#949494"
+         d="m 10.215232,34.042475 c 0.90113,3.421827 1.768616,4.205765 4.181666,6.746732 -2.263104,1.786009 -0.297445,1.961625 1.303161,1.195859 0.206332,0.863639 1.136469,0.91926 2.206208,0.455476 0.169808,1.003321 1.691457,0.711993 2.791487,-0.201357 2.404465,-0.206786 5.815849,-0.23186 8.438328,-0.09079 0.56058,0.62902 1.331379,1.064371 1.913745,0.02878 1.005113,0.534512 1.440554,0.131084 1.507386,-0.447733 2.53021,0.576036 3.954105,-0.06698 1.456304,-1.464529 C 36.569594,37.72404 37.223815,34.920642 37.726248,31.2719 38.852954,24.536988 37.464114,18.52112 36.000597,14.402575 33.731121,8.0268727 30.321444,6.4028103 23.634373,6.4028103 c -6.687071,0 -9.875034,1.5228704 -12.144549,7.8985737 -1.5444569,5.309173 -2.3513257,15.222802 -1.274592,19.741092"
+         id="path4-3"
+         sodipodi:nodetypes="cccccccccccscc"
+         style="fill:#0d1919;fill-opacity:1" />
+    </g>
+    <g
+       id="g945-0" />
+  </g>
+  <g
+     id="g1060"
+     transform="matrix(1.3017099,0,0,1.3017099,-6.187241,-7.5455821)"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96">
+    <path
+       fill="#949494"
+       d="m 17.499184,11.422985 c 2.497388,-0.248796 4.171189,1.485257 6.172823,1.537963 1.008154,0.02655 2.511724,-0.916967 3.400525,-1.343569 2.214909,-0.4798 3.966127,-0.587365 5.512076,1.140905 2.202445,3.648327 1.114083,4.966324 1.466782,8.840173 0.076,0.83443 -0.05992,1.08374 0.245515,1.917034 0.218693,0.596641 -4.125154,7.650204 -3.934424,8.26258 0.180432,0.579316 3.235362,-0.500338 5.113073,-2.195768 0.592909,7.229616 -1.887888,9.814774 -9.410149,10.625835 -7.889727,0.850793 -14.329953,-0.821308 -14.594148,-9.069703 1.23594,0.814893 4.147541,1.75113 4.851354,1.313122 0.668657,-0.41613 -4.487245,-5.700947 -4.260832,-6.438785 0.350904,-1.143529 0.840746,-2.750795 0.96158,-3.975307 0.487947,-4.946101 -1.685718,-8.163419 4.475825,-10.61448"
+       id="path4"
+       sodipodi:nodetypes="cscccsccccsscc"
+       style="fill:#ffffff;stroke-width:0.999997"
+       inkscape:export-xdpi="96"
+       inkscape:export-ydpi="96" />
+    <path
+       sodipodi:type="star"
+       style="fill:#ff7f2a;fill-opacity:1;stroke:none;stroke-width:0.1;paint-order:fill markers stroke"
+       id="path875"
+       sodipodi:sides="5"
+       sodipodi:cx="23.554737"
+       sodipodi:cy="21.133558"
+       sodipodi:r1="2.6904535"
+       sodipodi:r2="1.8689198"
+       sodipodi:arg1="-1.9863351"
+       sodipodi:arg2="-1.3580166"
+       inkscape:flatsided="true"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       inkscape:transform-center-x="0.21719052"
+       inkscape:transform-center-y="-0.0035782089"
+       inkscape:export-xdpi="96"
+       inkscape:export-ydpi="96"
+       d="m 22.468647,18.672065 3.091489,0.667917 0.320096,3.146578 -2.893659,1.276776 -2.108475,-2.357488 z" />
+    <g
+       id="g945"
+       inkscape:export-xdpi="96"
+       inkscape:export-ydpi="96"
+       transform="translate(-0.32800079,2.0407258)">
+      <path
+         style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+         d="m 16.289598,16.573985 c 0.909369,-0.184103 1.826999,-0.418959 2.760234,-0.418959"
+         id="path901" />
+      <path
+         style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+         d="m 28.620119,15.835188 c 0.674149,0.139823 1.857163,-0.323343 2.380241,0.199735"
+         id="path907" />
+    </g>
+  </g>
+</svg>

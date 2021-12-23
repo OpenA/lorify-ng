@@ -4,11 +4,11 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.0.6
+// @version     3.1.0
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
-// @icon        https://github.com/OpenA/lorify-ng/blob/master/icons/penguin-64.png?raw=true
+// @icon        https://github.com/OpenA/lorify-ng/blob/master/icons/loriko.svg?raw=true
 // @run-at      document-start
 // ==/UserScript==
 
@@ -501,39 +501,20 @@ const Favicon = {
 	
 	original : '//www.linux.org.ru/favicon.ico',
 	index    : 0,
-	size     : 16 * ( Math.ceil(window.devicePixelRatio) || 1 ),
-	
-	get tabname() {
-		let title = document.title;
-		Object.defineProperty(this, 'tabname', { value: title });
-		return title;
+
+	setTitle: (label) => {
+		document.title = document.title.replace(/\s\(\d+\)|$/, ` (${label})`);
 	},
-	
+
 	get canvas() {
 		let canvas = document.createElement('canvas');
-		canvas.width = canvas.height = this.size;
+		canvas.width = canvas.height = 32;
 		Object.defineProperty(this, 'canvas', { value: canvas });
 		return canvas;
 	},
-	
-	get image() {
-		let image  = new Image;
-		let origin = this.original;
-		// allow cross origin resource requests if the image is not a data:uri
-		if ( ! /^data:/.test(origin)) {
-			image.crossOrigin = 'anonymous';
-		}
-		image.onReady = new Promise(resolve => {
-			// 1: imageload promise => call resolve fn
-			image.onload = resolve;
-			image.src    = origin;
-		});
-		Object.defineProperty(this, 'image', { value: image });
-		return image;
-	},
-	
+
 	get icon() {
-		let links = document.getElementsByTagName('link'),
+		let links = document.head.getElementsByTagName('link'),
 		   length = links.length;
 		
 		for (var i = 0; i < length; i++) {
@@ -546,50 +527,42 @@ const Favicon = {
 	},
 	
 	draw: function(label = '', color = 0) {
-		
-		const { icon, size, image, tabname, canvas } = this;
-		const context = canvas.getContext('2d');
-		
-		image.onReady.then(e => {
-			
-			// clear canvas
-			context.clearRect(0, 0, size, size);
-			// draw the favicon
-			context.drawImage(image, 0, 0, image.width, image.height, 0, 0, size, size);
-			
-			var href = image.src;
-			
-			if (label) {
-				
-				if (typeof label === 'number' && label > 99) {
-					document.title = tabname +' ('+ label +')';
-					label = '99+';
-				}
-				
-				let radius = size / 100 * 38,
-				   centerX = size - radius,
-				   centerY = radius,
-				   fontPix = radius * 1.5;
-			
-				// webkit seems to render fonts lighter than firefox
-				context.font = 'bold '+ fontPix +'px arial';
-				context.fillStyle = ['#48de3d', '#e47702', '#F00'][color]; // ok, warn, error
-				context.strokeStyle = 'rgba(0,0,0,.2)';
-			
-				// bubble
-				context.beginPath();
-				context.arc(centerX, centerY, radius, 0, 2 * Math.PI, false);
-				context.fill();
-				context.stroke();
-			
-				// label
-				context.fillStyle = '#fff';
-				context.textAlign = 'center';
-				context.fillText(label, centerX, fontPix);
-				href = canvas.toDataURL();
+
+		const { icon, canvas, original } = this;
+
+		if (!label) {
+			icon.href = original;
+			return;
+		}
+		let d = new Path2D('M5.4 22.3a15 15 0 0 0 3.8 7c-3.4 1.7 2.3 3.9 4.2 2a32 32 0 0 1 5.4-.1c1.5 1.6 7.2-1 3.7-2.4 1.8-1.8 3-3.8 3.4-6.4.9.3 5.5 2.3 6.1.8-1.5-2.5-4.6-4.8-5.8-7.5-1.1-3-.9-6.3-1.9-9.3C22.4 2 20.4 0 15.9 0S9.7 1.4 8 5.4c-1.1 3-1 6-1.7 8.8C4.4 14-1 7.7.2 12.8c.5 1.5 4.4 9.8 5.2 9.5')
+		let x = 0, w = canvas.width , fntPos = w *.5,
+		    y = 0, h = canvas.height, fontPx = 24;
+
+		if (Number(label) > 9) {
+			fontPx -= 2;
+			if (Number(label) > 999) {
+				label = '1k+';
 			}
-			_setup(icon, { type: 'image/png', rel: 'icon', href });
-		});
+		}
+		const ctx = canvas.getContext('2d');
+		// clear canvas
+		ctx.clearRect(x, y, w, h);
+
+		// colored icon
+		ctx.strokeStyle = 'rgba(0,0,0,.5)';
+		ctx.fillStyle = ['#48de3d', '#e47702', '#F00'][color]; // ok, warn, error
+		ctx.fill(d);
+
+		// text label
+		ctx.font = 'bold '+ fontPx +'px Arial';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle'; 
+		ctx.fillStyle = 'white';
+
+		ctx.strokeText(label, fntPos + 1, fntPos + 1);
+		ctx.fillText(label, fntPos, fntPos);
+
+		_setup(icon, { type: 'image/png', rel: 'icon', href: canvas.toDataURL() });
 	}
 }
 
@@ -2653,7 +2626,7 @@ function WebExt() {
 
 function UserScript() {
 
-	var main_events_count, reset_form;
+	var main_events_count, reset_form, lorylist;
 	var iterate = 2,
 		notes   = localStorage.getItem('l0rNG-notes') || '';
 
@@ -2718,12 +2691,10 @@ function UserScript() {
 		if (cleared) {
 			lorynotify.removeAttribute('cnt-new');
 			lorynotify.classList.remove('pushed');
-			lorylist.remove();
-			if ('notify-list' in lorylist.children)
-				lorylist.children['notify-list'].remove();
+			getNotesList(-1).remove();
 		} else {
 			if (lorynotify.classList.contains('pushed'))
-				pullNotes();
+				getNotesList(Number(count));
 			lorynotify.setAttribute('cnt-new', count);
 		}
 		Timer.set('Check Notifications', startWatch, delay);
@@ -2756,9 +2727,33 @@ function UserScript() {
 		saveParams(USER_SETTINGS);
 	}
 
-	const pullNotes = () => {
-		const max = Number(notes);
+	const getNotesList = (max) => {
 		let empty = true;
+
+		if (!lorylist) {
+			lorylist = _setup('div', { class: 'lorify-notes-panel'}, { click: e => {
+				const btn = e.target;
+				switch (btn.id) {
+				case 'notify-clear':
+					if (!btn.disabled && reset_form) {
+						btn.disabled = true;
+						sendFormData('notifications-reset', new FormData( reset_form ), false).then(() => {
+							reset_form = setNotes(true, '');
+							btn.disabled = false;
+						});
+					}
+					break;
+				case 'note-link':
+					if (btn.pathname === LOR.path) {
+						goToCommentPage(btn.search.substring('?cid='.length), btn.pathname + btn.search);
+						e.preventDefault();
+					}
+				}
+			}});
+			lorylist.append(
+				_setup('div', { id: 'notify-clear', class: 'lory-btn', text: 'Очистить уведомления' })
+			);
+		} else
 		if ('notify-list' in lorylist.children) {
 			const list = lorylist.children['notify-list'];
 			if ((empty = list.rows.length !== max))
@@ -2779,6 +2774,7 @@ function UserScript() {
 				lorylist.append(tab);
 			});
 		}
+		return lorylist;
 	}
 
 	const loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
@@ -2862,10 +2858,13 @@ function UserScript() {
 		input.selectedIndex = USER_SETTINGS['Code Highlight Style'];
 	});
 
-	const lorylist  = _setup('div', { class: 'lorify-notes-panel', html: `
-		<div id="notify-clear" class="lory-btn">Очистить уведомления</a>
-	`});
 	const lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
+	<svg id="loriko-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+	  <path id="loriko-belly" fill="snow" d="m14.2 8 9.4-3.2 10.2 2.8 3.7 15-1.9 12.8-6.4 6-11 .2-5.6-5.5-2.5-10Z"/>
+	  <path id="loriko-body" fill="#2a1725" d="M8.8 31.1c.5 3.7 3 7.1 5.6 9.7-1.7 0-3.3 1.3-4.1 2.2-1 1.1 0 1.4 2 1.4 0 1.4.4 1 2.3 1.4 0 2 2.4.5 5.5-1.4a89 89 0 0 1 9-.1c2.7 2.6 4.4 3.2 4.7 1.2 2.5.4 2.6-.3 2.8-2 5 2 .8-3.1-2.6-3.2a16 16 0 0 0 5-9c1.2.5 8.1 3.3 9 1.1.3-.8-.8-2-1.3-2.7-1.5-2.1-6.3-5.3-7.3-7.7-1.7-4.2-1.3-8.8-2.8-13-2.3-6.3-6-9-12.6-9-6.7 0-9.6 2.6-12 9-1.4 4-1.4 8.3-3 12.5-1 2.4-6.2 6.1-7.7 8.2-.5.6-1.6 1.9-1.2 2.7.8 2.2 1.9 1 3.2.5m15-26C21 6.8 22 9.2 24 9.2c1 0 2.1-1.3 3-1.8a5 5 0 0 1 6 1.1c3 3.5 1 7.3 1.4 11.2.2 2 1.5 3.9 1.6 6 .6 7.3-2.5 13.8-10 14.7-8 .8-14-3.7-14.3-12-.1-3 1.4-5.5 1.7-8.3.4-5-2.1-12.3 5.6-13"/>
+	  <path id="loriko-nose" fill="#9c6c6c" d="m23 16.2 3 .6.2 3-2.7 1.2-2-2.3z" paint-order="fill markers stroke"/>
+	  <path id="loriko-eyes" fill="none" stroke="#000" d="M16.3 16.6c.9-.2 1.8-.4 2.7-.4m9.6-.4c.7.2 1.9-.3 2.4.2"/>
+	</svg>
 	<div id="lorynotify" class="lory-btn"></div>
 	<div id="lorytoggle" class="lory-btn"></div>
 	<style>
@@ -2884,14 +2883,16 @@ function UserScript() {
 		#lorytoggle {
 			left: 0; top: 0;
 			right: 0; bottom: 0;
-			background: url(//github.com/OpenA/lorify-ng/blob/master/icons/penguin-32.png?raw=true) center / 100%;
-			opacity: .5;
+		}
+		#loriko-svg {
+			width: 40px;
+			margin: 2px;
 		}
 		#loryform {
 			display: table;
 			min-width: 360px;
 			right: 5px;
-			top: 40px;
+			top: 5px;
 			padding: 4px 6px;
 		}
 		#loryform, .lorify-notes-panel {
@@ -2934,9 +2935,9 @@ function UserScript() {
 			position: fixed;
 			top: 5px;
 			right: 5px;
-			padding: 16px;
 		}
-		#lorytoggle:hover, #lorytoggle.pushed { opacity: 1!important; }
+		.lorify-settings-panel:hover #loriko-body, #loryform ~ * #loriko-body { fill: #949494; }
+		.lorify-settings-panel:hover #loriko-belly, #loryform ~ * #loriko-belly { fill: white; }
 		.lory-btn { cursor: pointer; }
 		.tab-row  { display: table-row; }
 		.tab-cell { display: table-cell;
@@ -2991,6 +2992,7 @@ function UserScript() {
 		@media screen and (max-width: 570px) {
 			#loryform, .lorify-notes-panel { right: 0; }
 			#lorynotify.pushed { border-radius: 0 0 5px 5px; padding: 2px 6px; }
+			#loriko-svg { width: 28px; margin: 1px; }
 		}
 		@keyframes apply {
 			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
@@ -3000,41 +3002,20 @@ function UserScript() {
 		}
 	</style>`}, {
 		click: e => {
-			const btn = e.target;
-			switch (btn.id) {
-			case 'notify-clear':
-				if (!btn.disabled && reset_form) {
-					 btn.disabled = true;
-					sendFormData('notifications-reset', new FormData( reset_form ), false).then(() => {
-						reset_form = setNotes(true, '');
-						btn.disabled = false;
-					});
-				}
-				break;
-			case 'lorynotify':
+			const btn = e.target,
+			   pannel = btn.id === 'lorynotify' ? getNotesList(Number(notes)) :
+			            btn.id === 'lorytoggle' ? loryform : null;
+			if (pannel) {
 				if (btn.classList.toggle('pushed')) {
-					btn.parentNode.append(lorylist);
-					pullNotes();
+					btn.parentNode.before(pannel);
 				} else
-					lorylist.remove();
-				break;
-			case 'lorytoggle':
-				if (btn.classList.toggle('pushed')) {
-					btn.parentNode.append(loryform);
-				} else
-					loryform.remove();
-				break;
-			case 'reset-setts':
-				setValues( defaults );
-				saveParams( defaults );
-				break;
-			case 'note-link':
-				if (btn.pathname === LOR.path) {
-					goToCommentPage(btn.search.substring(5), btn.pathname + btn.search);
-					e.preventDefault();
-				}
+					pannel.remove();
 			}
 		}
+	});
+	loryform.querySelector('#reset-setts').addEventListener('click', () => {
+		setValues( defaults );
+		saveParams( defaults );
 	});
 	window.addEventListener('storage', ({ key, newValue }) => {
 		switch(key) {
