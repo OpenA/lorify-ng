@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.1.0
+// @version     3.1.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -2568,8 +2568,7 @@ function domToMarkdown(childNodes, deep = 0) {
 
 function WebExt() {
 
-	var main_events_count;
-	var opened;
+	let main_events_count, opened;
 
 	const portConnect = resolve => {
 		const port = chrome.runtime.connect();
@@ -2605,7 +2604,9 @@ function WebExt() {
 	opened = new Promise(portConnect);
 
 	const sendMessage = (action, data) => {
-		(opened || (opened = new Promise(portConnect))).then(
+		if(!opened)
+			opened = new Promise(portConnect)
+		opened.then(
 			port => port.postMessage({ action, data })
 		);
 	}
@@ -2628,18 +2629,18 @@ function UserScript() {
 
 	var main_events_count, reset_form, lorylist;
 	var iterate = 2,
-		notes   = localStorage.getItem('l0rNG-notes') || '';
+		notes   = Number(localStorage.getItem('l0rNG-notes'));
 
 	const self = {
 		checkNow: () => void 0,
 		openUrl : () => true,
-		reset   : () => setNotes(true, ''),
+		reset   : () => setNotes(true, 0),
 		init    : () => {
 			if ( (main_events_count = document.getElementById('main_events_count')) ) {
-				if ( (notes = main_events_count.textContent.replace(/(\d+)/, '$1')) ) {
+				if ( (notes = Number(main_events_count.textContent.match(/\d+/))) ) {
 					lorypanel.children['lorynotify'].setAttribute('cnt-new', notes);
 				}
-				(self.checkNow = startWatch)();
+				Timer.set('Check Notifications', (self.checkNow = startWatch), delay);
 			}
 			document.body.append(lorypanel);
 			return Promise.resolve();
@@ -2659,7 +2660,7 @@ function UserScript() {
 		return count => {
 			if (USER_SETTINGS['Desktop Notification'] && granted) {
 				const notif = new Notification('LINUX.ORG.RU', {
-					icon: '/tango/img/linux-logo.png',
+					icon: 'https://github.com/OpenA/lorify-ng/blob/master/icons/penguin-mono.svg?raw=true',
 					body: `\n${ count } новых сообщений`,
 				});
 				notif.onclick = () => { window.focus() };
@@ -2667,15 +2668,14 @@ function UserScript() {
 		}
 	})( window.Notification ? Notification.permission : 'denied' );
 
-	const delay      = 55e3 + Math.floor(Math.random() * 1765);
+	const delay      = 5e4;
 	const defaults   = Object.assign({}, USER_SETTINGS);
 	const startWatch = getDataResponse.bind(null, '/notifications-count',
 		( response ) => {
-			if (response == 0)
-				response = '';
-			if (response > notes)
-				sendNotify(response);
-			setNotes(true, response);
+			let count = Number(response);
+			if (count > notes)
+				sendNotify(count);
+			setNotes(true, count);
 		}, ({ status }) => {
 			if (status < 400 || status >= 500)
 				Timer.set('Check Notifications', startWatch, delay * (status >= 500 ? 5 : 1));
@@ -2694,7 +2694,7 @@ function UserScript() {
 			getNotesList(-1).remove();
 		} else {
 			if (lorynotify.classList.contains('pushed'))
-				getNotesList(Number(count));
+				getNotesList(count);
 			lorynotify.setAttribute('cnt-new', count);
 		}
 		Timer.set('Check Notifications', startWatch, delay);
@@ -2738,7 +2738,7 @@ function UserScript() {
 					if (!btn.disabled && reset_form) {
 						btn.disabled = true;
 						sendFormData('notifications-reset', new FormData( reset_form ), false).then(() => {
-							reset_form = setNotes(true, '');
+							reset_form = setNotes(true, 0);
 							btn.disabled = false;
 						});
 					}
@@ -3003,7 +3003,7 @@ function UserScript() {
 	</style>`}, {
 		click: e => {
 			const btn = e.target,
-			   pannel = btn.id === 'lorynotify' ? getNotesList(Number(notes)) :
+			   pannel = btn.id === 'lorynotify' ? getNotesList(notes) :
 			            btn.id === 'lorytoggle' ? loryform : null;
 			if (pannel) {
 				if (btn.classList.toggle('pushed')) {
@@ -3020,7 +3020,7 @@ function UserScript() {
 	window.addEventListener('storage', ({ key, newValue }) => {
 		switch(key) {
 			case 'lorify-ng'  : setValues( JSON.parse( newValue ) ); break;
-			case 'l0rNG-notes': setNotes ( false,      newValue   ); break;
+			case 'l0rNG-notes': setNotes ( false, Number(newValue) ); break;
 		}
 	});
 	return self;
