@@ -534,7 +534,7 @@ const Favicon = {
 			icon.href = original;
 			return;
 		}
-		let d = new Path2D('M5.4 22.3a15 15 0 0 0 3.8 7c-3.4 1.7 2.3 3.9 4.2 2a32 32 0 0 1 5.4-.1c1.5 1.6 7.2-1 3.7-2.4 1.8-1.8 3-3.8 3.4-6.4.9.3 5.5 2.3 6.1.8-1.5-2.5-4.6-4.8-5.8-7.5-1.1-3-.9-6.3-1.9-9.3C22.4 2 20.4 0 15.9 0S9.7 1.4 8 5.4c-1.1 3-1 6-1.7 8.8C4.4 14-1 7.7.2 12.8c.5 1.5 4.4 9.8 5.2 9.5')
+		let d = new Path2D('M5.4 22.3a15 15 0 0 0 3.8 7c-3.4 1.7 2.3 3.9 4.2 2a32 32 0 0 1 5.4-.1c1.5 1.6 7.2-1 3.7-2.4 1.8-1.8 3-3.8 3.4-6.4.9.3 5.5 2.3 6.1.8-1.5-2.5-4.6-4.8-5.8-7.5-1.1-3-.9-6.3-1.9-9.3C22.4 2 20.4 0 15.9 0S9.7 1.4 8 5.4c-1.1 3-1 6-1.7 8.8C4.4 14-1 7.7.2 12.8c.5 1.5 4.4 9.8 5.2 9.5');
 		let x = 0, w = canvas.width , fntPos = w *.5,
 		    y = 0, h = canvas.height, fontPx = 24;
 
@@ -855,8 +855,9 @@ _setup('script', { text: `
 		const wS = new window.WebSocket('wss://www.linux.org.ru:9000/ws');
 		const _stop = ({ detail }) => wS.close(1000, detail);
 		wS.onmessage = ({ data }) => {
+			if (data.startsWith('comment '))
 			window.dispatchEvent(
-				new CustomEvent('wsData', { bubbles: true, detail: (cid = data) }) );
+				new CustomEvent('wsData', { bubbles: true, detail: (cid = data.substring('comment '.length)) }) );
 		}
 		wS.onopen = () => {
 			console.info('Установлено соединение c '+ wS.url);
