@@ -122,10 +122,9 @@ const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id 
 
 document.documentElement.append(
 	_setup('script', { text: `
-	if (!${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}) {
 
-		var initNextPrevKeys,  initStarPopovers,  hljs,  $script;
-		    initNextPrevKeys = initStarPopovers = hljs = $script = function(){};
+		var initNextPrevKeys,  initStarPopovers, $ = _c => {_c()};
+		    initNextPrevKeys = initStarPopovers = () => void 0;
 
 		var tag_memories_form_setup,  topic_memories_form_setup;
 		    tag_memories_form_setup = topic_memories_form_setup = (a,b,c,d) => {
@@ -133,19 +132,43 @@ document.documentElement.append(
 					new CustomEvent('setMemories', { bubbles: true, detail: [a,b,c,d] }) );
 			};
 
-		Object.defineProperty(window, 'define', {
-			configurable: true, get: () => {
-				if ($script.amd)
-					Object.defineProperty(window, 'define', { value: $script });
-				$script.amd = true;
-				return 'function';
+		const $script = function(src, name = '_') {
+			const { _resol, _loads } = $script;
+			const ok = resolve => {
+				const hd = document.getElementsByTagName('head')[0] || document.documentElement;
+				const js = document.createElement('script');
+				js.type = 'text/javascript', js.async = true, js.src = src;
+				js.onload = () => resolve(true); js.onerror = () => resolve(false);
+				hd.append(js);
 			}
-		});
-		$script.ready = (name, call) => {
-			if (name == 'lorjs')
-				document.addEventListener('DOMContentLoaded', call);
+			if (!(name in _loads)) {
+				_loads[name] = new Promise(ok);
+			} else if (_resol[name]) {
+				ok(_resol[name]);
+				delete _resol[name];
+			}
+		};
+		$script._resol = Object.create(null);
+		$script._loads = { lorjs: ${!/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}, hljs: false, realtime: false, plugins: true, jquery: true, _: false };
+		$script.ready  = (names, call) => {
+			const { _resol, _loads } = $script;
+			const ok = n => (
+				n in _loads ? _loads[n] : (_loads[n] = new Promise(r => {_resol[n] = r}))
+			);
+			Promise.all(Array.isArray(names) ? names.map(ok) : [ok(names)]).then(res => {
+				if (!res.includes(false))
+					call();
+			});
 		}
-	}`}),
+		const moment = function(dt) {
+			return {
+				format: fmt => dt.toLocaleDateString(moment.lng, (fmt[0] === 'M' ? { month: 'long' } : { dateStyle: 'short' }))
+			}
+		};
+		moment.locale = lng => {
+			moment.lng = lng;
+		};
+	`}),
 	_setup('style' , { id: 'loryCSS', text: `
 		.newadded  { border: 1px solid #006880; }
 		.msg-error { color: red; font-weight: bold; }
