@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.1.2
+// @version     3.2.0
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -162,12 +162,10 @@ document.documentElement.append(
 		}
 		const moment = function(dt) {
 			return {
-				format: fmt => dt.toLocaleDateString(moment.lng, (fmt[0] === 'M' ? { month: 'long' } : { dateStyle: 'short' }))
+				format: fmt => dt.toLocaleDateString('ru', (fmt[0] === 'M' ? { month: 'long' } : { dateStyle: 'short' }))
 			}
 		};
-		moment.locale = lng => {
-			moment.lng = lng;
-		};
+		moment.locale = () => void 0;
 	`}),
 	_setup('style' , { id: 'loryCSS', text: `
 		.newadded  { border: 1px solid #006880; }
@@ -773,6 +771,8 @@ const onDOMReady = () => {
 
 	addToCommentsCache(msgs, null, true);
 
+	if (location.pathname.includes(`${topic}/thread/`))
+		return;
 	if (cid)
 		goToCommentPage(cid, path +'?cid='+ cid);
 	else
@@ -1272,7 +1272,7 @@ function addToCommentsCache(els, attrs, jqfix) {
 	
 	for (const el of els) {
 
-		const cid = el.id.replace('comment-', '');
+		const cid = el.id.substring('comment-'.length);
 
 		ContentFinder.check(el);
 
@@ -1281,7 +1281,9 @@ function addToCommentsCache(els, attrs, jqfix) {
 		);
 
 		const acid = _setup(el.querySelector(`.title > a[href^="${ path }?cid="]`), { class: 'link-pref' });
-		el.selflnk = _setup(el.querySelector(`.reply > ul > li > a[href="${ path }?cid=${ cid }"]`), { class: 'link-self', cid });
+
+		for (let a of el.querySelectorAll(`.reply > ul > li > a[href^="${ path }?cid="]`))
+			a.className = 'link-self';
 
 		if (acid) {
 			// Extract reply comment ID from the 'search' string
@@ -1608,8 +1610,8 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 			}
 		case 'link-self':
 		case 'link-pref':
-			var cid  = el.getAttribute('cid');
-			   Drops = 1;
+			var cid = el.search.substring('?cid='.length);
+			Drops = 1;
 			Timer.delete('Close Preview', 'Open Preview', cid);
 			removePreviews();
 			goToCommentPage(cid, el.pathname + el.search);
@@ -1641,18 +1643,17 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 	}});
 	
 	if (_MOUSE_) {
-		
 		comment.addEventListener('mouseover', e => {
-			if (e.target.classList[0] === 'link-pref') {
-				Timer.delete(e.target.getAttribute('cid'));
+			const anc = e.target;
+			if (anc.classList[0] === 'link-pref') {
+				Timer.delete(anc.search.substring('?cid='.length));
 				Timer.set('Open Preview', () => {
 					Drops = 2;
-					showPreview(e.target);
+					showPreview(anc);
 				});
 				e.preventDefault();
 			}
 		});
-		
 		comment.addEventListener('mouseout', e => {
 			if (e.target.classList[0] === 'link-pref') {
 				Drops = 1;
@@ -1665,7 +1666,7 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 function showPreview(anchor) {
 	
 	// Get comment's ID from custom attribute
-	var commentID = anchor.getAttribute('cid'),
+	var commentID = anchor.search.substring('?cid='.length),
 	    isNew     = false,
 	    commentEl;
 
