@@ -18,7 +18,8 @@ var notes = 0;
 var codestyles  = null;
 const settings  = Object.assign({}, defaults);
 const openPorts = new Set;
-const loadStore = typeof browser === 'object' ?
+const isFirefox = navigator.userAgent.includes('Firefox');
+const loadStore = isFirefox ?
 	// load settings
 	browser.storage.local.get() : new Promise(resolve => {
 		chrome.storage.local.get(null, resolve)
@@ -36,18 +37,20 @@ if ('onSuspend' in chrome.runtime) {
 	});
 }
 
-chrome.notifications.onClicked.addListener(() => openTab(
-	`${ settings['Desktop Notification'] == 2 ? '#' : '/' }notifications`, 'reload-page'
-));
+chrome.notifications.onClicked.addListener(() => {
+	const ismob = Number(settings['Desktop Notification']) === 2;
+	openTab(`${ ismob ? '#' : 'lor://' }notifications`,
+	            ismob ? 'notes-show' : 'rel');
+});
 chrome.runtime.onConnect.addListener(port => {
 	port.onMessage.addListener(messageHandler);
 	port.onDisconnect.addListener(() => {
 		openPorts.delete(port);
 	});
 	openPorts.add(port);
-	loadStore.then(() => port.postMessage({ name: 'connection-resolve', data: settings }));
+	loadStore.then(() => port.postMessage({ action: 'connection-resolve', data: settings }));
 	if (!codestyles)
-		port.postMessage({ name: 'need-codestyles' })
+		port.postMessage({ action: 'need-codestyles', data: null });
 });
 
 const setBadge = 'setBadgeText' in chrome.browserAction ? (
@@ -71,64 +74,68 @@ chrome.alarms.onAlarm.addListener(getNotifications);
 chrome.alarms.create('check-lor-notifications', {
 	when: Date.now() + 1e3
 });
-/* chrome.webRequest.onBeforeRequest.addListener(
-	() => new Object({ cancel: true }),
-	{ urls: [
-		'*://www.linux.org.ru/js/highlight.pack.js',
-		'*://www.linux.org.ru/js/addComments.js',
-		'*://www.linux.org.ru/js/realtime.js',
-		'*://www.linux.org.ru/js/lor.js*'
-	]},
-	['blocking']
-); */
+
+const queryScheme = isFirefox
+   ? url => browser.tabs.query({ url })
+   : url => new Promise(res => void chrome.tabs.query({ url }, res))
+
+const matchEmptyOr = (tabs, m_uri = '', m_rx = '') => new Promise(resolve => {
+
+	const empty_Rx = new RegExp(m_rx ? m_rx : '^'+ 
+		(isFirefox ? 'about:(?:newtab|home)$' : 'chrome://.*(?:newtab|startpage)') +
+	'');
+
+	let tab_id = -1;
+	for (const { id, url } of tabs) {
+		if (m_uri && url.includes(m_uri)) {
+			tab_id = id;
+			break;
+		} else if (empty_Rx.test(url))
+			tab_id = id;
+	}
+	resolve(tab_id);
+});
 
 function openTab(uri = '', action = '') {
 
-	const idx = uri.search(/\?|\#/),
-	     path = idx < 0 ? uri : uri.substring(0, idx),
-	   origin = path ? 'https://www.linux.org.ru' : chrome.runtime.getURL('/settings.html');
+	let schi = uri.search(/\?|\#/);
+	if (schi === -1)
+	    schi = uri.length;
+
+	const lor = uri.startsWith('lor:') ? 5 : 0,
+	     path = uri.substring(lor, schi),
+	   origin = lor ? '://www.linux.org.ru'+ path : chrome.runtime.getURL('/settings.html'),
+	     href = lor ? 'https' + origin + uri.substring(schi) : origin + uri;
 
 	for (const port of openPorts) {
 		const { url, id } = port.sender.tab || '';
-		if (url && url.includes((path || origin))) {
+		if (url && url.includes(origin)) {
 			chrome.tabs.update(id, { active: true });
-			if (action === 'reload-page') {
+			if (action === 'rel') {
 				chrome.tabs.reload(id);
 			} else
-				port.postMessage({ name: action, data: uri });
+				port.postMessage({ action, data: uri.substring(lor) });
 			return;
 		}
 	}
-	chrome.tabs.query({}, tabs => {
-
-		const full_url = { active: true, url: origin + uri };
-		const empty_Rx = new RegExp('^'+
-			'about:(?:newtab|blank|home)|'+
-			'chrome://(?:newtab|startpage)/?'+
-			(path ? '|https?://www.linux.org.ru/?' : '')+
-		'$');
-
-		let tab_id = -1, empty_id = -1;
-		for (const { id, url } of tabs) {
-			if (empty_Rx.test(url)) {
-				empty_id = id;
-				break;
-			}
-		}
-		if (path) {
-			for (const { id, url } of tabs) {
-				if (url.includes('://www.linux.org.ru'+ path)) {
-					tab_id = id;
-					break;
-				}
-			}
-		}
-		if (tab_id !== -1 || empty_id !== -1) {
-			chrome.tabs.update(tab_id !== -1 ? tab_id : empty_id, full_url);
-		} else {
-			chrome.tabs.create(full_url);
-		}
-	});
+	const fin = tab_id => {
+		if (tab_id !== -1 ) {
+			chrome.tabs.update(tab_id, { active: true, url: href });
+		} else
+			chrome.tabs.create({ active: true, url: href });
+	}
+	if (lor) {
+		queryScheme(['*://www.linux.org.ru/', '*'+ origin +'/*']).then(
+			tabs => matchEmptyOr(tabs, origin, '^https?://www.linux.org.ru/?$')
+		).then(lor_id => {
+			if(lor_id !== -1) {
+				chrome.tabs.update(lor_id, { active: true, url: href });
+			} else
+			 	queryScheme().then(tabs => matchEmptyOr(tabs)).then(fin);
+		});
+	} else {
+		queryScheme().then(tabs => matchEmptyOr(tabs, origin)).then(fin);
+	}
 }
 
 function messageHandler({ action, data }, port) {
@@ -156,6 +163,11 @@ function messageHandler({ action, data }, port) {
 			chrome.alarms.clear('check-lor-notifications');
 			getNotifications();
 			break;
+		case 'l0rNG-extra-sets':
+			if (codestyles)
+				port.postMessage({ action: 'code-styles-list', data: codestyles });
+			if (notes)
+				port.postMessage({ action: 'notes-count-update', data: notes });
 	}
 }
 
@@ -196,13 +208,13 @@ function updNoteStatus(count = 0) {
 	}
 	setBadge({ text: (notes = count) ? count.toString() : '' });
 	for (const port of openPorts) {
-		port.postMessage({ name: 'notes-count-update', data: count });
+		port.postMessage({ action: 'notes-count-update', data: count });
 	}
 }
 function changeSettings(newSetts, exclupe = null) {
 	for (const port of openPorts) {
 		if ( port !== exclupe )
-			port.postMessage({ name: 'settings-change', data: newSetts });
+			port.postMessage({ action: 'settings-change', data: newSetts });
 	}
 	Object.assign(settings, newSetts);
 	chrome.storage.local.set(newSetts);

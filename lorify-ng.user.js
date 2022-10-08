@@ -2597,8 +2597,8 @@ function WebExt() {
 
 	const portConnect = resolve => {
 		const port = chrome.runtime.connect();
-		port.onMessage.addListener(({ name, data }) => {
-			switch (name) {
+		port.onMessage.addListener(({ action, data }) => {
+			switch (action) {
 				case 'notes-count-update':
 					if (main_events_count)
 						main_events_count.textContent = data ? `(${data})`: '';
@@ -2638,7 +2638,7 @@ function WebExt() {
 
 	return {
 		checkNow : () => sendMessage( 'l0rNG-checkNow' ),
-		openUrl  : al => sendMessage( 'l0rNG-open-tab', al ),
+		openUrl  : al => sendMessage( 'l0rNG-open-tab', 'lor:/'+ al ),
 		reset    : () => sendMessage( 'l0rNG-notes-reset' ),
 		init     : () => {
 			if ( (main_events_count = document.getElementById('main_events_count')) ) {

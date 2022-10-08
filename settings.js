@@ -1,37 +1,25 @@
 
-const loryform = document.forms['loryform'];
+const loryform = document.getElementById('loryform');
 const n_count  = document.getElementById('note-count');
 const note_lst = document.getElementById('note-list');
+const rst_btn  = document.getElementById('reset-settings');
 
-var busy_id    = -1,
-	iterate    =  2,
+let busy_id    = -1, not_ld = true,
 	cnt_new    =  0,
-	empty_list = true,
-	reset_form = null;
+	my_connect = new Promise(createPort);
 
-Object.defineProperty(loryform, '_port_', {
-	configurable: true, value: createPort()
-});
+const showNotifications = () => {
+	history.replaceState(null, null, location.pathname +'#notifications');
+	note_lst.hidden = false;
+	if (not_ld)
+		updNotifications(cnt_new);
+}
 
-chrome.runtime.getBackgroundPage(({ notes, codestyles }) => {
-	
-	if (notes > 0) {
-		n_count.setAttribute('cnt-new', (cnt_new = notes));
-		n_count.hidden = false;
-	}
-	if (location.hash === '#notifications')
-		showNotifications();
-	if (codestyles) {
-		const input = loryform.elements['Code Highlight Style'];
-		for(const name of codestyles) {
-			input.appendChild( document.createElement('option') ).textContent = name;
-		}
-	}
-});
+if (location.hash === '#notifications')
+	note_lst.hidden = false;
 
-loryform.addEventListener('animationiteration', () => {
-	if ((iterate--) > 0)
-		loryform.classList.remove('save-msg');
+loryform.addEventListener('animationend', () => {
+	loryform.classList.remove('save-msg');
 });
 loryform.addEventListener('change', ({ target }) => {
 	if (busy_id === -1)
@@ -45,93 +33,98 @@ loryform.addEventListener('input', ({ target }) => {
 	}, 750);
 });
 
-document.getElementById('reset-settings').addEventListener('click', applyAnim.bind(null, { action: 'l0rNG-setts-reset' }));
+rst_btn.addEventListener('click', () => applyAnim('l0rNG-setts-reset', null, true));
 n_count.addEventListener('click', showNotifications);
-note_lst.addEventListener('click', navClickHandler);
-
-function msgPortHadler({ name, data }) {
-	switch (name)
-	{
-	case 'notes-count-update':
-		n_count.setAttribute('cnt-new', data);
-		n_count.hidden = !(cnt_new = Number(data));
-		if (!empty_list) {
-			while (note_lst.lastElementChild.children[0])
-				   note_lst.lastElementChild.children[0].remove();
-			if (cnt_new > 0)
-				pullNotes(cnt_new);
-		}
-		break;
-	case 'connection-resolve':
-	case 'settings-change':
-		setValues(data);
-	}
-}
-
-function navClickHandler(e) {
-	switch (e.target.id)
-	{
-	case 'go-back'    : this.hidden = true; history.replaceState(null, null, location.pathname);
+note_lst.addEventListener('click', e => {
+	let el = e.target;
+	switch (el.id) {
+	case 'go-back'    : note_lst.hidden = true; history.replaceState(null, null, location.pathname);
 	case 'do-wait'    : break;
 	case 'reset-notes':
-		if (reset_form) {
-			e.target.id = 'do-wait';
+		if ('reset_form' in document.forms) {
+			el.id = 'do-wait';
 			fetch('https://www.linux.org.ru/notifications-reset', {
 				credentials: 'same-origin',
 				method: 'POST',
-				body: new FormData( reset_form )
+				body: new FormData( document.forms.reset_form )
 			}).then(({ ok }) => {
 				if (ok) {
-					loryform._port_.postMessage({ action: 'l0rNG-notes-reset' });
-					reset_form = null;
+					applyAnim('l0rNG-notes-reset');
+					document.forms.reset_form.remove();
 				}
-				e.target.id = 'reset-notes';
+				el.id = 'reset-notes';
 			});
 		}
 		break;
 	default:
-		var    el  = e.target;
-		while( el != this && el.classList[0] !== 'note-item' )
+		while( el !== note_lst && el.classList[0] !== 'note-item' )
 		       el  = el.parentNode;
 		if(    el.hasAttribute('comment-link') ) {
-			loryform._port_.postMessage({
-				action : 'l0rNG-open-tab',
-				data   : el.getAttribute('comment-link')
-			});
+			applyAnim('l0rNG-open-tab', el.getAttribute('comment-link'));
 		}
 	}
-}
+});
 
-function createPort() {
+function createPort(resolve) {
 	const port = chrome.runtime.connect();
-	port.onMessage.addListener(msgPortHadler);
-	port.onDisconnect.addListener(() => {
-		Object.defineProperty(loryform, '_port_', {
-			configurable: true,
-			get: () => {
-				const value = createPort();
-				Object.defineProperty(loryform, '_port_', { configurable: true, value });
-				return value;
+	port.onMessage.addListener(({ action, data }) => {
+		switch (action) {
+		case 'notes-show':
+			showNotifications();
+			break;
+		case 'code-styles-list':
+			const input = loryform.elements['Code Highlight Style'];
+			for (const cname of data) {
+				input.appendChild( document.createElement('option') ).textContent = cname;
 			}
-		});
+			break;
+		case 'notes-count-update':
+			n_count.setAttribute('cnt-new', data);
+			n_count.hidden = !(cnt_new = Number(data));
+			if (!note_lst.hidden && not_ld)
+				updNotifications(cnt_new);
+			break;
+		case 'connection-resolve':
+			port.postMessage({ action: 'l0rNG-extra-sets', data: null })
+			resolve(port);
+		case 'settings-change':
+			setValues(data);
+		}
 	});
-	return port;
+	port.onDisconnect.addListener(() => {
+		my_connect = null;
+	});
 }
 
-function applyAnim(changes) {
-	iterate = 2;
-	loryform.classList.add('save-msg');
-	loryform._port_.postMessage(changes);
+function applyAnim(action = '', data = null, anim = false) {
+	if (anim)
+		loryform.classList.add('save-msg');
+	if(!my_connect)
+		my_connect = new Promise(createPort)
+	my_connect.then(
+		port => port.postMessage({ action, data })
+	);
 }
 
-function showNotifications() {
-	if (empty_list) {
-		empty_list = false;
-		if (cnt_new > 0)
-			pullNotes(cnt_new);
+function updNotifications(count = 0) {
+	let tr_lst = note_lst.lastElementChild.children,
+	    do_upd = count > 0 && tr_lst.length < count;
+
+	if (tr_lst.length) {
+		for(let i = do_upd ? 0 : count; tr_lst[i];)
+			tr_lst[i].remove();
 	}
-	history.replaceState(null, null, location.pathname +'#notifications');
-	note_lst.hidden = false;
+	if (do_upd) {
+		not_ld = false;
+		fetch('https://www.linux.org.ru/notifications', {
+			credentials: 'same-origin',
+			method: 'GET'
+		}).then(res => {
+			if (res.ok)
+			    res.text().then(pullNotes);
+			not_ld = true;
+		});
+	}
 }
 
 function onValueChange(input) {
@@ -143,7 +136,7 @@ function onValueChange(input) {
 		type === 'select-one' ? input.selectedIndex :
 		type === 'checkbox'   ? input.checked : Number(value)
 	);
-	applyAnim({ action: 'l0rNG-setts-change', data: changes });
+	applyAnim('l0rNG-setts-change', changes, true);
 }
 
 function setValues(items) {
@@ -155,54 +148,55 @@ function setValues(items) {
 	}
 }
 
-function pullNotes(limit) {
+function pullNotes(html) {
 
-	fetch('https://www.linux.org.ru/notifications', {
-		credentials: 'same-origin',
-		method: 'GET'
-	}).then(response => {
-		if (response.ok) {
-			response.text().then(html => {
-				const doc = new DOMParser().parseFromString(html, 'text/html'),
-					  trs = doc.querySelectorAll('.message-table tr'),
-					 list = note_lst.lastElementChild;
-				if (limit > trs.length)
-					limit = trs.length;
+	const doc = new DOMParser().parseFromString(html, 'text/html'),
+	      trs = doc.querySelectorAll('.message-table tr'),
+	     list = note_lst.lastElementChild,
+	    limit = cnt_new > trs.length ? trs.length : cnt_new;
 
-				reset_form = doc.forms.reset_form;
+	const new_rf = doc.forms.reset_form;
+	const old_rf = document.forms.reset_form;
 
-				for (let i = 0; i < limit; i++) {
+	if (new_rf) {
+		new_rf.hidden = true;
+		if (old_rf) {
+			document.body.replaceChild(new_rf, old_rf);
+		} else
+			document.body.appendChild(new_rf);
+	}
 
-					const CALL_TYPE = trs[i].children[0].firstElementChild;
-					const LINK_ELEM = trs[i].children[1].firstElementChild;
-					const TIME_ELEM = trs[i].children[2].firstElementChild;
-					const USER_NAME = trs[i].children[2].lastChild;
+	for (let i = 0; i < limit; i++) {
 
-					const item = document.createElement('div' ); item.className = 'note-item';
-					const tags = document.createElement('div' ); tags.className = 'note-item-tags';
-					const info = document.createElement('div' ); info.className = 'note-item-info';
-					const op_c = document.createElement('div' ); op_c.className = 'note-item-topic';
-					const user = document.createElement('span'); user.className = 'note-item-user';
-					const time = document.createElement('span'); time.className = 'note-item-time';
+		const CALL_TYPE = trs[i].children[0].firstElementChild;
+		const LINK_ELEM = trs[i].children[1].firstElementChild;
+		const TIME_ELEM = trs[i].children[2].firstElementChild;
+		const USER_NAME = trs[i].children[2].lastChild;
 
-					let secn = Math.floor((Date.now() - new Date( TIME_ELEM.dateTime )) * 0.001);
-						secn < 60   ? (time.setAttribute('chr','cек'), time.textContent =            secn % 60      ) :
-						secn < 3600 ? (time.setAttribute('chr','мин'), time.textContent = Math.floor(secn / 60) % 60) :
-									  (time.setAttribute('chr','ч'  ), time.textContent = Math.floor(secn / 3600)   ) ;
+		const item = document.createElement('div' ); item.className = 'note-item';
+		const tags = document.createElement('div' ); tags.className = 'note-item-tags';
+		const info = document.createElement('div' ); info.className = 'note-item-info';
+		const op_c = document.createElement('div' ); op_c.className = 'note-item-topic';
+		const user = document.createElement('span'); user.className = 'note-item-user';
+		const time = document.createElement('span'); time.className = 'note-item-time';
 
-					item.setAttribute( 'comment-link', LINK_ELEM.pathname + LINK_ELEM.search );
-					info.setAttribute( 'answer'      , CALL_TYPE && (
-						CALL_TYPE.classList.contains('icon-user-color' ) ? 'пригл.' :
-						CALL_TYPE.classList.contains('icon-reply-color') ? 'ответ'  : '') || 'новый'
-					);
-					tags.append( ...LINK_ELEM.children );
-					op_c.append( LINK_ELEM.lastChild );
-					item.append( tags, info, op_c );
-					info.append( user, time );
-					user.append( USER_NAME );
-					list.append( item );
-				}
-			});
-		}
-	});
+		let secn = Math.floor((Date.now() - new Date( TIME_ELEM.dateTime )) * 0.001), chr;
+			secn < 60   ? (chr = 'cек', secn %= 60)  :
+			secn < 3600 ? (chr = 'мин', secn = Math.floor(secn / 60) % 60) :
+			secn < 86400? (chr = 'ч'  , secn = Math.floor(secn / 3600)) :
+			              (chr = 'дн' , secn = Math.floor(secn / 86400));
+
+		time.setAttribute( 'chr', chr )  , time.textContent = secn;
+		item.setAttribute( 'comment-link', 'lor:/'+ LINK_ELEM.pathname + LINK_ELEM.search );
+		info.setAttribute( 'answer'      , CALL_TYPE && (
+			CALL_TYPE.classList.contains('icon-user-color' ) ? 'пригл.' :
+			CALL_TYPE.classList.contains('icon-reply-color') ? 'ответ'  : '') || 'новый'
+		);
+		tags.append( ...LINK_ELEM.children );
+		op_c.append( LINK_ELEM.lastChild );
+		item.append( tags, info, op_c );
+		info.append( user, time );
+		user.append( USER_NAME );
+		list.append( item );
+	}
 }
