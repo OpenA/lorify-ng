@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.0
+// @version     3.2.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -21,13 +21,13 @@ const USER_SETTINGS = {
 	'Preloaded Pages Count': 1,
 	'Picture Viewer'       : 2,
 	'Scroll Top View'      : true,
-	'Upload Post Delay'    : 5,
+	'Upload Post Delay'    : 3,
 	'Code Block Short Size': 15,
 	'Code Highlight Style' : 0
 }
 
-const pagesCache    = new Map;
-const LoadQueue     = new Map;
+let ContentNode = null;
+
 const ResponsesMap  = Object.create(null);
 const CommentsCache = Object.create(null);
 const LOR           = parseLORUrl(location.href);
@@ -201,7 +201,9 @@ document.documentElement.append(
 			height: 50px;
 			margin: 500px auto;
 		}
-		.terminate {
+		.slide-left  { animation-name: slideLeft; }
+		.slide-right { animation-name: slideRight; }
+		.slide-left, .slide-right {
 			animation-duration: .4s;
 			position: relative;
 		}
@@ -213,10 +215,20 @@ document.documentElement.append(
 		.preview #commentForm, .hidden {
 			display: none;
 		}
+		.show-in {
+			animation: showIn .3s ease-in;
+		}
+		.swipe-up {
+			top: -100%;
+			animation: swipeUp .5s ease-in-out;
+		}
+		.swipe-down {
+			top: 100%;
+			animation: swipeDown .5s ease-in-out;
+		}
 		.slide-down {
-			max-height: 9999px;
 			overflow-y: hidden;
-			animation: slideDown 1.5s ease-in-out;
+			animation: slideUp 1.5s linear reverse;
 		}
 		.slide-up {
 			max-height: 0;
@@ -275,19 +287,43 @@ document.documentElement.append(
 			padding: 6px;
 		}
 		.scroll-btn:before {
-			content: '\x52';
+			font-size: 22px;
+			font-weight: bold;
 			display: block;
-			font: bold 22px fontello;
+		}
+		.link-self:before, .scroll-btn:before {
+			content: 'R';
+			font-family: fontello;
 		}
 		.scroll-btn:hover {
 			background-color: black;
 			filter: invert(100%);
 		}
-		.suplied:after {
-			content: '';
-			-webkit-animation: toHide 3s;
-			animation: toHide 3s;
+		.reply-thread {
+			left: 0; right: 0;
+			top: 0; bottom: 0;
+			overflow: scroll;
+			position: fixed;
+			background-color: rgba(77,77,77,.7);
+			overscroll-behavior: contain;
 		}
+		.reply-thread > .messages {
+			border: 0 solid rgba(0,0,0,.3);
+			border-width: 0 2px 3px 0;
+			margin: 40px auto;
+			max-width: 800px;
+			position: relative;
+		}
+		.reply-thread > .messages > .msg {
+			margin-bottom: 1px;
+			border-radius: 0;
+		}
+		.link-self, .link-thr {
+			text-decoration: none;
+		}
+		.highlight { outline: 2px dashed red; }
+		.response-block:before      { content: ':\\A' }
+		.response-block:empty:after { content: '...' }
 		.central-pic-overlay {
 			left: 0;
 			top: 0;
@@ -350,116 +386,169 @@ document.documentElement.append(
 		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 		
-		@-webkit-keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
-		@keyframes slideDown { from { max-height: 0; } to { max-height: 3000px; } }
+		@-webkit-keyframes swipeDown { from { top: 0; } to { top: 100%; } }
+		@keyframes swipeDown { from { top: 0; } to { top: 100%; } }
 		
 		@-webkit-keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
 		@keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
 		
-		@-webkit-keyframes toShow { from { opacity: 0; } to { opacity: 1; } }
-		@keyframes toShow { from { opacity: 0; } to { opacity: 1; } }
+		@-webkit-keyframes showIn { from { opacity: 0; } to { opacity: 1; } }
+		@keyframes showIn { from { opacity: 0; } to { opacity: 1; } }
 		
-		@-webkit-keyframes toHide { from { opacity: 1; } to { opacity: 0; } }
-		@keyframes toHide { from { opacity: 1; } to { opacity: 0; } }
+		@-webkit-keyframes swipeUp { from { top: 0; } to { top: -100%; } }
+		@keyframes swipeUp { from { top: 0; } to { top: -100%; } }
 		
 		@-webkit-keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 		@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 		
-		@-webkit-keyframes slideToShow { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
-		@keyframes slideToShow { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
+		@-webkit-keyframes slideRight { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
+		@keyframes slideRight { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
 		
-		@-webkit-keyframes slideToShow-reverse { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
-		@keyframes slideToShow-reverse { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
+		@-webkit-keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
+		@keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
 `}), Dynamic_Style._Main_, Dynamic_Style._CodeShrink_);
 
-class TopicNavigation {
+class TopicNavigation extends Map {
 
-	constructor(pages_count) {
+	set(page_num, page_el) {
+		super.set(page_num, page_el);
+		super.set(page_el, page_num);
+	}
+	constructor(page_num, page_el) {
 
-		const html = '<a class="page-number prev" href="#prev">←</a><a class="page-number next" href="#next">→</a>';
-		this.retID = 0.0;
+		super(page_el ? [[page_num, page_el], [page_el, page_num]] : void 0);
 
-		this.wait = _setup('div', { html: '<div class="page-loader"></div>' });
-		this.bar  = _setup('div', { html,
-			id    : 'bottom-nav',
-			class : 'nav'
-		},{ click : this });
+		this.retID = this.pages_count = 0;
 
-		this.mir  = _setup('div', { html,
-			id    : 'top-nav',
-			class : 'nav'
-		},{ click : this });
+		const constr = id => ({
+			configurable: true, get: () => {
+				const nav = _setup('div', { id, class: 'nav' }, { click: this });
+				nav.append(
+					_setup('a', { class: 'page-number prev', href: 'javascript:void(0)', text: '←' }),
+					_setup('a', { class: 'page-number next', href: 'javascript:void(0)', text: '→' })
+				);
+				Object.defineProperty(this, id, { value: nav });
+				return nav;
+			}
+		});
 
-		this.extendBar(pages_count);
+		Object.defineProperties(this, {
+			nav_t: constr('nav_t'),
+			nav_b: constr('nav_b'),
+			wait: { get: () => Object.defineProperty(this, 'wait', {
+					value: _setup('div', { class: 'page-loader' })
+				}).wait
+			, configurable: true }
+		});
+	}
+
+	async preloadPage(uri, p_num) {
+
+		uri = location.origin + uri;
+
+		let nReq, params = {
+			credentials: 'same-origin',
+			cache: 'no-cache'
+		};
+		const onComplete = async (res) => {
+
+			const { page } = parseLORUrl(res.url);
+
+			if (!res.ok) {
+				super.delete('q'+ page);
+				throw res.status +' '+ res.statusText;
+			}
+			const comms = getCommentsContent(await res.text());
+			this.set(page, comms), super.delete('q'+ page);
+			workComments( comms.querySelectorAll('.msg[id^="comment-"]') ).then(genRefMaps);
+
+			return comms;
+		}
+		if (p_num >= 0) {
+			if(!super.has('q'+ p_num)) {
+				super.set('q'+ p_num, (nReq = fetch(uri, params).then(onComplete)));
+			} else
+				nReq = super.get('q'+ p_num);
+		} else {
+			nReq = fetch(uri, Object.assign({ method: 'HEAD' }, params)).then(res => {
+				let req, qpid = 'q'+ parseLORUrl(res.url).page;
+				if (super.has(qpid)) {
+					req = super.get(qpid);
+				} else if (!res.ok) {
+					throw res.status +' '+ res.statusText;
+				} else
+					super.set(qpid, (req = fetch(res.url, params).then(onComplete)));
+				return req;
+			});
+		}
+		return nReq;
 	}
 
 	gotoPage(num) {
 
-		const { wait, bar, mir } = this;
-
-		const  _this = this,
-			currpage = LOR.page,
-			comments = pagesCache.get(currpage) || wait,
-			reverse  = (LOR.page = num) > currpage,
-			retID    = (this.retID = num + Math.random());
-
-		for (var i = 0; i < bar.children.length; i++) {
-			bar.children[i].classList.remove('broken');
-			mir.children[i].classList.remove('broken');
-		}
-		if (num <= 0) {
-			// set prev button to inactive
-			bar.firstElementChild.classList.add('broken');
-			mir.firstElementChild.classList.add('broken');
-		} else
-		if (num >= i - 3) {
-			// set next button to inactive
-			bar.lastElementChild.classList.add('broken');
-			mir.lastElementChild.classList.add('broken');
-		}
-		bar.children[`page_${ num }`].classList.add('broken');
-		mir.children[`page_${ num }`].classList.add('broken');
-
-		if (USER_SETTINGS['Scroll Top View']) {
-			comments.scrollIntoView({ block: 'start' });
-		}
 		return new Promise(resolve => {
-			if (pagesCache.has(num)) {
-				_this.swapAnimateTo( comments, pagesCache.get(num), reverse, resolve );
+			const { nav_t, nav_b } = this;
+			const { page, path   }  = LOR;
+	
+			const comms = super.get(page) || this.wait,
+			    reverse = ( LOR.page  = num) > page,
+			      retID = (this.retID = num  + Math.random());
+
+			for (var i = 0; i < nav_b.children.length; i++) {
+				nav_t.children[i].classList.remove('broken');
+				nav_b.children[i].classList.remove('broken');
+			}
+			if (num <= 0) {
+				// set prev button to inactive
+				nav_t.firstElementChild.classList.add('broken');
+				nav_b.firstElementChild.classList.add('broken');
+			} else
+			if (num >= i - 3) {
+				// set next button to inactive
+				nav_t.lastElementChild.classList.add('broken');
+				nav_b.lastElementChild.classList.add('broken');
+			}
+			nav_t.children[`navt_${ num }`].classList.add('broken');
+			nav_b.children[`navb_${ num }`].classList.add('broken');
+
+			if (USER_SETTINGS['Scroll Top View']) {
+				comms.scrollIntoView({ block: 'start' });
+			}
+			if (super.has(num)) {
+				this.swapAnimateTo( comms, super.get(num), reverse, resolve );
 			} else {
-				comments.parentNode.replaceChild( wait, comments );
-				preloadPage( LOR.path +'/page'+ num, num ).then(comms => {
-					if (_this.retID === retID)
-						_this.swapAnimateTo( wait, comms, reverse, resolve );
+				comms.parentNode.replaceChild( this.wait, comms );
+				this.preloadPage( path +'/page'+ num, num ).then(comms => {
+					if (this.retID === retID)
+						this.swapAnimateTo( this.wait, comms, reverse, resolve );
 				});
 			}
 		});
 	}
 
-	extendBar(pages_count) {
+	expandNav(count = 1) {
 
 		const { page, path } = LOR;
-		const {   bar, mir } = this,
-		prevBar = bar.firstElementChild, nextBar = bar.lastElementChild,
-		prevMir = mir.firstElementChild, nextMir = mir.lastElementChild;
+		const { nav_t, nav_b } = this,
+		prevT = nav_t.firstElementChild, nextT = nav_t.lastElementChild,
+		prevB = nav_b.firstElementChild, nextB = nav_b.lastElementChild;
 
-		this.pages_count = pages_count;
-	
-		for (var i = bar.children.length - 2; i < pages_count; i++) {
-			 let a = _setup('a', { id: `page_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` });
-			nextBar.before(a);
-			nextMir.before(a.cloneNode(true));
+		for (var i = nav_b.children.length - 2; i < count; i++) {
+			nextT.before(_setup('a', { id: `navt_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
+			nextB.before(_setup('a', { id: `navb_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
 		}
 		if (page === 0) {
-			prevBar.classList.add('broken');
-			prevMir.classList.add('broken');
+			prevT.classList.add('broken');
+			prevB.classList.add('broken');
 		} else
 		if (page === i - 1) {
-			nextBar.classList.add('broken');
-			nextMir.classList.add('broken');
+			nextT.classList.add('broken');
+			nextB.classList.add('broken');
 		}
-		bar.children[`page_${ page }`].classList.add('broken');
-		mir.children[`page_${ page }`].classList.add('broken');
+		nav_t.children[`navt_${ page }`].classList.add('broken');
+		nav_b.children[`navb_${ page }`].classList.add('broken');
+
+		return (this.pages_count = count);
 	}
 
 	handleEvent(e) {
@@ -486,23 +575,18 @@ class TopicNavigation {
 
 	swapAnimateTo(comments, content, reverse, resolve) {
 		
-		let old_nav = content.querySelector('.nav');
-		if (old_nav) {
-			content.replaceChild(this.mir, old_nav);
-		} else
-			content.querySelector('.msg[id^="comment-"]').before(this.mir);
+		let msg = content.querySelector('.msg[id^="comment-"]');
+		  (!msg ? content.prepend(this.nav_t) : msg.before(this.nav_t));
 
 		if (USER_SETTINGS['CSS3 Animation']) {
 
 			const termHandler = () => {
 				content.removeEventListener('animationend', termHandler, true);
-				content.style['animation-name'] = null;
-				content.classList.remove('terminate');
+				content.classList.remove('slide-'+ (reverse ? 'left': 'right'));
 				resolve();
 			}
 			content.addEventListener('animationend', termHandler, true);
-			content.style['animation-name'] = 'slideToShow'+ (reverse ? '-reverse' : '');
-			content.classList.add('terminate');
+			content.classList.add('slide-'+ (reverse ? 'left': 'right'));
 		} else {
 			resolve();
 		}
@@ -510,11 +594,12 @@ class TopicNavigation {
 		correctBlockCode(USER_SETTINGS['Code Block Short Size'], content);
 	}
 
-	addBouble(pagenum, cnt_new) {
-		const btn = this.bar.children[`page_${pagenum}`];
-		cnt_new += Number( btn.getAttribute('cnt-new') );
-		btn.setAttribute('cnt-new', cnt_new);
-		this.mir.children[`page_${pagenum}`].setAttribute('cnt-new', cnt_new);
+	addBouble(num, cn) {
+		const top = this.nav_t.children[`navt_${num}`],
+		      bot = this.nav_b.children[`navb_${num}`];
+		cn += Number(bot.getAttribute('cnt-new') || 0),
+		             top.setAttribute('cnt-new', cn),
+		             bot.setAttribute('cnt-new', cn);
 	}
 }
 
@@ -648,15 +733,17 @@ const onDOMReady = () => {
 
 	const { path, page, lastmod, cid, topic } = LOR;
 
-	const body = document.body;
+	const body = document.getElementById('bd') || document.body;
 	const init = App.init();
 
-	body.appendChild( // add scroll top button
+	ContentNode = body.appendChild(
+		_setup('div', { class: 'lorify-cont' })
+	);
+	ContentNode.appendChild( // add scroll top button
 		_setup('div', { class: 'scroll-nav' }, { click: ({ target: { id } }) => {
 			if (!id) return;
-			let up = id === 'scroll_up', el = document.getElementById(up ? 'hd' : 'bd');
-			if (!el) el = document.body; else
-			if (!up) el = el.querySelector('hr:last-of-type') || el;
+			const up = id === 'scroll_up',
+			      el = up ? document.body : ( document.getElementById('related-topics') || ContentNode ).previousElementSibling;
 			el.scrollIntoView({ block: up ? 'start' : 'end', behavior: 'smooth' });
 		}})
 	).append(
@@ -674,7 +761,7 @@ const onDOMReady = () => {
 		handleCommentForm(CommentForm);
 		body.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 
-		let bd_rep = body.querySelector('#bd > h2 > a[name="rep"], #bd #navPath');
+		let bd_rep = body.querySelector('h2 > a[name="rep"], #navPath');
 		if (bd_rep) {
 			bd_rep.append('\n(', _setup('a', {
 				text : 'с цитатой',
@@ -682,9 +769,9 @@ const onDOMReady = () => {
 				href : 'javascript:void(0)'
 			},{
 				click: () => {
-					let l = parseReplyUrl(location.search);
+					const [ topid, repid ] = parseReplyUrl(location.search);
 					convMsgBody(
-						body.querySelector(`#topic-${ l.topic } .msg_body > div:not([class]), #comment-${ l.replyto } .msg_body`)
+						body.querySelector(`#topic-${ topid } .msg_body > div:not([class]), #comment-${ repid } .msg_body`)
 					);
 				}
 			}), ')\n');
@@ -697,8 +784,8 @@ const onDOMReady = () => {
 			if (reset_btn.className === 'btn btn-danger') {
 				reset_btn.className = 'btn btn-primary';
 				reset_btn.textContent = '...';
-				sendFormData('notifications-reset',
-				new FormData(reset_form), false).then(() => {
+				sendFormData('/notifications-reset',
+				new FormData(reset_form)).then(() => {
 					reset_form.parentNode.style.display = 'none';
 					App.reset();
 				});
@@ -749,27 +836,23 @@ const onDOMReady = () => {
 	}
 
 	const comments = document.getElementById('comments'),
-	      msgs     = comments.querySelectorAll('.msg[id^="comment-"]');
+	      messages = comments.querySelectorAll('.msg[id^="comment-"]');
 	const navPages = body.querySelectorAll('.messages > .nav > .page-number');
 	const infBlock = body.querySelector('.messages > .infoblock');
 	const user     = body.querySelector('#loginGreating > a[href$="/profile"]');
 
-	LOR.Login = user ? new RegExp(user.innerText) : /(!^)/;
-	let lastPageIdx = 0;
+	LOR.Login  = new RegExp( user ? '[\\s\\n]*'+ user.innerText +'[\\s\\n]*$' : '(!^)');
+	Navigation = new TopicNavigation(page, comments);
 
-	if (navPages.length) {
-
-		const { bar, mir } = (Navigation = new TopicNavigation(navPages.length - 2));
-		const nav = navPages[0].parentNode;
-		lastPageIdx = navPages.length - 3;
-
-		nav.parentNode.replaceChild(bar, nav);
-		comments.replaceChild(mir, comments.querySelector('.nav'));
+	let lastPageIdx = Navigation.expandNav(navPages.length ? navPages.length - 2 : 1) - 1;
+	if (lastPageIdx) {
+		let { nav_t, nav_b } = Navigation;
+		const old_b = navPages[0].parentNode,
+		      old_t = comments.querySelector('.nav');
+		old_t.parentNode.replaceChild(nav_t, old_t);
+		old_b.parentNode.replaceChild(nav_b, old_b);
 	}
-	pagesCache.set(page, comments);
-	pagesCache.set(comments, page);
-
-	addToCommentsCache(msgs, null, true);
+	workComments(messages).then(genRefMaps);
 
 	if (location.pathname.includes(`${topic}/thread/`))
 		return;
@@ -786,7 +869,7 @@ const onDOMReady = () => {
 	} else
 	if (!topicArc) {
 		if (page != lastPageIdx) {
-			preloadPage(path +'/page'+ lastPageIdx, lastPageIdx).then(RealtimeWatcher.start);
+			Navigation.preloadPage(path +'/page'+ lastPageIdx, lastPageIdx).then(RealtimeWatcher.start);
 		} else {
 			RealtimeWatcher.start(comments);
 		}
@@ -797,10 +880,10 @@ const onDOMReady = () => {
 		let g = 1 + (page != lastPageIdx);
 
 		for (let i = page + 1; g < PL_COUNT && i < lastPageIdx; i++, g++) {
-			preloadPage(path +'/page'+ i, i);
+			Navigation.preloadPage(path +'/page'+ i, i);
 		}
 		for (let i = page - 1; g < PL_COUNT && i >= 0; i--, g++) {
-			preloadPage(path +'/page'+ i, i);
+			Navigation.preloadPage(path +'/page'+ i, i);
 		}
 	});
 
@@ -812,9 +895,9 @@ const winEvents = {
 		const newadded = document.querySelectorAll('.newadded[id^="comment-"]');
 		for (const { classList } of newadded)
 			classList.remove('newadded');
-		if (Navigation) {
-			Navigation.bar.children[`page_${LOR.page}`].removeAttribute('cnt-new');
-			Navigation.mir.children[`page_${LOR.page}`].removeAttribute('cnt-new');
+		if (Navigation.pages_count) {
+			Navigation.nav_t.children[`navt_${LOR.page}`].removeAttribute('cnt-new');
+			Navigation.nav_b.children[`navb_${LOR.page}`].removeAttribute('cnt-new');
 		}
 		Favicon.draw(
 			(Favicon.index -= newadded.length)
@@ -1187,9 +1270,9 @@ function onWSData(dbCiD) {
 		const comms    = getCommentsContent(html);
 		const lastmod  = comms.querySelector(`#comment-${dbCiD[dbCiD.length - 1]} .sign > time`);
 
-		if (pagesCache.has(page)) {
+		if (Navigation.has(page)) {
 
-			const parent = pagesCache.get(page);
+			const parent = Navigation.get(page);
 			const cache  = [];
 
 			for (const msg of parent.querySelectorAll('.msg[id^="comment-"]')) {
@@ -1231,31 +1314,28 @@ function onWSData(dbCiD) {
 				cache.push(comment);
 			}
 			if ((i = cache.length)) {
-				addToCommentsCache( cache, { class: 'msg newadded' } );
+				workComments( cache, 1 ).then(genRefMaps);
 				Element.prototype.append.apply(parent, cache);
-				if (Navigation)
-					Navigation.addBouble(page, i);
+				Navigation.addBouble(page, i);
 				Favicon.draw((Favicon.index += i));
 			}
 		} else {
 
-			pagesCache.set(page, comms);
-			pagesCache.set(comms, page);
+			Navigation.set(page, comms);
 
 			const nav = comms.querySelectorAll('.nav > .page-number'),
 			  nav_cnt = nav.length - 2;
 			const msg = comms.querySelectorAll('.msg[id^="comment-"]'),
 			  msg_cnt = msg.length;
 			
-			if (!Navigation) {
-				const { bar, mir } = (Navigation = new TopicNavigation(nav_cnt));
-				document.getElementById('realtime').after(bar);
-				document.querySelector('#comments > .msg[id^="comment-"]').before(mir);
-			} else {
-				Navigation.extendBar(nav_cnt);
+			if (Navigation.pages_count <= 1) {
+				const { nav_t, nav_b } = Navigation;
+				document.getElementById('realtime').after(nav_b);
+				document.querySelector('#comments > .msg[id^="comment-"]').before(nav_t);
 			}
+			Navigation.extendBar(nav_cnt);
 			Navigation.addBouble(page, msg_cnt);
-			addToCommentsCache( msg, { class: 'msg newadded' } );
+			workComments( msg, 1 ).then(genRefMaps);
 			Favicon.draw((Favicon.index += msg_cnt));
 		}
 		if (lastmod) {
@@ -1264,69 +1344,100 @@ function onWSData(dbCiD) {
 	});
 }
 
-function addToCommentsCache(els, attrs, jqfix) {
-	
-	const { path, Login, TopicStarter } = LOR;
+ const workComments = async (msg_list, pass = 0x00) => {
 
-	var usr_refs = 0;
-	
-	for (const el of els) {
+	const { path, Login } = LOR;
+	const works = new Array(msg_list.length);
 
-		const cid = el.id.substring('comment-'.length);
+	for (let i = 0; i < msg_list.length; i++) {
 
-		ContentFinder.check(el);
+		const msg = msg_list[i];
+		 works[i] = new Promise(resolve => {
 
-		addPreviewHandler(
-			(CommentsCache[cid] = el), attrs, !TOUCH_DEVICE
-		);
+			const cid = msg.id.substring('comment-'.length);
+			let reply = msg.querySelector(`.title > a[href^="${ path }?cid="]`);
+			if (reply) {
+				// Extract reply comment ID from the 'search' string
+				let reid = reply.search.substring('?cid='.length);
+				let user = msg.querySelector('a[itemprop="creator"]');
+				// Create new response-map for this comment
+				resolve([reid, cid, user ? user.innerText : 'anon', pass & Login.test(reply.nextSibling.textContent)]);
+				// Write special attributes
+				reply.className = 'link-pref';
+			} else
+				resolve();
+			if (pass & 0x1)
+				msg.classList.add('newadded');
 
-		const acid = _setup(el.querySelector(`.title > a[href^="${ path }?cid="]`), { class: 'link-pref' });
-
-		for (let a of el.querySelectorAll(`.reply > ul > li > a[href^="${ path }?cid="]`))
-			a.className = 'link-self';
-
-		if (acid) {
-			// Extract reply comment ID from the 'search' string
-			const num  = acid.search.match(/cid=(\d+)/)[1];
-			const text = (el.querySelector('a[itemprop="creator"]') || '').innerText || 'anonymous';
-			// Write special attributes
-			acid.setAttribute('cid', num);
-			if (!jqfix) {
-				usr_refs += Login.test(acid.nextSibling.textContent);
-			}
-			// Create new response-map for this comment
-			if (!(num in ResponsesMap)) {
-				ResponsesMap[num] = new Array;
-			}
-			ResponsesMap[num].push({
-				class: `link-pref${text === TopicStarter ? ' ts' : ''}`,
-				href: `${path}?cid=${cid}`, text, cid
-			});
-		}
-	}
-
-	for (var cid in ResponsesMap) {
-		if ( cid in CommentsCache ) {
-
-			const comment = CommentsCache[cid];
-			let res_block = comment.querySelector('li.response-block');
-
-			if(!res_block) {
-				res_block = (comment.querySelector('.reply > ul') || comment.lastElementChild
-				.lastElementChild.appendChild(
-					_setup('ul', { class: 'reply' })
-				)).appendChild(
-					_setup('li', { class: 'response-block', text: 'Ответы:' })
-				);
-			}
-			Element.prototype.append.apply(
-				res_block, ResponsesMap[cid].map(attrs => _setup('a', attrs))
+			addPreviewHandler(
+				(CommentsCache[cid] = msg), null, !TOUCH_DEVICE
 			);
-			delete ResponsesMap[cid];
-		}
+			ContentFinder.check(msg);
+
+			for (let a of msg.querySelectorAll(`.reply > ul > li > a[href^="${ path }"]`)) {
+				let reid = a.search.substring('?cid='.length);
+				if (reid === cid) {
+					a.className = 'link-self';
+					a.textContent = '';
+				} else {
+					if (reid)
+						a.setAttribute('href', `${a.pathname}/thread/${cid}#comment-${reid}`);
+					a.className = 'link-thr';
+					a.textContent = '\nОтветы';
+					a.after( _setup('span', { class: 'response-block' }) );
+				}
+			}
+		});
+	}
+	return Promise.all(works);
+ }
+
+ const genRefMaps = (re_list) => {
+
+	const { path, TopicStarter } = LOR;
+	const RefMap = Object.create(null);
+	let usr_refs = 0;
+
+	for (let re of re_list) {
+		if (!re)
+			continue;
+		let [reid, cid, user, i] = re, a = _setup('a', {
+			class: 'link-pref' + (user === TopicStarter ? ' ts' : ''),
+			href: path +'?cid='+ cid,
+			text: user
+		});
+		if (reid in RefMap) {
+			RefMap[reid].push(a);
+		} else
+			RefMap[reid] = [a];
+		usr_refs += i;
 	}
 	if (usr_refs > 0) {
 		App.checkNow();
+	}
+	for (let cid in RefMap) {
+		if ( cid in CommentsCache ) {
+
+			const comment = CommentsCache[cid];
+			let res_block = comment.querySelector('.response-block');
+
+			if(!res_block) {
+				res_block = _setup('span', { class: 'response-block' })
+				const lt  = _setup('a'   , { class: 'link-thr', text: '\nОтветы', href: path +'/thread/'+ cid }),
+				      li  = document.createElement('li'),
+				      ls  = comment.querySelector('.link-self');
+				if ( !ls  ) {
+					(comment.querySelector('.reply > ul') || comment.lastElementChild.lastElementChild.appendChild(
+						_setup('ul', { class: 'reply' })
+					)).append(li);
+				} else
+					ls.parentNode.before(li);
+				li.append(lt, res_block);
+			}
+			res_block.append(...RefMap[cid]);
+		} else {
+			ResponsesMap[cid] = RefMap[cid];
+		}
 	}
 }
 
@@ -1339,7 +1450,8 @@ function getCommentsContent(html) {
 	    newfv = topic.querySelector('.fav-buttons'),
 	    comms = doc.getElementById('comments');
 	// Remove banner scripts
-	comms.querySelectorAll('script, style').forEach(s => s.remove());
+	while (!/^(?:msg|datejump)/.test(comms.children[0].className))
+		comms.children[0].remove();
 	// Add reply button action
 	if (CommentForm)
 		doc.querySelectorAll('a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
@@ -1379,34 +1491,30 @@ function removePreviews(comment) {
 	}
 }
 
-function goToCommentPage(cid, url) {
+const goToCommentPage = (cid, url) => new Promise(resolve => {
 
-	return new Promise((resolve, reject) => {
-
-		const getFromCache = () => {
-			const comment = CommentsCache[cid];
-					  num = pagesCache.get( comment.parentNode );
-			Navigation.gotoPage(num).then(() => {
-				comment.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				history.pushState({ lorYoffset: 0 }, null, lorifyUrl(LOR.path, num, LOR.lastmod, cid));
-				resolve(comment);
-			});
-		}
-		history.replaceState({ lorYoffset: window.pageYOffset }, null, location.pathname + location.search);
-
-		var comment = document.getElementById(`comment-${LOR.cid = cid}`);
-		if (comment) {
+	const getFromCache = () => {
+		const comment = CommentsCache[cid];
+				  num = Navigation.get( comment.parentNode );
+		Navigation.gotoPage(num).then(() => {
 			comment.scrollIntoView({ block: 'start', behavior: 'smooth' });
-			history.pushState({ lorYoffset: 0 }, null, `${location.pathname + location.search}#comment-${cid}`);
+			history.pushState({ lorYoffset: 0 }, null, lorifyUrl(LOR.path, num, LOR.lastmod, cid));
 			resolve(comment);
-		} else if (cid in CommentsCache) {
-			getFromCache();
-		} else if (url) {
-			preloadPage(url).then(getFromCache).catch(reject);
-		} else
-			reject();
-	});
-}
+		});
+	}
+	history.replaceState({ lorYoffset: window.pageYOffset }, null, location.pathname + location.search);
+
+	let comment = document.getElementById(`comment-${LOR.cid = cid}`);
+	if (comment) {
+		comment.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		history.pushState({ lorYoffset: 0 }, null, `${location.pathname + location.search}#comment-${cid}`);
+		resolve(comment);
+	} else if (cid in CommentsCache) {
+		getFromCache();
+	} else if (url) {
+		Navigation.preloadPage(url).then(getFromCache);
+	}
+});
 
 class CentralPicture {
 
@@ -1424,8 +1532,6 @@ class CentralPicture {
 		var _Rdeg  = 0;
 		var _X     = 0;
 		var _Y     = 0;
-
-		const self = this;
 
 		const _IMG = _setup('img', {
 			class: 'central-pic-img',
@@ -1451,7 +1557,7 @@ class CentralPicture {
 			_IMG.style.top  = _Y = 0;
 			Dynamic_Style['Center Image Scale'] = _Scale = 1;
 			Dynamic_Style['Center Image Rotate'] = _Rdeg = 0;
-			window.removeEventListener(RESIZE_FUNCT, self, false);
+			window.removeEventListener(RESIZE_FUNCT, this, false);
 		}
 		const handler = e => {
 			switch (e.target.classList[0]) {
@@ -1501,7 +1607,7 @@ class CentralPicture {
 			_IMG.addEventListener('touchend', ({ touches, changedTouches }) => {
 				if (!touches.length && _Scale <= 1) {
 					if (changedTouches[0].clientY >= 25) {
-						self.setImagePos( _IMG.width, _IMG.height );
+						this.setImagePos( _IMG.width, _IMG.height );
 					} else
 						cleanUp();
 				}
@@ -1581,18 +1687,19 @@ class CentralPicture {
 
 		window.addEventListener(RESIZE_FUNCT, this, false);
 
-		document.body.append( this._Overlay );
+		ContentNode.append( this._Overlay );
 	}
 }
 
-function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
+const addPreviewHandler = (comment, attrs, mouse = false) => {
 
-	_setup(comment, attrs, { click: e => {
-
+	_setup(comment, attrs);
+	comment.addEventListener('click', e => {
 		const el  = e.target,
 		   aClass = el.classList,
-		   parent = el.parentNode;
-
+		   parent = el.parentNode,
+		   aPath  = el.pathname,
+		  aSearch = el.search;
 		let alter = true;
 
 		switch (aClass[0]) {
@@ -1602,36 +1709,36 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 				parent.scrollIntoView();
 			break;
 		case 'link-navs':
-			if (el.pathname !== LOR.path) {
-				if (App.openUrl(el.pathname + el.search)) {
+			if (aPath !== LOR.path) {
+				if (App.openUrl(aPath + aSearch)) {
 					return;
 				} else
 					break;
 			}
 		case 'link-self':
 		case 'link-pref':
-			var cid = el.search.substring('?cid='.length);
-			Drops = 1;
+			var cid = aSearch.substring('?cid='.length);
 			Timer.delete('Close Preview', 'Open Preview', cid);
-			removePreviews();
-			goToCommentPage(cid, el.pathname + el.search);
+			Drops = 1, removePreviews();
+			goToCommentPage(cid, aPath + aSearch);
 			break;
-		case 'quoteComment':
-			alter = false;
+		case 'link-thr':
+			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
+			return;//showReplyThread(aPath, tid, cid);
+			break;
+		case 'quoteComment': alter = false;
 		case 'replyComment':
-			var [ name, cid ] = comment.id.split('-');
-			var href = el.getAttribute('href');
-			if (name === 'preview') {
+			var [ tid, cid ] = parseReplyUrl(aSearch);
+			if (aClass.contains('preview')) {
 				goToCommentPage(cid).then(target => {
-					toggleForm(target.lastElementChild.lastElementChild, href, !alter);
+					toggleForm(target.lastElementChild.lastElementChild, tid, cid, !alter);
 				});
 			} else {
-				toggleForm(comment.lastElementChild.lastElementChild, href, !alter);
+				toggleForm(comment.lastElementChild.lastElementChild, tid, cid, !alter);
 			}
 			break;
-		case 'medium-image':
-			alter = false;
-		case 'link-image':
+		case 'medium-image': alter = false;
+		case   'link-image':
 			if (USER_SETTINGS['Picture Viewer'] > alter) {
 				CentralPicture.expose((alter ? el : parent).href);
 				break;
@@ -1640,9 +1747,9 @@ function addPreviewHandler(comment, attrs, _MOUSE_ = false) {
 			return;
 		}
 		e.preventDefault();
-	}});
-	
-	if (_MOUSE_) {
+	});
+
+	if (mouse) {
 		comment.addEventListener('mouseover', e => {
 			const anc = e.target;
 			if (anc.classList[0] === 'link-pref') {
@@ -1684,7 +1791,7 @@ function showPreview(anchor) {
 		// Add Loading Process stub
 		commentEl = _setup('article', { class: 'msg preview', text: 'Загрузка...'});
 		// Get an HTML containing the comment
-		preloadPage(anchor.pathname + anchor.search).then(comms => {
+		Navigation.preloadPage(anchor.pathname + anchor.search).then(comms => {
 			commentEl.remove();
 			showCommentInternal(
 				comms.children['comment-'+ commentID].cloneNode(true),
@@ -1742,7 +1849,7 @@ function showCommentInternal(commentElement, commentID, hoveredLink, isNew = fal
 		// Avoid duplicated IDs when the original comment was found on the same page
 			id: 'preview-'+ commentID, 
 			class: 'msg preview',
-			style: 'animation-name: toShow; border: 1px solid grey; '+
+			style: 'animation-name: showIn; border: 1px solid grey;'+
 				// There are no limitations for the 'z-index' in the CSS standard,
 				// so it depends on the browser. Let's just set it to 300
 				'max-width: '+ parentBlock.offsetWidth +
@@ -1799,6 +1906,7 @@ function _setup(el, attrs, events) {
 		case 'object':
 			for (const key in attrs) {
 				attrs[key] === undefined ? el.removeAttribute(key) :
+				key === 'class'? el.className   = attrs[key] :
 				key === 'html' ? el.innerHTML   = attrs[key] :
 				key === 'text' ? el.textContent = attrs[key] :
 				key in el    && (el[key]        = attrs[key] ) == attrs[key]
@@ -1816,64 +1924,11 @@ function _setup(el, attrs, events) {
 	return el;
 }
 
-function lorifyUrl(path, page, lastmod, cid) {
-	return path + (page    ? `/page${     page    }` : '') +
-				  (lastmod ? `?lastmod=${ lastmod }` : '') +
-				  (cid     ? `#comment-${ cid     }` : '');
-}
-
-function preloadPage(url, page_num) {
-
-	if (LoadQueue.has(page_num))
-		return LoadQueue.get(page_num);
-
-	const xhr = new XMLHttpRequest;
-	      xhr.withCredentials = true;
-	      xhr.open('GET', location.origin + url, true);
-
-	const onComplete = new Promise((resolve, reject) => {
-		xhr.addEventListener('load', (e) => {
-			const { page } = parseLORUrl(xhr.responseURL);
-			const comms = getCommentsContent(xhr.responseText);
-
-			pagesCache.set(page, comms);
-			pagesCache.set(comms, page);
-
-			addToCommentsCache(
-				comms.querySelectorAll('.msg[id^="comment-"]')
-			);
-			resolve(comms);
-			LoadQueue.delete(page);
-		});
-		xhr.onerror = () => {
-			reject( xhr.status +' '+ xhr.statusText )
-			LoadQueue.delete(parseLORUrl(xhr.responseURL).page);
-		};
-		//xhr.onabort = (e) => console.log( e );
-	});
-	if (page_num >= 0) {
-		LoadQueue.set(page_num, onComplete);
-		xhr.send();
-		return onComplete;
-	}
-	return new Promise((resolve, reject) => {
-		xhr.onreadystatechange = () => {
-			if (xhr.readyState !== 2)
-				return;
-
-			const { page } = parseLORUrl(xhr.responseURL);
-
-			if (LoadQueue.has(page)) {
-				LoadQueue.get(page).then(resolve);
-				xhr.abort();
-			} else {
-				LoadQueue.set(page, onComplete);
-				onComplete.then(cmms => resolve(cmms)).catch(reject);
-			}
-		}
-		xhr.send();
-	});
-}
+const lorifyUrl = (path, page, lastmod, cid) => (path +
+	(page    ? `/page${     page    }` : '') +
+	(lastmod ? `?lastmod=${ lastmod }` : '') +
+	(cid     ? `#comment-${ cid     }` : '')
+)
 
 function parseLORUrl(uri) {
 	const out = Object.create(null);
@@ -1888,11 +1943,12 @@ function parseLORUrl(uri) {
 	return out;
 }
 
-function parseReplyUrl(uri) {
-	const [, topic = '0', replyto = '0'] = uri.match(/\?topic=(\d+)(?:\&replyto=(\d+))?/) || '';
-	return {
-		topic, replyto
-	};
+const parseReplyUrl = (uri, rxi = 0) => {
+	const  m = uri.match([
+		/\?topic=(\d+)(?:\&replyto=(\d+))?/,
+		/thread\/(\d+)(?:\#comment-(\d+))?/
+	][rxi]);
+	return m ? [ m[1], m[2] || '' ] : ['', ''];
 }
 
 function getDataResponse(uri, resolve, reject = () => void 0) {
@@ -1907,28 +1963,22 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
-function sendFormData(uri, formData, json = true) {
-	
-	const REQPARAMS = {
+const sendFormData = (uri, formData, json = false, signal = null) => (
+	fetch(location.origin + uri, { signal,
 		credentials : 'same-origin',
 		method      : 'POST',
 		body        : formData,
-		headers     : {
-			'Accept': 'application/json'
-		}
-	}
-	
-	return fetch(location.origin +'/'+ uri, REQPARAMS).then(
-		response => response.ok
-			? (json ? response.json() : Promise.resolve(response))
-			: Promise.reject(response)
-	);
-}
+		headers     : { 'Accept': 'application/json' }
+	}).then(
+		json ? res => (res.ok ? res.json() : Promise.resolve({ errors: [res.statusText], url: res.url }))
+		     : res => (res.ok ? Promise.resolve(res) : Promise.reject(res.status +' '+ res.statusText))
+	)
+);
 
 function handleCommentForm(form) {
 	
-	const TEXT_AREA    = form.elements.msg, TITLE_AREA = form.elements.title || { value: '' };
-	const ACTION_JSP   = form.getAttribute('action').replace(/^\//, '');
+	const TEXT_AREA    = form.elements.msg;
+	const TITLE_AREA   = form.elements.title || { value: '' };
 	const FACT_PANNEL  = form.querySelector('.form-actions');
 	const NODE_PREVIEW = _setup('div', { id: 'commentPreview' });
 	const MARKUP_PANEL = _setup('div', { id: 'markup-panel', class: 'lorcode'});
@@ -1997,7 +2047,7 @@ function handleCommentForm(form) {
 		formData.append('preview', '');
 
 		if (form.elements['topic']) {
-			sendFormData('add_comment_ajax', formData).then(
+			sendFormData('/add_comment_ajax', formData, true).then(
 				({ errors, preview }) => {
 					NODE_PREVIEW.children[0].textContent = errors.join('\n');
 					NODE_PREVIEW.children[1].textContent = preview['title'] || '';
@@ -2006,7 +2056,7 @@ function handleCommentForm(form) {
 				}
 			);
 		} else {
-			sendFormData(ACTION_JSP, formData, false).then(
+			sendFormData(form.getAttribute('action'), formData).then(
 				res => res.text().then(html => {
 					const doc = new DOMParser().parseFromString(html, 'text/html'),
 					      msg = doc.querySelector('.messages');
@@ -2039,6 +2089,8 @@ function handleCommentForm(form) {
 
 	const doAction = {
 
+		 do_abort: null,
+
 		'do_open': () => {
 			const parent = form.parentNode;
 			const slideCompl = () => {
@@ -2066,9 +2118,30 @@ function handleCommentForm(form) {
 
 		'do_upload': (btn, param) => {
 
+			const delay = USER_SETTINGS['Upload Post Delay'] * 1e3,
+			        uri = form.getAttribute('action');
+
+			const onAbort = () => {
+				Timer.delete('Upload Post Delay');
+				submit_process(btn, false);
+				alert('Отправка прервана.');
+			}
+			let signal = null;
+
+			if (window.AbortController) {
+				const control = new AbortController;
+				      signal  = control.signal;
+
+				// срабатывает при вызове controller.abort()
+				signal.addEventListener('abort', onAbort);
+
+				doAction.do_abort = () => control.abort(); // отмена!
+			} else
+				doAction.do_abort = onAbort;
+
 			submit_process(btn, true);
 
-			Timer.set('Upload Post Delay', () => {
+			const doUpload = () => {
 
 				const formData = new FormData( form );
 				const targetId = (form.elements['original'] || { value: 'last' }).value
@@ -2076,7 +2149,7 @@ function handleCommentForm(form) {
 				if (param)
 					formData.append(param, '');
 
-				sendFormData(ACTION_JSP, formData, false).then(({ url }) => {
+				sendFormData(uri, formData, false, signal).then(({ url }) => {
 					if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
 						window.onbeforeunload = null;
 						location.href         = url + (
@@ -2084,14 +2157,20 @@ function handleCommentForm(form) {
 						);
 						return;
 					}
-					submit_process(btn, false);
 					purge_form();
+					submit_process(btn, false);
+					doAction.do_abort = null;
 					doAction.do_close();
 				}).catch(e => {
+					doAction.do_abort = null;
 					form.appendChild( NODE_PREVIEW ).children[0].textContent = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n\n(${ e.status ? e.status +' '+ e.statusText : e })`;
 					submit_process(btn, false);
 				});
-			}, USER_SETTINGS['Upload Post Delay'] * 1e3);
+			}
+			if (delay > 25)
+				Timer.set('Upload Post Delay', doUpload, delay);
+			else
+				doUpload();
 		},
 
 		'do_preview': () => {
@@ -2110,9 +2189,8 @@ function handleCommentForm(form) {
 		'do_cancel': () => {
 
 			if (form.elements['cancel'].classList.contains('btn-danger')) {
-				Timer.delete('Upload Post Delay');
-				submit_process(FACT_PANNEL.querySelector('.process[do-upload]'), false);
-				alert('Отправка прервана.');
+				if (doAction.do_abort)
+					doAction.do_abort();
 			} else {
 				const length = TEXT_AREA.textLength + TITLE_AREA.value.length;
 				if (length > 0 && window.confirm('Очистить форму?'))
@@ -2355,7 +2433,7 @@ function toMemories(e) {
 	case 'tagFavAdd': 
 		f_data.append(to_del ? 'del' : 'add', '');
 		f_data.append('tagName', m_tag);
-		uri = `user-filter/${name}-tag`;
+		uri = `/user-filter/${name}-tag`;
 		cntr = this.parentNode.children[name.replace('orite', 's') + 'Count'];
 		break;
 	case 'memories_button':
@@ -2369,10 +2447,13 @@ function toMemories(e) {
 			f_data.append('remove', ''); to_del = 1;
 			f_data.append('id', m_tag);
 		}
-		uri = 'memories.jsp';
+		uri = '/memories.jsp';
 		cntr = this.parentNode.children[(watch ? 'memories' : 'favs') +'_count'];
 	}
-	sendFormData(uri, f_data).then(data => {
+	sendFormData(uri, f_data, true).then(data => {
+		this.disabled = false;
+		if ('errors' in data)
+			return;
 		let { count = 0, id = '' } = data;
 		if (Number.isInteger(data))
 			id = '0', count = data;
@@ -2381,22 +2462,15 @@ function toMemories(e) {
 		cntr.textContent = count;
 		this.title = mem_title[name][to_del];
 		this.classList[ to_del ? 'remove' : 'add' ]('selected');
-		this.disabled = false;
-	}).catch(() => {
-		this.disabled = false;
 	});
 }
 
-function toggleForm(underc, href, quote) {
+const toggleForm = (underc, tid, cid, quote) => {
 
-	const { topic, replyto } = parseReplyUrl(href);
+	const { topic, replyto } = CommentForm.elements;
+	const   parent           = CommentForm.parentNode;
 
-	const frepto = CommentForm.elements.replyto;
-	const ftopic = CommentForm.elements.topic;
-	const parent = CommentForm.parentNode;
-
-	let toshow = (parent.style['display'] === 'none');
-
+	let toshow = (parent.style.display === 'none');
 	if (quote) {
 		convMsgBody(
 			underc.querySelector('[itemprop="articleBody"]') || underc
@@ -2404,13 +2478,13 @@ function toggleForm(underc, href, quote) {
 		if (parent.parentNode === underc && !toshow)
 			return;
 	}
-	if (frepto.value != replyto) {
-		parent.style['display'] = 'none';
+	if (replyto.value != cid) {
+		parent.style.display = 'none';
 		toshow = true;
 	}
 	if (toshow) {
-		frepto.value = replyto;
-		ftopic.value = topic;
+		replyto.value = cid;
+		topic.value   = tid;
 		underc.append(parent);
 		CommentForm.dispatchEvent( new CustomEvent('doAction', { detail: 'open' }) );
 	} else {
@@ -2418,16 +2492,13 @@ function toggleForm(underc, href, quote) {
 	}
 }
 
-function handleReplyToBtn(btn) {
+const handleReplyToBtn = anc => {
 
-	const href   = btn.getAttribute('href');
-	const parent = btn.parentNode;
+	const qut = anc.cloneNode();
 
-	btn.remove(), parent.append(
-		_setup('a', { class: 'replyComment', href, text: 'Ответить'}),
-		'\n.\n',
-		_setup('a', { class: 'quoteComment', href, text: 'с цитатой'})
-	);
+	anc.className = 'replyComment', anc.textContent = 'Ответить';
+	qut.className = 'quoteComment', qut.textContent = 'с цитатой';
+	anc.after('\n.\n', qut);
 }
 
 function convMsgBody(msg) {
@@ -2653,8 +2724,7 @@ function WebExt() {
 function UserScript() {
 
 	var main_events_count, reset_form, lorylist;
-	var iterate = 2,
-		notes   = Number(localStorage.getItem('l0rNG-notes'));
+	var notes   = Number(localStorage.getItem('l0rNG-notes'));
 
 	const self = {
 		checkNow: () => void 0,
@@ -2734,7 +2804,6 @@ function UserScript() {
 	}
 
 	const saveParams = changes => {
-		iterate = 2;
 		loryform.classList.add('save-msg');
 		localStorage.setItem('lorify-ng', JSON.stringify(changes));
 	}
@@ -2762,7 +2831,8 @@ function UserScript() {
 				case 'notify-clear':
 					if (!btn.disabled && reset_form) {
 						btn.disabled = true;
-						sendFormData('notifications-reset', new FormData( reset_form ), false).then(() => {
+						sendFormData('/notifications-reset',
+						new FormData( reset_form )).then(() => {
 							reset_form = setNotes(true, 0);
 							btn.disabled = false;
 						});
@@ -2844,7 +2914,7 @@ function UserScript() {
 		<div class="tab-row">
 			<span class="tab-cell">Задержка перед отправкой:</span>
 			<span class="tab-cell step-line">
-				<input type="range" min="1" max="10" step="1" id="Upload Post Delay">
+				<input type="range" min="0" max="9" step="1" id="Upload Post Delay">
 				<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
 			</span>
 		</div>
@@ -2858,9 +2928,8 @@ function UserScript() {
 				<button type="button" id="reset-setts" title="вернуть настройки по умолчанию">сброс</button>
 			</span>
 		</div>`}, {
-			animationiteration: () => {
-				if ((iterate--) > 0)
-					loryform.classList.remove('save-msg');
+			animationend: () => {
+				loryform.classList.remove('save-msg');
 			},
 			change: ({ target }) => {
 				if (!target.hasAttribute('input-hold'))
@@ -2981,6 +3050,7 @@ function UserScript() {
 			font: italic 14px serif;
 		}
 		.step-line, .step-line > input {
+			counter-reset: stepIdx -1;
 			width: 180px;
 		}
 		st:before, .step-line > input, #lorynotify, #lorytoggle {
@@ -3002,8 +3072,8 @@ function UserScript() {
 		#loginGreating { margin-right: 42px!important; }
 		#reset-setts, .info-line:before { position: absolute; right: 0; }
 		.info-line:before {
-			-webkit-animation: apply 2s ease-in infinite;
-			animation: apply 2s ease-in infinite;
+			-webkit-animation: 2s ease-in 2 alternate showIn;
+			animation: 2s ease-in 2 alternate showIn;
 			color: #d25555;
 			background-color: white;
 			left: 0; top: 0;
@@ -3018,12 +3088,6 @@ function UserScript() {
 			#loryform, .lorify-notes-panel { right: 0; }
 			#lorynotify.pushed { border-radius: 0 0 5px 5px; padding: 2px 6px; }
 			#loriko-svg { width: 28px; margin: 1px; }
-		}
-		@keyframes apply {
-			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
-		}
-		@-webkit-keyframes apply {
-			0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: 0; }
 		}
 	</style>`}, {
 		click: e => {

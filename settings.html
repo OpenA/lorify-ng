@@ -37,6 +37,7 @@
 				color: #777;
 			}
 			.step-line, .step-line > input {
+				counter-reset: stepIdx -1;
 				width: 180px;
 			}
 			st:before, .step-line > input {
@@ -235,7 +236,7 @@
 			<div class="tab-row">
 				<span class="tab-cell">Задержка перед отправкой:</span>
 				<span class="tab-cell step-line">
-					<input type="range" min="1" max="10" step="1" name="Upload Post Delay">
+					<input type="range" min="0" max="9" step="1" name="Upload Post Delay">
 					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
 				</span>
 			</div>

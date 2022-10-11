@@ -8,7 +8,7 @@ const defaults = Object.freeze({ // default settings
 	'Preloaded Pages Count': 1,
 	'Picture Viewer'       : 2,
 	'Scroll Top View'      : true,
-	'Upload Post Delay'    : 5,
+	'Upload Post Delay'    : 3,
 	'Code Block Short Size': 15,
 	'Code Highlight Style' : 0
 });
