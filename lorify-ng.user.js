@@ -1370,7 +1370,7 @@ function onWSData(dbCiD) {
 				msg.classList.add('newadded');
 
 			addPreviewHandler(
-				(CommentsCache[cid] = msg), null, !TOUCH_DEVICE
+				(CommentsCache[cid] = msg), !TOUCH_DEVICE
 			);
 			ContentFinder.check(msg);
 
@@ -1483,12 +1483,11 @@ function getCommentsContent(html) {
 	return comms;
 }
 
-function removePreviews(comment) {
-	const openPreviews = document.getElementsByClassName('preview');
-	let c = openPreviews.length - Drops;
-	while (openPreviews[c] !== comment) {
-		openPreviews[c--].remove();
-	}
+const clearPreviews = preview => {
+	const pstack = document.getElementsByClassName('preview');
+	let c = pstack.length - Drops;
+	while ( pstack[c] !== preview)
+	        pstack[c--].remove();
 }
 
 const goToCommentPage = (cid, url) => new Promise(resolve => {
@@ -1691,9 +1690,8 @@ class CentralPicture {
 	}
 }
 
-const addPreviewHandler = (comment, attrs, mouse = false) => {
+const addPreviewHandler = (comment, mouse = false) => {
 
-	_setup(comment, attrs);
 	comment.addEventListener('click', e => {
 		const el  = e.target,
 		   aClass = el.classList,
@@ -1719,7 +1717,7 @@ const addPreviewHandler = (comment, attrs, mouse = false) => {
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length);
 			Timer.delete('Close Preview', 'Open Preview', cid);
-			Drops = 1, removePreviews();
+			Drops = 1, clearPreviews();
 			goToCommentPage(cid, aPath + aSearch);
 			break;
 		case 'link-thr':
@@ -1770,128 +1768,104 @@ const addPreviewHandler = (comment, attrs, mouse = false) => {
 	}
 }
 
-function showPreview(anchor) {
-	
-	// Get comment's ID from custom attribute
-	var commentID = anchor.search.substring('?cid='.length),
-	    isNew     = false,
-	    commentEl;
+const showPreview = (anc) => {
 
+	// Get comment's ID from search attribute
+	const cid   = anc.search.substring('?cid='.length);
+	const bunds = anc.getBoundingClientRect();
+
+	let isNew = false, comment;
+
+	const attrs = {
+		id: 'preview-'+ cid,
+		class: 'msg preview',
+		style: 'border: 1px solid grey;'
+	}
+	const events = {
+		// remove all preview's
+		mouseleave: () => { Timer.set('Close Preview', clearPreviews) },
+		mouseenter: () => { Timer.set('Close Preview', () => clearPreviews(comment));
+			// remove all preview's after this one
+			Timer.delete(cid);
+		}
+	}
 	// Let's reduce an amount of GET requests
 	// by searching a cache of comments first
-	if (commentID in CommentsCache) {
-		commentEl = document.getElementById('preview-'+ commentID);
-		if (!commentEl) {
+	if (cid in CommentsCache) {
+		comment = document.getElementById(attrs.id);
+		if (!comment) {
 			// Without the 'clone' call we'll just move the original comment
-			commentEl = CommentsCache[commentID].cloneNode(
-				(isNew = true)
+			comment = _setup(
+				CommentsCache[cid].cloneNode((isNew = true)), attrs, events
 			);
 		}
 	} else {
 		// Add Loading Process stub
-		commentEl = _setup('article', { class: 'msg preview', text: 'Загрузка...'});
+		comment = _setup('article', attrs, events);
+		comment.textContent = 'Загрузка...';
 		// Get an HTML containing the comment
-		Navigation.preloadPage(anchor.pathname + anchor.search).then(comms => {
-			commentEl.remove();
-			showCommentInternal(
-				comms.children['comment-'+ commentID].cloneNode(true),
-				commentID,
-				anchor,
-				true
+		Navigation.preloadPage(anc.pathname + anc.search).then(() => {
+			comment.style.visibility = 'hidden';
+			comment.textContent = '';
+			for (const ch of CommentsCache[cid].children)
+				comment.append(ch.cloneNode(true));
+			popupPreview(
+				comment, bunds, true
 			);
 		}).catch(msg => { // => Error
-			commentEl.textContent = msg;
-			commentEl.classList.add('msg-error');
+			comment.textContent = msg;
+			comment.classList.add('msg-error');
 		});
 	}
-	showCommentInternal(
-		commentEl,
-		commentID,
-		anchor,
-		isNew
-	);
-}
-
-function showCommentInternal(commentElement, commentID, hoveredLink, isNew = false) {
-	// From makaba
-	const parentBlock = document.getElementById('comments');
-	
-	const { left, top, bottom } = hoveredLink.getBoundingClientRect();
-	
-	const visibleWidth  = innerWidth  / 2;
-	const visibleHeight = innerHeight * 0.75;
-	const offsetX       = pageXOffset + left + hoveredLink.offsetWidth / 2;
-	const offsetY       = pageYOffset + bottom + 10;
-	
-	const postproc = () => {
-		
-		commentElement.style['left'] = Math.max(
-			offsetX - (
-				left < visibleWidth
-				     ? 0
-				     : commentElement.offsetWidth)
-				, 5) + 'px';
-		
-		commentElement.style['top'] = pageYOffset + (
-			top < visibleHeight
-			    ? bottom + 10
-			    : top - commentElement.offsetHeight - 10)
-			+'px';
-			
-		if (!USER_SETTINGS['CSS3 Animation'])
-			commentElement.style['animation-name'] = null;
-	};
-	
-	if (isNew) {
-		// If this comment contains link to another comment,
-		// set the 'mouseover' hook to that 'a' tag
-		addPreviewHandler( commentElement, {
-		// Avoid duplicated IDs when the original comment was found on the same page
-			id: 'preview-'+ commentID, 
-			class: 'msg preview',
-			style: 'animation-name: showIn; border: 1px solid grey;'+
-				// There are no limitations for the 'z-index' in the CSS standard,
-				// so it depends on the browser. Let's just set it to 300
-				'max-width: '+ parentBlock.offsetWidth +
-				'px; left: '+
-				( left < visibleWidth
-				       ? offsetX
-				       : offsetX - visibleWidth ) +
-				'px; top: '+
-				( top < visibleHeight
-				      ? offsetY
-				      : 0 ) +'px;'
-		}, !TOUCH_DEVICE);
-		
-		commentElement.addEventListener('animationstart', postproc, true);
-	} else {
-		commentElement.style['animation-name'] = null;
-		postproc();
-	}
-	commentElement.onmouseleave = () => {
-		// remove all preview's
-		Timer.set('Close Preview', removePreviews)
-	};
-	commentElement.onmouseenter = () => {
-		// remove all preview's after this one
-		Timer.delete(commentID);
-		Timer.set('Close Preview', () => removePreviews(commentElement));
-	};
-	hoveredLink.onmouseleave = () => {
+	if (USER_SETTINGS['CSS3 Animation'])
+		comment.classList.add('show-in');
+	else
+		comment.classList.remove('show-in');
+	anc.onmouseleave = () => {
 		// remove this preview
-		Timer.set(commentID, () => commentElement.remove(), USER_SETTINGS['Delay Close Preview']);
+		Timer.set(cid, () => comment.remove(), USER_SETTINGS['Delay Close Preview']);
 	};
-	// Note that we append the comment to the '#comments' tag,
-	// not the document's body
-	// This is because we want to save the background-color and other styles
-	// which can be customized by userscripts and themes
-	parentBlock.appendChild(commentElement);
+	popupPreview( comment, bunds, isNew );
 }
 
-function correctBlockCode(MAX_H, parent) {
-	for (const s of parent.getElementsByClassName('shrink-line')) {
-		const height = s.nextElementSibling.firstElementChild.offsetHeight;
-		s.classList[ (MAX_H > 35 && MAX_H >= height ? 'add' : 'remove') ]('hidden');
+const popupPreview = (comment, bunds, isNew) => {
+
+	const { left, top, bottom, width } = bunds;
+
+	const parent   = document.getElementById('comments');
+	const visibleW = window.innerWidth  / 2;
+	const visibleH = window.innerHeight * 0.75;
+	const offsetX  = window.pageXOffset + left + width / 2;
+	const offsetY  = window.pageYOffset + bottom + 10;
+
+	if (isNew) {
+		comment.style.maxWidth = visibleW +'px';
+		comment.style.left = ( left < visibleW ? offsetX : offsetX - visibleW ) +'px';
+		comment.style.top  = ( top  < visibleH ? offsetY : 0 ) +'px';
+		addPreviewHandler(
+			comment, !TOUCH_DEVICE
+		);
+	}
+	comment.style.visibility = 'hidden', parent.append(comment);
+
+	let { width: comW, height: comH } = comment.getBoundingClientRect();
+
+	comment.style.left = Math.max(
+		offsetX - (left < visibleW ? 0 : comW), 5) + 'px';
+	comment.style.top = window.pageYOffset + (
+		top < visibleH ? bottom + 10 : top - comH - 10) +'px';
+	comment.style.visibility = 'visible';
+}
+
+const correctBlockCode = (max_h, parent) => {
+	for(const s of parent.getElementsByClassName('shrink-line')) {
+		const code     = s.nextElementSibling.firstElementChild,
+		    { height } = code.getBoundingClientRect();
+
+		if (max_h > 35 && max_h >= height)
+			s.classList.add('hidden');
+		else
+			s.classList.remove('hidden');
 	}
 }
 
