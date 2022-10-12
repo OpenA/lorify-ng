@@ -104,12 +104,12 @@ function openTab(uri = '', action = '') {
 
 	const lor = uri.startsWith('lor:') ? 5 : 0,
 	     path = uri.substring(lor, schi),
-	   origin = lor ? '://www.linux.org.ru'+ path : chrome.runtime.getURL('/settings.html'),
-	     href = lor ? 'https' + origin + uri.substring(schi) : origin + uri;
+	     orig = lor ? '://www.linux.org.ru'+ path : chrome.runtime.getURL('/settings.html'),
+	     href = lor ? 'https' + orig + uri.substring(schi) : orig + uri;
 
 	for (const port of openPorts) {
 		const { url, id } = port.sender.tab || '';
-		if (url && url.includes(origin)) {
+		if (url && url.includes(orig)) {
 			chrome.tabs.update(id, { active: true });
 			if (action === 'rel') {
 				chrome.tabs.reload(id);
@@ -121,20 +121,21 @@ function openTab(uri = '', action = '') {
 	const fin = tab_id => {
 		if (tab_id !== -1 ) {
 			chrome.tabs.update(tab_id, { active: true, url: href });
+			chrome.tabs.reload(tab_id);
 		} else
 			chrome.tabs.create({ active: true, url: href });
 	}
 	if (lor) {
-		queryScheme(['*://www.linux.org.ru/', '*'+ origin +'/*']).then(
-			tabs => matchEmptyOr(tabs, origin, '^https?://www.linux.org.ru/?$')
+		queryScheme(['*://www.linux.org.ru/', '*'+ orig +'*']).then(
+			tabs => matchEmptyOr(tabs, orig, '^https?://www.linux.org.ru/?$')
 		).then(lor_id => {
 			if(lor_id !== -1) {
-				chrome.tabs.update(lor_id, { active: true, url: href });
+				fin(lor_id);
 			} else
-			 	queryScheme().then(tabs => matchEmptyOr(tabs)).then(fin);
+			 	queryScheme().then(matchEmptyOr).then(fin);
 		});
 	} else {
-		queryScheme().then(tabs => matchEmptyOr(tabs, origin)).then(fin);
+		queryScheme().then(tabs => matchEmptyOr(tabs, orig)).then(fin);
 	}
 }
 

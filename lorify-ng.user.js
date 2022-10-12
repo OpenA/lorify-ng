@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.1
+// @version     3.2.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -420,21 +420,15 @@ class TopicNavigation extends Map {
 
 		this.retID = this.pages_count = 0;
 
-		const constr = id => ({
-			configurable: true, get: () => {
-				const nav = _setup('div', { id, class: 'nav' }, { click: this });
+		for (const id of ['nav_t', 'nav_b']) {
+			let nav = _setup('div', { id, class: 'nav' }, { click: this });
 				nav.append(
 					_setup('a', { class: 'page-number prev', href: 'javascript:void(0)', text: '←' }),
 					_setup('a', { class: 'page-number next', href: 'javascript:void(0)', text: '→' })
 				);
-				Object.defineProperty(this, id, { value: nav });
-				return nav;
-			}
-		});
-
+			this[id] = nav;
+		}
 		Object.defineProperties(this, {
-			nav_t: constr('nav_t'),
-			nav_b: constr('nav_b'),
 			wait: { get: () => Object.defineProperty(this, 'wait', {
 					value: _setup('div', { class: 'page-loader' })
 				}).wait
@@ -911,7 +905,7 @@ const winEvents = {
 			if (e.state && e.state.lorYoffset)
 				document.documentElement.scrollTop = e.state.lorYoffset;
 		};
-		if (LOR.page != page) {
+		if (LOR.page !== page) {
 			Navigation.gotoPage(page).then(scrollTo);
 		} else
 			scrollTo();
@@ -1333,7 +1327,7 @@ function onWSData(dbCiD) {
 				document.getElementById('realtime').after(nav_b);
 				document.querySelector('#comments > .msg[id^="comment-"]').before(nav_t);
 			}
-			Navigation.extendBar(nav_cnt);
+			Navigation.expandNav(nav_cnt);
 			Navigation.addBouble(page, msg_cnt);
 			workComments( msg, 1 ).then(genRefMaps);
 			Favicon.draw((Favicon.index += msg_cnt));
@@ -1344,7 +1338,7 @@ function onWSData(dbCiD) {
 	});
 }
 
- const workComments = async (msg_list, pass = 0x00) => {
+ const workComments = (msg_list, pass = 0x00) => new Promise(resolve => {
 
 	const { path, Login } = LOR;
 	const works = new Array(msg_list.length);
@@ -1352,65 +1346,62 @@ function onWSData(dbCiD) {
 	for (let i = 0; i < msg_list.length; i++) {
 
 		const msg = msg_list[i];
-		 works[i] = new Promise(resolve => {
+		const cid = msg.id.substring('comment-'.length);
+		let reply = msg.querySelector(`.title > a[href^="${ path }?cid="]`);
+		if (reply) {
+			// Extract reply comment ID from the 'search' string
+			let reid = reply.search.substring('?cid='.length);
+			let user = msg.querySelector('a[itemprop="creator"]');
+			// Create new response-map for this comment
+			works[i] = { cid, msg, name: (user ? user.innerText : 'anon'), reid, y: pass & Login.test(reply.nextSibling.textContent) };
+			// Write special attributes
+			reply.className = 'link-pref';
+		} else
+			works[i] = { cid, msg };
+		if (pass & 0x1)
+			msg.classList.add('newadded');
 
-			const cid = msg.id.substring('comment-'.length);
-			let reply = msg.querySelector(`.title > a[href^="${ path }?cid="]`);
-			if (reply) {
-				// Extract reply comment ID from the 'search' string
-				let reid = reply.search.substring('?cid='.length);
-				let user = msg.querySelector('a[itemprop="creator"]');
-				// Create new response-map for this comment
-				resolve([reid, cid, user ? user.innerText : 'anon', pass & Login.test(reply.nextSibling.textContent)]);
-				// Write special attributes
-				reply.className = 'link-pref';
-			} else
-				resolve();
-			if (pass & 0x1)
-				msg.classList.add('newadded');
+		addPreviewHandler(
+			(CommentsCache[cid] = msg), !TOUCH_DEVICE
+		);
+		ContentFinder.check(msg);
 
-			addPreviewHandler(
-				(CommentsCache[cid] = msg), !TOUCH_DEVICE
-			);
-			ContentFinder.check(msg);
-
-			for (let a of msg.querySelectorAll(`.reply > ul > li > a[href^="${ path }"]`)) {
-				let reid = a.search.substring('?cid='.length);
-				if (reid === cid) {
-					a.className = 'link-self';
-					a.textContent = '';
-				} else {
-					if (reid)
-						a.setAttribute('href', `${a.pathname}/thread/${cid}#comment-${reid}`);
-					a.className = 'link-thr';
-					a.textContent = '\nОтветы';
-					a.after( _setup('span', { class: 'response-block' }) );
-				}
+		for(let a of msg.querySelectorAll(`.reply > ul > li > a[href^="${ path }"]`)) {
+			let reid = a.search.substring('?cid='.length);
+			if (reid === cid) {
+				a.className = 'link-self';
+				a.textContent = '';
+			} else {
+				if (reid)
+					a.setAttribute('href', `${a.pathname}/thread/${cid}#comment-${reid}`);
+				a.className = 'link-thr';
+				a.textContent = '\nОтветы';
+				a.after( _setup('span', { class: 'response-block' }) );
 			}
-		});
+		}
 	}
-	return Promise.all(works);
- }
+	resolve(works);
+ });
 
  const genRefMaps = (re_list) => {
 
 	const { path, TopicStarter } = LOR;
-	const RefMap = Object.create(null);
+	const RefMap = Object.assign({}, ResponsesMap);
 	let usr_refs = 0;
 
-	for (let re of re_list) {
-		if (!re)
+	for (let {reid, cid, name, y} of re_list) {
+		if ( !reid )
 			continue;
-		let [reid, cid, user, i] = re, a = _setup('a', {
-			class: 'link-pref' + (user === TopicStarter ? ' ts' : ''),
+		let a = _setup('a', {
+			class: 'link-pref' + (name === TopicStarter ? ' ts' : ''),
 			href: path +'?cid='+ cid,
-			text: user
+			text: name
 		});
 		if (reid in RefMap) {
 			RefMap[reid].push(a);
 		} else
 			RefMap[reid] = [a];
-		usr_refs += i;
+		usr_refs += y;
 	}
 	if (usr_refs > 0) {
 		App.checkNow();
