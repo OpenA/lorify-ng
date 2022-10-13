@@ -421,7 +421,7 @@ class TopicNavigation extends Map {
 		this.retID = this.pages_count = 0;
 
 		for (const id of ['nav_t', 'nav_b']) {
-			let nav = _setup('div', { id, class: 'nav' }, { click: this });
+			let nav = _setup('div', { id, class: 'nav' });
 				nav.append(
 					_setup('a', { class: 'page-number prev', href: 'javascript:void(0)', text: '←' }),
 					_setup('a', { class: 'page-number next', href: 'javascript:void(0)', text: '→' })
@@ -479,35 +479,34 @@ class TopicNavigation extends Map {
 	}
 
 	gotoPage(num) {
+		const { nav_t, nav_b } = this;
+		const { page, path   }  = LOR;
 
+		const comms = super.get(page) || this.wait,
+		    reverse = ( LOR.page  = num) > page,
+		      retID = (this.retID = num  + Math.random());
+
+		for (var i = 0; i < nav_b.children.length; i++) {
+			nav_t.children[i].classList.remove('broken');
+			nav_b.children[i].classList.remove('broken');
+		}
+		if (num <= 0) {
+			// set prev button to inactive
+			nav_t.firstElementChild.classList.add('broken');
+			nav_b.firstElementChild.classList.add('broken');
+		} else
+		if (num >= i - 3) {
+			// set next button to inactive
+			nav_t.lastElementChild.classList.add('broken');
+			nav_b.lastElementChild.classList.add('broken');
+		}
+		nav_t.children[`navt_${ num }`].classList.add('broken');
+		nav_b.children[`navb_${ num }`].classList.add('broken');
+
+		if (USER_SETTINGS['Scroll Top View']) {
+			comms.scrollIntoView({ block: 'start' });
+		}
 		return new Promise(resolve => {
-			const { nav_t, nav_b } = this;
-			const { page, path   }  = LOR;
-	
-			const comms = super.get(page) || this.wait,
-			    reverse = ( LOR.page  = num) > page,
-			      retID = (this.retID = num  + Math.random());
-
-			for (var i = 0; i < nav_b.children.length; i++) {
-				nav_t.children[i].classList.remove('broken');
-				nav_b.children[i].classList.remove('broken');
-			}
-			if (num <= 0) {
-				// set prev button to inactive
-				nav_t.firstElementChild.classList.add('broken');
-				nav_b.firstElementChild.classList.add('broken');
-			} else
-			if (num >= i - 3) {
-				// set next button to inactive
-				nav_t.lastElementChild.classList.add('broken');
-				nav_b.lastElementChild.classList.add('broken');
-			}
-			nav_t.children[`navt_${ num }`].classList.add('broken');
-			nav_b.children[`navb_${ num }`].classList.add('broken');
-
-			if (USER_SETTINGS['Scroll Top View']) {
-				comms.scrollIntoView({ block: 'start' });
-			}
 			if (super.has(num)) {
 				this.swapAnimateTo( comms, super.get(num), reverse, resolve );
 			} else {
@@ -547,24 +546,70 @@ class TopicNavigation extends Map {
 
 	handleEvent(e) {
 
-		const { id, classList } = e.target;
+		const el  = e.target,
+		   aClass = el.classList,
+		   parent = el.parentNode,
+		   aPath  = el.pathname,
+		  aSearch = el.search;
+		let alter = true;
 
-		if (classList[0] === 'page-number') {
-
-			if (!classList.contains('broken')) {
-
+		switch (aClass[0]) {
+		case 'page-number':
+			if (!aClass.contains('broken')) {
 				let { page, path, lastmod } = LOR;
-
-				switch (classList[1]) {
+				switch (aClass[1]) {
 					case 'prev': page--; break;
 					case 'next': page++; break;
-					default    : page = Number(id.substring(5));
+					default    : page = Number(el.id.substring(5));
 				}
 				this.gotoPage(page);
 				history.pushState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod));
 			}
-			e.preventDefault();
+			break;
+		case 'shrink-line':
+			parent.classList.toggle('cutted');
+			if (parent.scrollHeight > window.innerHeight)
+				parent.scrollIntoView();
+			break;
+		case 'link-navs':
+			if (aPath !== LOR.path) {
+				if (App.openUrl(aPath + aSearch)) {
+					return;
+				} else
+					break;
+			}
+		case 'link-self':
+		case 'link-pref':
+			var cid = aSearch.substring('?cid='.length);
+			Timer.delete('Close Preview', 'Open Preview', cid);
+			Drops = 1, clearPreviews();
+			goToCommentPage(cid, aPath + aSearch);
+			break;
+		case 'link-thr':
+			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
+			showReplyThread(aPath, tid, cid);
+			break;
+		case 'quoteComment': alter = false;
+		case 'replyComment':
+			var [ tid, cid ] = parseReplyUrl(aSearch);
+			if (aClass.contains('preview')) {
+				goToCommentPage(cid).then(target => {
+					toggleForm(target.lastElementChild.lastElementChild, tid, cid, !alter);
+				});
+			} else {
+				toggleForm(parent.parentNode.parentNode.parentNode, tid, cid, !alter);
+			}
+			break;
+		case 'medium-image': alter = false;
+		case   'link-image':
+			if (USER_SETTINGS['Picture Viewer'] > alter) {
+				CentralPicture.expose((alter ? el : parent).href);
+				break;
+			}
+		default:
+			return;
 		}
+		e.preventDefault();
 	}
 
 	swapAnimateTo(comments, content, reverse, resolve) {
@@ -806,14 +851,13 @@ const onDOMReady = () => {
 		}
 
 		ContentFinder.check( top );
-		addPreviewHandler( top );
 
 	} else {
 
 		for (const tps of body.querySelectorAll('[id^="topic-"]')) {
 
 			ContentFinder.check( tps );
-			addPreviewHandler( tps );
+			tps.addEventListener('click', TopicNavigation.prototype.handleEvent);
 		}
 		if (location.pathname === '/notifications') {
 			_setup(body.querySelector('.message-table'), null, {
@@ -830,7 +874,7 @@ const onDOMReady = () => {
 	}
 
 	const comments = document.getElementById('comments'),
-	      messages = comments.querySelectorAll('.msg[id^="comment-"]');
+	      messages = comments.parentNode;
 	const navPages = body.querySelectorAll('.messages > .nav > .page-number');
 	const infBlock = body.querySelector('.messages > .infoblock');
 	const user     = body.querySelector('#loginGreating > a[href$="/profile"]');
@@ -846,7 +890,8 @@ const onDOMReady = () => {
 		old_t.parentNode.replaceChild(nav_t, old_t);
 		old_b.parentNode.replaceChild(nav_b, old_b);
 	}
-	workComments(messages).then(genRefMaps);
+	workComments(comments.querySelectorAll('.msg[id^="comment-"]')).then(genRefMaps);
+	messages.addEventListener('click', Navigation);
 
 	if (location.pathname.includes(`${topic}/thread/`))
 		return;
@@ -1681,17 +1726,141 @@ class CentralPicture {
 	}
 }
 
-const addPreviewHandler = (comment, mouse = false) => {
+if (!('scrollTopMax' in Element.prototype)) {
+	Object.defineProperty(Element.prototype, 'scrollTopMax', {
+		get: function scrollTopMax() {
+			return this.scrollHeight - this.clientHeight;
+		}
+	});
+}
 
-	comment.addEventListener('click', e => {
+const showReplyThread = (uri, tid, cid) => {
+
+	const id = 'thread-'+ tid;
+	if (  id in ContentNode.children )
+		return  ContentNode.append(ContentNode.children[id]);
+
+	const msgcol = _setup('div', { class: 'page-loader' });
+	const thread = _setup('div', { class: 'reply-thread', id });
+
+	if (cid) {
+		const cmAdd = () => {
+			msgcol.classList.remove('page-loader');
+			msgcol.classList.add('show-in');
+			msgcol.append(
+				CommentsCache[tid].cloneNode(true),
+				CommentsCache[cid].cloneNode(true));
+		}
+		if (cid in CommentsCache) {
+			cmAdd();
+		} else
+			Navigation.preloadPage(uri).then(cmAdd);
+	} else {
+		getDataResponse(uri, html => {
+			const comms = getCommentsContent(html);
+
+			const { path } = LOR;
+			for (let a of comms.querySelectorAll(`.msg .title > a[href^="${ path }?cid="]`)) {
+				a.className = 'link-pref';
+			}
+			ContentFinder.check( comms );
+			msgcol.classList.remove('page-loader');
+			msgcol.classList.add('show-in');
+			msgcol.append(...comms.children);
+		});
+	}
+	addThreadHandler( thread, msgcol, TOUCH_DEVICE );
+	ContentNode.appendChild(thread).append(msgcol);
+}
+
+const addThreadHandler = (thread, msgcol) => {
+
+	const _start = TOUCH_DEVICE ? 'touchstart' : 'mouseover';
+	const _end   = TOUCH_DEVICE ? 'touchend'   : 'mouseout';
+
+	msgcol.classList.add('messages');
+	msgcol.addEventListener('animationstart', (e) => {
+		if (e.animationName === 'showIn' && thread.scrollTopMax) {
+			thread.style.touchAction = null;
+		}
+	});
+	msgcol.addEventListener('animationend', (e) => {
+		if (e.animationName.substring(0,5) === 'swipe') {
+			thread.remove();
+			msgcol.classList.remove('swipe-up', 'swipe-down');
+		}
+	});
+
+	if (TOUCH_DEVICE) {
+		let sY = 0, eY = 0, lock = false;
+
+		thread.style.touchAction = 'none';
+		thread.addEventListener('scroll', () => {
+			lock = thread.scrollTop > 0 && thread.scrollTop < thread.scrollTopMax;
+		});
+		thread.addEventListener('touchstart', (e) => {
+			sY = e.touches[0].clientY;
+		});
+		thread.addEventListener('touchend', () => {
+			msgcol.style.top = null;
+		});
+		thread.addEventListener('touchmove', (e) => {
+			if (!lock) {
+				eY = e.changedTouches[0].clientY - sY;
+				msgcol.style.top = (eY * .35) +'px';
+				if (Math.abs(eY) > window.innerHeight * .75) {
+					msgcol.classList.add('swipe-'+ (eY > 0 ? 'down' : 'up'));
+				}
+			}
+		});
+	}
+
+	msgcol.addEventListener(_start, e => {
+
+		let anc = e.target, div = null;
+		if (anc.classList[0] !== 'link-pref')
+			return;
+		e.preventDefault();
+		e.stopPropagation();
+
+		const cid = anc.search.substring('?cid='.length),
+		      msg = msgcol.children['comment-'+ cid],
+		     winH = window.innerHeight;
+
+		const { height: mH, y: mY } = msg.getBoundingClientRect();
+
+		const onOut = () => {
+			msg.classList.remove('highlight');
+			if (div) {
+				msg.style = '';
+				msgcol.replaceChild(msg, div);
+			}
+			anc.removeEventListener(_end, onOut);
+		};
+		if (!(mY + mH > 60 && mY < winH - 60)) {
+			const { height: aH, y: aY } = anc.getBoundingClientRect();
+			const visibleH = winH * 0.75;
+			const offsetY  = thread.scrollTop;
+			msgcol.replaceChild(
+				(div = _setup('div', { class: 'msg', style: 'height: '+ mH +'px' }))
+			, msg);
+			msg.style = `position: absolute; max-height: 400px;  overflow-y: auto; top: ${
+				offsetY + (aY < visibleH ? aY + aH : -18) }px; left: 0; right: 0;`;
+			div.after(msg);
+		}
+		msg.classList.add('highlight');
+		anc.addEventListener(_end, onOut);
+	});
+
+	thread.addEventListener('click', e => {
 		const el  = e.target,
 		   aClass = el.classList,
 		   parent = el.parentNode,
 		   aPath  = el.pathname,
 		  aSearch = el.search;
-		let alter = true;
+		let param = false;
 
-		switch (aClass[0]) {
+		switch(aClass[0]) {
 		case 'shrink-line':
 			parent.classList.toggle('cutted');
 			if (parent.scrollHeight > window.innerHeight)
@@ -1704,32 +1873,30 @@ const addPreviewHandler = (comment, mouse = false) => {
 				} else
 					break;
 			}
-		case 'link-self':
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length);
-			Timer.delete('Close Preview', 'Open Preview', cid);
-			Drops = 1, clearPreviews();
+			if (`comment-${cid}` in msgcol.children ) {
+				Timer.delete('Show Thread Reply');
+				msgcol.children[`comment-${cid}`].scrollIntoView();
+				break;
+			}
+		case 'link-self':
+			var cid = aSearch.substring('?cid='.length);
 			goToCommentPage(cid, aPath + aSearch);
+		case 'reply-thread': thread.remove();
 			break;
 		case 'link-thr':
 			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
-			return;//showReplyThread(aPath, tid, cid);
+			showReplyThread(aPath, tid, cid);
 			break;
-		case 'quoteComment': alter = false;
+		case 'quoteComment': param = true;
 		case 'replyComment':
 			var [ tid, cid ] = parseReplyUrl(aSearch);
-			if (aClass.contains('preview')) {
-				goToCommentPage(cid).then(target => {
-					toggleForm(target.lastElementChild.lastElementChild, tid, cid, !alter);
-				});
-			} else {
-				toggleForm(comment.lastElementChild.lastElementChild, tid, cid, !alter);
-			}
+			toggleForm(msgcol.children[`comment-${cid}`], tid, cid, param);
 			break;
-		case 'medium-image': alter = false;
-		case   'link-image':
-			if (USER_SETTINGS['Picture Viewer'] > alter) {
-				CentralPicture.expose((alter ? el : parent).href);
+		case 'link-image':
+			if (USER_SETTINGS['Picture Viewer'] === 2) {
+				CentralPicture.expose(el.origin + aPath + aSearch);
 				break;
 			}
 		default:
@@ -1737,6 +1904,9 @@ const addPreviewHandler = (comment, mouse = false) => {
 		}
 		e.preventDefault();
 	});
+}
+
+const addPreviewHandler = (comment, mouse = false) => {
 
 	if (mouse) {
 		comment.addEventListener('mouseover', e => {
@@ -1830,7 +2000,7 @@ const popupPreview = (comment, bunds, isNew) => {
 	const offsetY  = window.pageYOffset + bottom + 10;
 
 	if (isNew) {
-		comment.style.maxWidth = visibleW +'px';
+		comment.style.maxWidth = '900px';
 		comment.style.left = ( left < visibleW ? offsetX : offsetX - visibleW ) +'px';
 		comment.style.top  = ( top  < visibleH ? offsetY : 0 ) +'px';
 		addPreviewHandler(
@@ -2634,6 +2804,7 @@ function WebExt() {
 	const portConnect = resolve => {
 		const port = chrome.runtime.connect();
 		port.onMessage.addListener(({ action, data }) => {
+// try {
 			switch (action) {
 				case 'notes-count-update':
 					if (main_events_count)
@@ -2655,6 +2826,15 @@ function WebExt() {
 						Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
 					}
 			}
+/*} catch(emsg) {
+	if (/can.*t.*access.*init/i.test(emsg)) {
+		port.disconnect();
+		if (action === 'scroll-to-comment')
+			 location.href = data;
+		else location.reload();
+	} else
+		console.error(emsg);
+}*/
 		});
 		port.onDisconnect.addListener(() => {
 			console.info('WebExt Runtime Disconnected!');
