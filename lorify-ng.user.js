@@ -26,15 +26,14 @@ const USER_SETTINGS = {
 	'Code Highlight Style' : 0
 }
 
-let ContentNode = null;
+let ContentNode, Navigation, CommentForm;
+let LORCODE_MODE = 0, Drops = 1, RefList = [];
 
-const ResponsesMap  = Object.create(null);
-const CommentsCache = Object.create(null);
 const LOR           = parseLORUrl(location.href);
 const TOUCH_DEVICE  = 'ontouchstart' in window;
 const RESIZE_FUNCT  = 'onorientationchange' in window ? 'orientationchange' : 'resize';
-const [,TOKEN = ''] = document.cookie.match(/CSRF_TOKEN="?([^;"]*)/);
-const Timer         = {
+
+const Timer = {
 	// clear timer by name
 	delete: function(...names) {
 		for (const name of names) {
@@ -207,12 +206,29 @@ document.documentElement.append(
 			animation-duration: .4s;
 			position: relative;
 		}
+		.msg[datejump]:before {
+			content: attr(datejump);
+			position: absolute;
+			text-align: center;
+			margin-bottom: 10px;
+			display: block;
+			bottom: 100%;
+			left: 0; right: 0;
+		}
+		.msg[datejump] {
+			position: relative;
+			margin-top: 3em;
+		}
+		.datejump + .msg[datejump]:before,
+		        .preview[datejump]:before { content: ''; }
+		.datejump + .msg[datejump],
+				.preview[datejump] { margin-top: 0; }
 		.preview {
 			animation-duration: .3s;
 			position: absolute;
 			z-index: 300;
 		}
-		.preview #commentForm, .hidden {
+		.preview #commentForm, .hidden, .hidaft ~ *, .hidaft > * {
 			display: none;
 		}
 		.show-in {
@@ -247,6 +263,9 @@ document.documentElement.append(
 		}
 		.markdown > .btn:not([markdown]), *[hidden] {
 			display: none!important;
+		}
+		#yandex_rtb * {
+			z-index: 0!important;
 		}
 		.markdown > .btn:before {
 			content: attr(markdown);
@@ -318,7 +337,7 @@ document.documentElement.append(
 			margin-bottom: 1px;
 			border-radius: 0;
 		}
-		.link-self, .link-thr {
+		.link-self, .link-thread {
 			text-decoration: none;
 		}
 		.highlight { outline: 2px dashed red; }
@@ -408,17 +427,38 @@ document.documentElement.append(
 		@keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
 `}), Dynamic_Style._Main_, Dynamic_Style._CodeShrink_);
 
-class TopicNavigation extends Map {
+class TopicNavigation {
 
-	set(page_num, page_el) {
-		super.set(page_num, page_el);
-		super.set(page_el, page_num);
-	}
-	constructor(page_num, page_el) {
+	constructor() {
 
-		super(page_el ? [[page_num, page_el], [page_el, page_num]] : void 0);
+		const stack = [], table = {}, queue = Object.create(null);
 
-		this.retID = this.pages_count = 0;
+		const addToStack = (msg_list, num = 0) => {
+
+			const wrk = workComments( msg_list, num );
+			for(const msg of msg_list) {
+				const cid = Number(msg.id.substring('comment-'.length));
+				const com = { cid, msg, page: num };
+				stack.push(com), table[cid] = com;
+			}
+			queue[`/page${num}`] = null;
+			return wrk;
+		}
+		this.pages_count = 0;
+
+		window.addEventListener('popstate', e => {
+			const { page, cid } = parseLORUrl(location.href);
+			const _jmpTo = () => {
+				if (cid)
+					document.getElementById(`comment-${LOR.cid = cid}`).scrollIntoView();
+				else if (e.state && e.state.lorYoffset)
+					window.scrollTo(window.pageXOffset, e.state.lorYoffset);
+			};
+			if (LOR.page !== page) {
+				this.gotoPage(page).then(_jmpTo);
+			} else
+				_jmpTo();
+		});
 
 		for (const id of ['nav_t', 'nav_b']) {
 			let nav = _setup('div', { id, class: 'nav' });
@@ -429,62 +469,115 @@ class TopicNavigation extends Map {
 			this[id] = nav;
 		}
 		Object.defineProperties(this, {
-			wait: { get: () => Object.defineProperty(this, 'wait', {
-					value: _setup('div', { class: 'page-loader' })
-				}).wait
-			, configurable: true }
+			pcont: { value: document.createElement('div') },
+			queue: { value: queue },
+			stack: { value: stack },
+			table: { value: table },
+
+			get: { value: cid => table[cid] },
+			has: { value: cid => cid in table },
+			add: { value: addToStack }
 		});
 	}
 
-	async preloadPage(uri, p_num) {
+	preloadPage(uri = '', pass = 0x00) {
 
-		uri = location.origin + uri;
+		let  quid = uri || '/page0',
+		   opaque = quid.startsWith('?cid='),
+		 do_merge = quid in this.queue,
+		   promis = this.queue[quid];
 
-		let nReq, params = {
+		const url = location.origin + LOR.path + uri;
+		const cur_page = LOR.page;
+		const rq_params = {
 			credentials: 'same-origin',
 			cache: 'no-cache'
 		};
-		const onComplete = async (res) => {
+		const onFinally = res => {
 
-			const { page } = parseLORUrl(res.url);
-
-			if (!res.ok) {
-				super.delete('q'+ page);
-				throw res.status +' '+ res.statusText;
+			let fin,num = parseLORUrl(res.url).page;
+			if (res.ok) {
+				fin = res.text().then(getCommentsContent).then(
+				({ msg_list, nav_count }) => {
+					const wrk = (do_merge
+						? this.merge(msg_list, num, quid)
+						: this.add(msg_list, num, quid)
+					);
+					if (nav_count && nav_count - 2 !== this.pages_count)
+						this.resetNav(nav_count - 2);
+					return wrk;
+				});
+			} else {
+				fin = Promise.reject(res.status +' '+ res.statusText);
+				if (!do_merge)
+					delete this.queue[quid];
 			}
-			const comms = getCommentsContent(await res.text());
-			this.set(page, comms), super.delete('q'+ page);
-			workComments( comms.querySelectorAll('.msg[id^="comment-"]') ).then(genRefMaps);
+			if (do_merge)
+				this.queue[quid] = null;
+			return fin;
+		}
+		const onTry = res => {
 
-			return comms;
-		}
-		if (p_num >= 0) {
-			if(!super.has('q'+ p_num)) {
-				super.set('q'+ p_num, (nReq = fetch(uri, params).then(onComplete)));
+			delete this.queue[quid],
+			/* rm queue by prev id and set new id by page num
+			 */ quid = '/page'+ parseLORUrl(res.url).page,
+			do_merge = quid in this.queue;
+
+			if (this.queue[quid]) {
+				return (this.queue[quid]);
+			} else if (res.ok) {
+				return (this.queue[quid] = fetch(res.url, rq_params).then(onFinally));
 			} else
-				nReq = super.get('q'+ p_num);
-		} else {
-			nReq = fetch(uri, Object.assign({ method: 'HEAD' }, params)).then(res => {
-				let req, qpid = 'q'+ parseLORUrl(res.url).page;
-				if (super.has(qpid)) {
-					req = super.get(qpid);
-				} else if (!res.ok) {
-					throw res.status +' '+ res.statusText;
-				} else
-					super.set(qpid, (req = fetch(res.url, params).then(onComplete)));
-				return req;
-			});
+				return Promise.reject(res.status +' '+ res.statusText);
 		}
-		return nReq;
+		return promis || ( this.queue[quid] = fetch(
+				url, (opaque ? Object.assign({ method: 'HEAD' }, rq_params) : rq_params)
+			).then( (opaque ? onTry : onFinally) )
+		);
+	}
+
+	merge(msg_list, num) {
+
+		const new_list = [], euids = [], new_stack = [];
+
+		for(const msg of msg_list) {
+			const nid = Number(msg.id.substring('comment-'.length)),
+			      com = this.table[nid];
+
+			if (com) {
+				com.page = num;
+				updCommentContent(com.msg, msg);
+			} else {
+				new_stack.push(
+					(this.table[nid] = { msg, page: num, cid: nid })
+				);
+				new_list.push(msg);
+			}
+			euids.push(nid);
+		}
+		const wrk = workComments( new_list, num );
+		const sid = euids[0],
+			  eid = euids[euids.length - 1],
+		 del_list = this.stack.filter(
+			c => ((c.cid < sid && c.page > num) ||
+			      (c.cid > sid && c.cid  < eid  && !euids.includes(c.cid)))
+		);
+		for (const com of del_list) {
+			com.page = -1; // deleted
+			com.msg.classList.add('deleted');
+		}
+		this.stack.push( ...new_stack );
+		this.stack.sort((a,b) => a.cid - b.cid);
+		this.queue[`/page${num}`] = null;
+		return wrk;
 	}
 
 	gotoPage(num) {
-		const { nav_t, nav_b } = this;
-		const { page, path   }  = LOR;
+		const { nav_t, nav_b, pcont } = this;
+		const { page } = LOR;
 
-		const comms = super.get(page) || this.wait,
-		    reverse = ( LOR.page  = num) > page,
-		      retID = (this.retID = num  + Math.random());
+		const tmpid =  page +'_'+ num,
+		     reAnim = (LOR.page = num) > page;
 
 		for (var i = 0; i < nav_b.children.length; i++) {
 			nav_t.children[i].classList.remove('broken');
@@ -504,44 +597,93 @@ class TopicNavigation extends Map {
 		nav_b.children[`navb_${ num }`].classList.add('broken');
 
 		if (USER_SETTINGS['Scroll Top View']) {
-			comms.scrollIntoView({ block: 'start' });
+			nav_t.parentNode.scrollIntoView({ block: 'start' });
 		}
+		pcont.id = 'pcont_'+ tmpid;
 		return new Promise(resolve => {
-			if (super.has(num)) {
-				this.swapAnimateTo( comms, super.get(num), reverse, resolve );
-			} else {
-				comms.parentNode.replaceChild( this.wait, comms );
-				this.preloadPage( path +'/page'+ num, num ).then(comms => {
-					if (this.retID === retID)
-						this.swapAnimateTo( this.wait, comms, reverse, resolve );
+			if (this.swapContent( num, reAnim, resolve )) {
+				this.preloadPage('/page'+ num).then(() => {
+					if (tmpid === pcont.id.substring('pcont_'.length)) {
+						pcont.id = 'pcont_'+ num;
+						this.swapContent( num, reAnim, resolve );
+					}
 				});
-			}
+			} else
+				pcont.id = 'pcont_'+ num;
 		});
 	}
 
-	expandNav(count = 1) {
+	getPageComments(num) {
+		return this.stack.reduce((list, comm) => {
+			if (comm.page === num)
+				list.push(comm.msg);
+			return list;
+		}, []);
+	}
 
-		const { page, path } = LOR;
-		const { nav_t, nav_b } = this,
+	resetNav(nav_count = 1) {
+
+		let   { page, path } = LOR;
+		const { nav_t, nav_b, pages_count } = this, pidx = nav_count - 1,
 		prevT = nav_t.firstElementChild, nextT = nav_t.lastElementChild,
 		prevB = nav_b.firstElementChild, nextB = nav_b.lastElementChild;
 
-		for (var i = nav_b.children.length - 2; i < count; i++) {
-			nextT.before(_setup('a', { id: `navt_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
-			nextB.before(_setup('a', { id: `navb_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
+		if (nav_count < pages_count) {
+			for (let i = nav_count; i < pages_count; i++) {
+				nav_t.children[`navt_${ i }`].remove();
+				nav_b.children[`navb_${ i }`].remove();
+			}
+			if (page > pidx)
+				page = pidx;
+		} else if (pages_count < nav_count) {
+			for (let i = pages_count; i < nav_count; i++) {
+				nextT.before(_setup('a', { id: `navt_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
+				nextB.before(_setup('a', { id: `navb_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
+			}
 		}
+		nav_b.hidden = nav_t.hidden = 1 >= (
+			this.pages_count = nav_count
+		);
 		if (page === 0) {
 			prevT.classList.add('broken');
 			prevB.classList.add('broken');
 		} else
-		if (page === i - 1) {
+		if (page === pidx) {
 			nextT.classList.add('broken');
 			nextB.classList.add('broken');
 		}
 		nav_t.children[`navt_${ page }`].classList.add('broken');
 		nav_b.children[`navb_${ page }`].classList.add('broken');
+		return page;
+	}
 
-		return (this.pages_count = count);
+	goToCommentPage(cid) {
+
+		const href = location.pathname + location.search,
+		      comm = document.getElementById(cid ? `comment-${LOR.cid = cid}` : 'topic-'+ LOR.topic);
+
+		history.replaceState(
+			{ lorYoffset: window.pageYOffset }, null, href
+		);
+		return new Promise(resolve => {
+			const _jmpMsg = (comm, href) => {
+				comm.scrollIntoView({ block: 'start', behavior: 'smooth' });
+				history.pushState({ lorYoffset: 0 }, null, href);
+				resolve(comm);
+			}
+			const _jmpPage = () => {
+				const { msg, page } = this.get(cid);
+				this.gotoPage(page).then(() => _jmpMsg(msg, lorifyUrl(LOR.path, page, LOR.lastmod, cid)));
+			}
+			if (comm) {
+				_jmpMsg(comm, href);
+			} else if (this.has(cid)) {
+				_jmpPage();
+			} else {
+				this.swapContent();
+				this.preloadPage('?cid='+ cid).then(_jmpPage);
+			}
+		});
 	}
 
 	handleEvent(e) {
@@ -583,17 +725,17 @@ class TopicNavigation extends Map {
 			var cid = aSearch.substring('?cid='.length);
 			Timer.delete('Close Preview', 'Open Preview', cid);
 			Drops = 1, clearPreviews();
-			goToCommentPage(cid, aPath + aSearch);
+			this.goToCommentPage(cid);
 			break;
-		case 'link-thr':
+		case 'link-thread':
 			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
 			showReplyThread(aPath, tid, cid);
 			break;
-		case 'quoteComment': alter = false;
-		case 'replyComment':
+		case 'link-quote': alter = false;
+		case 'link-reply':
 			var [ tid, cid ] = parseReplyUrl(aSearch);
 			if (aClass.contains('preview')) {
-				goToCommentPage(cid).then(target => {
+				this.goToCommentPage(cid).then(target => {
 					toggleForm(target.lastElementChild.lastElementChild, tid, cid, !alter);
 				});
 			} else {
@@ -612,33 +754,51 @@ class TopicNavigation extends Map {
 		e.preventDefault();
 	}
 
-	swapAnimateTo(comments, content, reverse, resolve) {
-		
-		let msg = content.querySelector('.msg[id^="comment-"]');
-		  (!msg ? content.prepend(this.nav_t) : msg.before(this.nav_t));
+	swapContent(num, reAnim = false, resolve = () => void 0) {
+
+		const { pcont } = this;
+		const msg_list = num !== undefined && this.getPageComments(num),
+		      is_empty = num === undefined || !msg_list.length;
+
+		pcont.className = 'hidaft page-'+ (is_empty ? 'loader' : 'content hidden');
+
+		if (is_empty)
+			return true;
+		while (pcont.nextSibling)
+			   pcont.parentNode.removeChild(pcont.nextSibling);
+		while (pcont.children[0])
+			   pcont.removeChild(pcont.children[0]);
+			   pcont.append( ...msg_list);
 
 		if (USER_SETTINGS['CSS3 Animation']) {
 
 			const termHandler = () => {
-				content.removeEventListener('animationend', termHandler, true);
-				content.classList.remove('slide-'+ (reverse ? 'left': 'right'));
+				pcont.removeEventListener('animationend', termHandler, true);
+				pcont.classList.remove('slide-'+ (reAnim ? 'left': 'right'));
 				resolve();
 			}
-			content.addEventListener('animationend', termHandler, true);
-			content.classList.add('slide-'+ (reverse ? 'left': 'right'));
+			pcont.addEventListener('animationend', termHandler, true);
+			pcont.className = 'page-content slide-'+ (reAnim ? 'left': 'right');
 		} else {
+			pcont.className = 'page-content';
 			resolve();
 		}
-		comments.parentNode.replaceChild(content, comments);
-		correctBlockCode(USER_SETTINGS['Code Block Short Size'], content);
+		correctBlockCode(USER_SETTINGS['Code Block Short Size'], pcont);
 	}
 
-	addBouble(num, cn) {
+	setNavBoubble(num, cn) {
 		const top = this.nav_t.children[`navt_${num}`],
 		      bot = this.nav_b.children[`navb_${num}`];
-		cn += Number(bot.getAttribute('cnt-new') || 0),
-		             top.setAttribute('cnt-new', cn),
-		             bot.setAttribute('cnt-new', cn);
+		if ( !bot )
+			return;
+		if (cn > 0) {
+			cn += Number(bot.getAttribute('cnt-new') || 0),
+			top.setAttribute('cnt-new', cn),
+			bot.setAttribute('cnt-new', cn);
+		} else {
+			top.removeAttribute('cnt-new');
+			bot.removeAttribute('cnt-new');
+		}
 	}
 }
 
@@ -763,11 +923,6 @@ const ContentFinder = {
 	}
 }
 
-let Drops = 1;
-let Navigation = null;
-let CommentForm = null;
-let LORCODE_MODE = 0;
-
 const onDOMReady = () => {
 
 	const { path, page, lastmod, cid, topic } = LOR;
@@ -798,7 +953,6 @@ const onDOMReady = () => {
 	if ((CommentForm = document.forms.commentForm || document.forms.messageForm)) {
 
 		handleCommentForm(CommentForm);
-		body.querySelectorAll('#topicMenu a[href^="comment-message.jsp?topic"], a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
 
 		let bd_rep = body.querySelector('h2 > a[name="rep"], #navPath');
 		if (bd_rep) {
@@ -850,6 +1004,24 @@ const onDOMReady = () => {
 				}`);
 		}
 
+		let shwdel = body.querySelector('input[name=deleted] + [type=submit]');
+		if (shwdel) {
+			shwdel.className = 'btn btn-default';
+			shwdel.parentNode.onsubmit = e => {
+				e.preventDefault();
+				if (shwdel.className === 'btn btn-default') {
+					shwdel.className =   'btn btn-primary';
+					fetch(e.target.action, {
+						method: 'POST', body: new FormData(e.target)
+					}).then(res => {
+						if (res.ok) {
+
+						}
+					});
+				}
+			}
+		}
+		handleReplyLinks( top, topic );
 		ContentFinder.check( top );
 
 	} else {
@@ -874,43 +1046,63 @@ const onDOMReady = () => {
 	}
 
 	const comments = document.getElementById('comments'),
+	      msg_list = comments.querySelectorAll('.msg[id^="comment-"]'),
 	      messages = comments.parentNode;
-	const navPages = body.querySelectorAll('.messages > .nav > .page-number');
-	const infBlock = body.querySelector('.messages > .infoblock');
-	const user     = body.querySelector('#loginGreating > a[href$="/profile"]');
+	const navPages = messages.querySelectorAll('#comments ~ .nav > .page-number'),
+	      pg_count = navPages.length ? navPages.length - 2 : 1;
+	const realtime = document.getElementById('realtime'),
+	      infotext = realtime.nextElementSibling.textContent;
 
+	const user = body.querySelector('#loginGreating > a[href$="/profile"]');
 	LOR.Login  = new RegExp( user ? '[\\s\\n]*'+ user.innerText +'[\\s\\n]*$' : '(!^)');
-	Navigation = new TopicNavigation(page, comments);
+	Navigation = new TopicNavigation;
 
-	let lastPageIdx = Navigation.expandNav(navPages.length ? navPages.length - 2 : 1) - 1;
+	const { nav_t, nav_b, pcont } = Navigation;
+	pcont.id = 'pcont_'+ Navigation.resetNav(pg_count);
+
+	let lastPageIdx = pg_count - 1;
 	if (lastPageIdx) {
-		let { nav_t, nav_b } = Navigation;
 		const old_b = navPages[0].parentNode,
 		      old_t = comments.querySelector('.nav');
 		old_t.parentNode.replaceChild(nav_t, old_t);
 		old_b.parentNode.replaceChild(nav_b, old_b);
+		nav_t.after(pcont);
+	} else {
+		if (msg_list.length)
+			msg_list[0].before(nav_t, pcont);
+		else
+			comments.append(nav_t, pcont);
+			realtime.after (nav_b);
 	}
-	workComments(comments.querySelectorAll('.msg[id^="comment-"]')).then(genRefMaps);
 	messages.addEventListener('click', Navigation);
+
+	let promisList = [];
+	if (msg_list.length) {
+		promisList.push( Navigation.add(msg_list, page) );
+	}
 
 	if (location.pathname.includes(`${topic}/thread/`))
 		return;
 	if (cid)
-		goToCommentPage(cid, path +'?cid='+ cid);
+		Navigation.goToCommentPage(cid);
 	else
 		history.replaceState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod, cid));
 
-	const topicDel = infBlock && infBlock.textContent.includes('Тема удалена');
-	const topicArc = infBlock && infBlock.textContent.includes('Тема перемещена в архив');
-
-	if (topicDel) {
+	if (infotext.includes('Тема удалена')) {
 		Favicon.draw('\u2013', 2);
 	} else
-	if (!topicArc) {
-		if (page != lastPageIdx) {
-			Navigation.preloadPage(path +'/page'+ lastPageIdx, lastPageIdx).then(RealtimeWatcher.start);
+	if (!infotext.includes('Тема перемещена в архив')) {
+		if (page !== lastPageIdx) {
+			const lastp = Navigation.preloadPage('/page'+ lastPageIdx);
+			lastp.then(({ comm_map }) => {
+				const ids = Object.keys(comm_map);
+				RealtimeWatcher.start(ids[ids.length - 1]);
+			});
+			promisList.push( lastp );
 		} else {
-			RealtimeWatcher.start(comments);
+			RealtimeWatcher.start(
+				msg_list.length ? msg_list[msg_list.length - 1].id.substring('comment-'.length) : ''
+			);
 		}
 	}
 
@@ -919,52 +1111,46 @@ const onDOMReady = () => {
 		let g = 1 + (page != lastPageIdx);
 
 		for (let i = page + 1; g < PL_COUNT && i < lastPageIdx; i++, g++) {
-			Navigation.preloadPage(path +'/page'+ i, i);
+			promisList.push(Navigation.preloadPage('/page'+ i));
 		}
 		for (let i = page - 1; g < PL_COUNT && i >= 0; i--, g++) {
-			Navigation.preloadPage(path +'/page'+ i, i);
+			promisList.push(Navigation.preloadPage('/page'+ i));
 		}
+		Promise.all(promisList).then(arr => {
+			if (!arr.length)
+				return;
+			const { ref_list, comm_map } = arr[0];
+
+			for (let i = 1; i < arr.length; i++) {
+				ref_list.push(...arr[i].ref_list);
+				Object.assign(comm_map, arr[i].comm_map);
+			}
+			if (ref_list.length) {
+				RefList = addRefLinks(comm_map, ref_list);
+			}
+		});
 	});
 
-	_setup(window, null, winEvents);
-};
+	window.addEventListener('dblclick', () => {
+		const newadded = document.getElementsByClassName('newadded'),
+		      ncount   = newadded.length;
+		if ( !ncount )
+			return;
+		for (let i = ncount - 1; i >= 0; i--)
+			newadded[i].classList.remove('newadded');
 
-const winEvents = {
-	dblclick: () => {
-		const newadded = document.querySelectorAll('.newadded[id^="comment-"]');
-		for (const { classList } of newadded)
-			classList.remove('newadded');
-		if (Navigation.pages_count) {
-			Navigation.nav_t.children[`navt_${LOR.page}`].removeAttribute('cnt-new');
-			Navigation.nav_b.children[`navb_${LOR.page}`].removeAttribute('cnt-new');
-		}
+		Navigation.setNavBoubble(LOR.page, 0);
 		Favicon.draw(
-			(Favicon.index -= newadded.length)
+			(Favicon.index -= ncount)
 		);
-	},
-	popstate: e => {
-		const { page, cid } = parseLORUrl(location.href);
-		const scrollTo = (LOR.cid = cid) ? () => {
-			document.getElementById(`comment-${cid}`).scrollIntoView()
-		} : () => {
-			if (e.state && e.state.lorYoffset)
-				document.documentElement.scrollTop = e.state.lorYoffset;
-		};
-		if (LOR.page !== page) {
-			Navigation.gotoPage(page).then(scrollTo);
-		} else
-			scrollTo();
-	}
+	});
 };
 
 const RealtimeWatcher = {
 
-	start: (comms) => {
+	start: (last_id) => {
 
-		const last     = comms.querySelector('.msg[id^="comment-"]:last-of-type');
 		const realtime = document.getElementById('realtime');
-		const last_id  = last ? last.id.substring('comment-'.length) : '';
-
 		var dbCiD = [];
 
 		if (!realtime.childNodes.length) {
@@ -1300,97 +1486,35 @@ function lorcodeMarkup(open, close) {
 	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
-function onWSData(dbCiD) {
-	// Get an HTML containing the comment
-	getDataResponse(`${LOR.path}?filter=list&cid=${dbCiD[0]}&skipdeleted=true`,
-		( html, rURL ) => { // => OK
-
-		const { page } = parseLORUrl(rURL);
-		const comms    = getCommentsContent(html);
-		const lastmod  = comms.querySelector(`#comment-${dbCiD[dbCiD.length - 1]} .sign > time`);
-
-		if (Navigation.has(page)) {
-
-			const parent = Navigation.get(page);
-			const cache  = [];
-
-			for (const msg of parent.querySelectorAll('.msg[id^="comment-"]')) {
-				if (msg.id in comms.children) {
-
-					const cand  = comms.children[msg.id],
-					_NEWlastMod = cand.querySelector('.sign_more > time'),
-					_OLDlastMod = msg.querySelector('.sign_more > time'),
-					_OLDeditBtn = msg.querySelector('.reply a[href^="/edit_comment"]');
-
-					if (_OLDeditBtn)
-						_OLDeditBtn.parentNode.hidden = !cand.querySelector('.reply a[href^="/edit_comment"]');
-
-					if (_NEWlastMod && (!_OLDlastMod || _NEWlastMod.dateTime !== _OLDlastMod.dateTime)) {
-						let   reply;
-						const new_nodes = _NEWlastMod.parentNode.parentNode.parentNode,
-						      msg_body  = msg.querySelector('.msg-container > .msg_body');
-						while (( reply  = msg_body.childNodes[0]).className !== 'reply')
-						      msg_body.removeChild(reply);
-						Element.prototype.before.apply(
-							reply, Array.prototype.slice.call(new_nodes.childNodes, 0, -1)
-						);
-						ContentFinder.check(msg_body);
-					}
-				} else {
-					msg.classList.add('deleted');
-				}
+const onWSData = (cids) => {
+	Navigation.preloadPage('?cid='+ cids[0], 1).then(
+	({ comm_map, ref_list, you_mens, page_num }) => {
+		const { pcont } = Navigation,
+		       new_list = [];
+		for (let i = 0; i < cids.length; i++) {
+			const msg = comm_map[ cids[i] ];
+			if ( !msg ) {
+				onWSData( cids.splice(i) );
+				break;
 			}
-			for (var i = 0; i < dbCiD.length; i++) {
-
-				if ( `comment-${dbCiD[i]}` in parent.children )
-					continue;
-
-				const comment = comms.children[`comment-${dbCiD[i]}`];
-				if ( !comment ) {
-					onWSData( dbCiD.splice(i) );
-					break;
-				}
-				cache.push(comment);
-			}
-			if ((i = cache.length)) {
-				workComments( cache, 1 ).then(genRefMaps);
-				Element.prototype.append.apply(parent, cache);
-				Navigation.addBouble(page, i);
-				Favicon.draw((Favicon.index += i));
-			}
-		} else {
-
-			Navigation.set(page, comms);
-
-			const nav = comms.querySelectorAll('.nav > .page-number'),
-			  nav_cnt = nav.length - 2;
-			const msg = comms.querySelectorAll('.msg[id^="comment-"]'),
-			  msg_cnt = msg.length;
-			
-			if (Navigation.pages_count <= 1) {
-				const { nav_t, nav_b } = Navigation;
-				document.getElementById('realtime').after(nav_b);
-				document.querySelector('#comments > .msg[id^="comment-"]').before(nav_t);
-			}
-			Navigation.expandNav(nav_cnt);
-			Navigation.addBouble(page, msg_cnt);
-			workComments( msg, 1 ).then(genRefMaps);
-			Favicon.draw((Favicon.index += msg_cnt));
+			msg.classList.add('newadded');
+			new_list.push(msg);
 		}
-		if (lastmod) {
-			history.replaceState({ lorYoffset: 0 }, null, `${ location.pathname }?lastmod=${ LOR.lastmod = new Date(lastmod.dateTime).getTime() }`);
-		}
+		if (pcont.id === `pcont_${page_num}`)
+			pcont.parentNode.append( ...new_list );
+		Favicon.draw((Favicon.index += new_list.length));
+		Navigation.setNavBoubble(page_num, new_list.length);
 	});
 }
 
- const workComments = (msg_list, pass = 0x00) => new Promise(resolve => {
+const workComments = (comm_list, page_num) => new Promise(resolve => {
 
 	const { path, Login } = LOR;
-	const works = new Array(msg_list.length);
+	let comm_map = Object.create(null),
+	    ref_list = [], you_mens = 0;
 
-	for (let i = 0; i < msg_list.length; i++) {
-
-		const msg = msg_list[i];
+	for(const msg of comm_list) {
+		const djm = msg.previousElementSibling;
 		const cid = msg.id.substring('comment-'.length);
 		let reply = msg.querySelector(`.title > a[href^="${ path }?cid="]`);
 		if (reply) {
@@ -1398,125 +1522,113 @@ function onWSData(dbCiD) {
 			let reid = reply.search.substring('?cid='.length);
 			let user = msg.querySelector('a[itemprop="creator"]');
 			// Create new response-map for this comment
-			works[i] = { cid, msg, name: (user ? user.innerText : 'anon'), reid, y: pass & Login.test(reply.nextSibling.textContent) };
+			ref_list.push({ cid, name: (user ? user.innerText : 'anon'), reid });
+			you_mens += Login.test(reply.nextSibling.textContent);
 			// Write special attributes
-			reply.className = 'link-pref';
-		} else
-			works[i] = { cid, msg };
-		if (pass & 0x1)
-			msg.classList.add('newadded');
+			_setup(reply, { class: 'link-pref' }, mousePreviewHandler);
+		}
+		if (djm && djm.className === 'datejump')
+			msg.setAttribute('datejump', djm.innerText);
 
-		addPreviewHandler(
-			(CommentsCache[cid] = msg), !TOUCH_DEVICE
+		handleReplyLinks(
+			(comm_map[cid] = msg), cid
 		);
 		ContentFinder.check(msg);
-
-		for(let a of msg.querySelectorAll(`.reply > ul > li > a[href^="${ path }"]`)) {
-			let reid = a.search.substring('?cid='.length);
-			if (reid === cid) {
-				a.className = 'link-self';
-				a.textContent = '';
-			} else {
-				if (reid)
-					a.setAttribute('href', `${a.pathname}/thread/${cid}#comment-${reid}`);
-				a.className = 'link-thr';
-				a.textContent = '\nОтветы';
-				a.after( _setup('span', { class: 'response-block' }) );
-			}
-		}
 	}
-	resolve(works);
- });
+	if (comm_list.length > 1)
+		ref_list = addRefLinks(comm_map, ref_list);
+	resolve({ comm_map, ref_list, you_mens, page_num });
+});
 
- const genRefMaps = (re_list) => {
+ const addRefLinks = (comm_map, ref_list) => {
 
 	const { path, TopicStarter } = LOR;
-	const RefMap = Object.assign({}, ResponsesMap);
-	let usr_refs = 0;
+	const unused = [];
 
-	for (let {reid, cid, name, y} of re_list) {
-		if ( !reid )
+	for(let i = 0; i < ref_list.length; i++) {
+		let {reid, name, cid} = ref_list[i];
+		if(!(reid in comm_map)) {
+			unused.push(ref_list[i]);
 			continue;
+		}
+		let comment   = comm_map[reid],
+		    res_block = comment.querySelector('.response-block');
+		if(!res_block) {
+			res_block = _setup('span', { class: 'response-block' }, mousePreviewHandler);
+			const lt  = _setup('a'   , { class: 'link-thread', text: '\nОтветы', href: path +'/thread/'+ cid }),
+			      li  = document.createElement('li'),
+			      ls  = comment.querySelector('.link-self');
+			if ( !ls  ) {
+				(comment.querySelector('.reply > ul') || comment.lastElementChild.lastElementChild.appendChild(
+					_setup('ul', { class: 'reply' })
+				)).append(li);
+			} else
+				ls.parentNode.before(li);
+			li.append(lt, res_block);
+		}
 		let a = _setup('a', {
 			class: 'link-pref' + (name === TopicStarter ? ' ts' : ''),
 			href: path +'?cid='+ cid,
 			text: name
 		});
-		if (reid in RefMap) {
-			RefMap[reid].push(a);
-		} else
-			RefMap[reid] = [a];
-		usr_refs += y;
+		res_block.append(a);
 	}
-	if (usr_refs > 0) {
-		App.checkNow();
-	}
-	for (let cid in RefMap) {
-		if ( cid in CommentsCache ) {
-
-			const comment = CommentsCache[cid];
-			let res_block = comment.querySelector('.response-block');
-
-			if(!res_block) {
-				res_block = _setup('span', { class: 'response-block' })
-				const lt  = _setup('a'   , { class: 'link-thr', text: '\nОтветы', href: path +'/thread/'+ cid }),
-				      li  = document.createElement('li'),
-				      ls  = comment.querySelector('.link-self');
-				if ( !ls  ) {
-					(comment.querySelector('.reply > ul') || comment.lastElementChild.lastElementChild.appendChild(
-						_setup('ul', { class: 'reply' })
-					)).append(li);
-				} else
-					ls.parentNode.before(li);
-				li.append(lt, res_block);
-			}
-			res_block.append(...RefMap[cid]);
-		} else {
-			ResponsesMap[cid] = RefMap[cid];
-		}
-	}
+	return unused;
 }
 
-function getCommentsContent(html) {
+const getCommentsContent = (html) => new Promise(resolve => {
 	// Create new DOM tree
-	const old = document.getElementById('topic-'+ LOR.topic),
-	      fav = old.querySelector('.fav-buttons');
-	const doc = new DOMParser().parseFromString(html, 'text/html'),
-	    topic = doc.getElementById('topic-'+ LOR.topic),
-	    newfv = topic.querySelector('.fav-buttons'),
-	    comms = doc.getElementById('comments');
-	// Remove banner scripts
-	while (!/^(?:msg|datejump)/.test(comms.children[0].className))
-		comms.children[0].remove();
-	// Add reply button action
-	if (CommentForm)
-		doc.querySelectorAll('a[itemprop="replyToUrl"]').forEach(handleReplyToBtn);
+	const newdoc = new DOMParser().parseFromString(html, 'text/html'),
+	       comms = newdoc.getElementById('comments');
+	// resolve promis with comment nodes
+	resolve({
+		nav_count: comms.querySelectorAll('.nav > .page-number').length,
+		msg_list : comms.querySelectorAll('.msg[id^="comment-"]')
+	});
+	const topic = document.getElementById('topic-'+ LOR.topic),
+	      newtp = newdoc.getElementById('topic-'+ LOR.topic),
+	      newfv = newtp.querySelector('.fav-buttons'),
+	      fav   = topic.querySelector('.fav-buttons');
 	// update favorites and memories counter
 	fav.children[  'favs_count'  ].textContent = newfv.children[  'favs_count'  ].textContent;
 	fav.children['memories_count'].textContent = newfv.children['memories_count'].textContent;
 	// stop watch if topic deleted
-	const tinfo = doc.body.querySelector('.messages > .infoblock');
+	let tinfo = newdoc.body.querySelector('.messages > .infoblock');
 	if (tinfo && tinfo.textContent.includes('Тема удалена')) {
 		let msgs = document.body.querySelector('.messages'),
 			info = msgs.querySelector('#comments ~ .infoblock');
 		if (info)
 			msgs.replaceChild(tinfo, info);
 		else
-			msgs.insertBefore(tinfo, msgs.lastElementChild);
+			msgs.insertBefore(ninfo, msgs.lastElementChild);
 		RealtimeWatcher.terminate('Тема удалена');
 	}
-	// Replace topic if modifed
-	const _OLDlastMod = old.querySelector('.sign > .sign_more > time');
-	const _NEWlastMod = topic.querySelector('.sign > .sign_more > time');
-	if (_NEWlastMod && (!_OLDlastMod || _NEWlastMod.dateTime !== _OLDlastMod.dateTime)) {
-		const new_body = newfv.nextElementSibling; // .msg_body > [itemprop="articleBody"]
-		fav.parentNode.replaceChild(new_body, fav.nextElementSibling);
-		const old_sign = old.querySelector('.sign'); // footer
-		old_sign.parentNode.replaceChild(_NEWlastMod.parentNode.parentNode, old_sign);
-		old.replaceChild(topic.firstElementChild, old.firstElementChild); // header
-		ContentFinder.check( new_body );
+	// update topic body if modifed
+	updCommentContent(topic, newtp, 1);
+});
+
+const updCommentContent = (old_msg, new_msg, si = 0) => {
+
+	const new_lmd = new_msg.querySelector('.sign_more > time');
+	const old_lmd = old_msg.querySelector('.sign_more > time');
+	const new_rly = new_msg.querySelector('.reply');
+	const old_rly = old_msg.querySelector('.reply');
+
+	let old_ebt = old_rly.querySelector('a[href^="/edit_comment"]');
+	if (old_ebt)
+		old_ebt.parentNode.hidden = !new_rly.querySelector('a[href^="/edit_comment"]');
+
+	if (new_lmd && (!old_lmd || new_lmd.dateTime !== old_lmd.dateTime)) {
+		const new_body = new_rly.parentNode;
+		const old_body = old_rly.parentNode;
+
+		ContentFinder.check(new_body);
+
+		for (let oc; (oc = old_body.childNodes[si]) && oc !== old_rly;)
+			old_body.removeChild(oc);
+		for (let nc; (nc = new_body.childNodes[si]) && nc !== new_rly;)
+			old_body.insertBefore(nc, old_rly);
 	}
-	return comms;
 }
 
 const clearPreviews = preview => {
@@ -1525,31 +1637,6 @@ const clearPreviews = preview => {
 	while ( pstack[c] !== preview)
 	        pstack[c--].remove();
 }
-
-const goToCommentPage = (cid, url) => new Promise(resolve => {
-
-	const getFromCache = () => {
-		const comment = CommentsCache[cid];
-				  num = Navigation.get( comment.parentNode );
-		Navigation.gotoPage(num).then(() => {
-			comment.scrollIntoView({ block: 'start', behavior: 'smooth' });
-			history.pushState({ lorYoffset: 0 }, null, lorifyUrl(LOR.path, num, LOR.lastmod, cid));
-			resolve(comment);
-		});
-	}
-	history.replaceState({ lorYoffset: window.pageYOffset }, null, location.pathname + location.search);
-
-	let comment = document.getElementById(`comment-${LOR.cid = cid}`);
-	if (comment) {
-		comment.scrollIntoView({ block: 'start', behavior: 'smooth' });
-		history.pushState({ lorYoffset: 0 }, null, `${location.pathname + location.search}#comment-${cid}`);
-		resolve(comment);
-	} else if (cid in CommentsCache) {
-		getFromCache();
-	} else if (url) {
-		Navigation.preloadPage(url).then(getFromCache);
-	}
-});
 
 class CentralPicture {
 
@@ -1748,10 +1835,10 @@ const showReplyThread = (uri, tid, cid) => {
 			msgcol.classList.remove('page-loader');
 			msgcol.classList.add('show-in');
 			msgcol.append(
-				CommentsCache[tid].cloneNode(true),
-				CommentsCache[cid].cloneNode(true));
+				Navigation.get(tid).msg.cloneNode(true),
+				Navigation.get(cid).msg.cloneNode(true));
 		}
-		if (cid in CommentsCache) {
+		if (Navigation.has(cid)) {
 			cmAdd();
 		} else
 			Navigation.preloadPage(uri).then(cmAdd);
@@ -1882,15 +1969,15 @@ const addThreadHandler = (thread, msgcol) => {
 			}
 		case 'link-self':
 			var cid = aSearch.substring('?cid='.length);
-			goToCommentPage(cid, aPath + aSearch);
+			Navigation.goToCommentPage(cid);
 		case 'reply-thread': thread.remove();
 			break;
-		case 'link-thr':
+		case 'link-thread':
 			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
 			showReplyThread(aPath, tid, cid);
 			break;
-		case 'quoteComment': param = true;
-		case 'replyComment':
+		case 'link-quote': param = true;
+		case 'link-reply':
 			var [ tid, cid ] = parseReplyUrl(aSearch);
 			toggleForm(msgcol.children[`comment-${cid}`], tid, cid, param);
 			break;
@@ -1906,28 +1993,26 @@ const addThreadHandler = (thread, msgcol) => {
 	});
 }
 
-const addPreviewHandler = (comment, mouse = false) => {
+const mousePreviewHandler = !TOUCH_DEVICE && {
 
-	if (mouse) {
-		comment.addEventListener('mouseover', e => {
-			const anc = e.target;
-			if (anc.classList[0] === 'link-pref') {
-				Timer.delete(anc.search.substring('?cid='.length));
-				Timer.set('Open Preview', () => {
-					Drops = 2;
-					showPreview(anc);
-				});
-				e.preventDefault();
-			}
-		});
-		comment.addEventListener('mouseout', e => {
-			if (e.target.classList[0] === 'link-pref') {
-				Drops = 1;
-				Timer.delete('Open Preview');
-			}
-		});
+	mouseover: e => {
+		const anc = e.target;
+		if (anc.classList[0] === 'link-pref') {
+			Timer.delete(anc.search.substring('?cid='.length));
+			Timer.set('Open Preview', () => {
+				Drops = 2;
+				showPreview(anc);
+			});
+			e.preventDefault();
+		}
+	},
+	mouseout: e => {
+		if (e.target.classList[0] === 'link-pref') {
+			Drops = 1;
+			Timer.delete('Open Preview');
+		}
 	}
-}
+};
 
 const showPreview = (anc) => {
 
@@ -1935,61 +2020,60 @@ const showPreview = (anc) => {
 	const cid   = anc.search.substring('?cid='.length);
 	const bunds = anc.getBoundingClientRect();
 
-	let isNew = false, comment;
+	let isNew = false, preview;
 
 	const attrs = {
 		id: 'preview-'+ cid,
 		class: 'msg preview',
 		style: 'border: 1px solid grey;'
 	}
-	const events = {
+	const events = !TOUCH_DEVICE ? Object.assign({
 		// remove all preview's
 		mouseleave: () => { Timer.set('Close Preview', clearPreviews) },
-		mouseenter: () => { Timer.set('Close Preview', () => clearPreviews(comment));
+		mouseenter: () => { Timer.set('Close Preview', () => clearPreviews(preview));
 			// remove all preview's after this one
 			Timer.delete(cid);
 		}
-	}
+	}, mousePreviewHandler) : null;
 	// Let's reduce an amount of GET requests
 	// by searching a cache of comments first
-	if (cid in CommentsCache) {
-		comment = document.getElementById(attrs.id);
-		if (!comment) {
+	if (Navigation.has(cid)) {
+		if (!(preview = document.getElementById(attrs.id))) {
 			// Without the 'clone' call we'll just move the original comment
-			comment = _setup(
-				CommentsCache[cid].cloneNode((isNew = true)), attrs, events
+			preview = _setup(
+				Navigation.get(cid).msg.cloneNode((isNew = true)), attrs, events
 			);
 		}
 	} else {
 		// Add Loading Process stub
-		comment = _setup('article', attrs, events);
-		comment.textContent = 'Загрузка...';
+		preview = _setup('article', attrs, events);
+		preview.textContent = 'Загрузка...';
 		// Get an HTML containing the comment
-		Navigation.preloadPage(anc.pathname + anc.search).then(() => {
-			comment.style.visibility = 'hidden';
-			comment.textContent = '';
-			for (const ch of CommentsCache[cid].children)
-				comment.append(ch.cloneNode(true));
+		Navigation.preloadPage(anc.search).then(({ comm_map }) => {
+			preview.style.visibility = 'hidden';
+			preview.textContent = '';
+			for (const ch of comm_map[cid].children)
+				preview.append(ch.cloneNode(true));
 			popupPreview(
-				comment, bunds, true
+				preview, bunds, true
 			);
 		}).catch(msg => { // => Error
-			comment.textContent = msg;
-			comment.classList.add('msg-error');
+			preview.textContent = msg;
+			preview.classList.add('msg-error');
 		});
 	}
 	if (USER_SETTINGS['CSS3 Animation'])
-		comment.classList.add('show-in');
+		preview.classList.add('show-in');
 	else
-		comment.classList.remove('show-in');
+		preview.classList.remove('show-in');
 	anc.onmouseleave = () => {
 		// remove this preview
-		Timer.set(cid, () => comment.remove(), USER_SETTINGS['Delay Close Preview']);
+		Timer.set(cid, () => preview.remove(), USER_SETTINGS['Delay Close Preview']);
 	};
-	popupPreview( comment, bunds, isNew );
+	popupPreview( preview, bunds, isNew );
 }
 
-const popupPreview = (comment, bunds, isNew) => {
+const popupPreview = (preview, bunds, isNew) => {
 
 	const { left, top, bottom, width } = bunds;
 
@@ -2000,22 +2084,19 @@ const popupPreview = (comment, bunds, isNew) => {
 	const offsetY  = window.pageYOffset + bottom + 10;
 
 	if (isNew) {
-		comment.style.maxWidth = '900px';
-		comment.style.left = ( left < visibleW ? offsetX : offsetX - visibleW ) +'px';
-		comment.style.top  = ( top  < visibleH ? offsetY : 0 ) +'px';
-		addPreviewHandler(
-			comment, !TOUCH_DEVICE
-		);
+		preview.style.maxWidth = '900px';
+		preview.style.left = ( left < visibleW ? offsetX : offsetX - visibleW ) +'px';
+		preview.style.top  = ( top  < visibleH ? offsetY : 0 ) +'px';
 	}
-	comment.style.visibility = 'hidden', parent.append(comment);
+	preview.style.visibility = 'hidden', parent.append(preview);
 
-	let { width: comW, height: comH } = comment.getBoundingClientRect();
+	let { width: comW, height: comH } = preview.getBoundingClientRect();
 
-	comment.style.left = Math.max(
+	preview.style.left = Math.max(
 		offsetX - (left < visibleW ? 0 : comW), 5) + 'px';
-	comment.style.top = window.pageYOffset + (
+	preview.style.top = window.pageYOffset + (
 		top < visibleH ? bottom + 10 : top - comH - 10) +'px';
-	comment.style.visibility = 'visible';
+	preview.style.visibility = 'visible';
 }
 
 const correctBlockCode = (max_h, parent) => {
@@ -2061,7 +2142,7 @@ function _setup(el, attrs, events) {
 
 const lorifyUrl = (path, page, lastmod, cid) => (path +
 	(page    ? `/page${     page    }` : '') +
-	(lastmod ? `?lastmod=${ lastmod }` : '') +
+//  (lastmod ? `?lastmod=${ lastmod }` : '') +
 	(cid     ? `#comment-${ cid     }` : '')
 )
 
@@ -2078,7 +2159,7 @@ function parseLORUrl(uri) {
 	return out;
 }
 
-const parseReplyUrl = (uri, rxi = 0) => {
+const parseReplyUrl = (uri = '', rxi = 0) => {
 	const  m = uri.match([
 		/\?topic=(\d+)(?:\&replyto=(\d+))?/,
 		/thread\/(\d+)(?:\#comment-(\d+))?/
@@ -2168,8 +2249,6 @@ function handleCommentForm(form) {
 		)
 	} else
 		_setup(form.elements['cancel'], { type: 'button', name: void 0, id:  'cancel' });
-
-	form.elements['csrf'].value = TOKEN;
 
 	for (const submit_btn of FACT_PANNEL.querySelectorAll('[type="submit"]')) {
 		_setup(submit_btn, { type: 'button', name: void 0, id: submit_btn.name, 'do-upload': '' });
@@ -2558,7 +2637,7 @@ function toMemories(e) {
 	const m_tag  = this.getAttribute('m_tag');
 	const f_data = new FormData;
 
-	f_data.append('csrf', TOKEN);
+	f_data.append('csrf', CommentForm.elements.csrf.value);
 
 	let watch = false, uri = '', name = 'favorite', cntr = null;
 	let to_del = Number(this.classList.contains('selected'));
@@ -2587,11 +2666,12 @@ function toMemories(e) {
 	}
 	sendFormData(uri, f_data, true).then(data => {
 		this.disabled = false;
-		if ('errors' in data)
-			return;
-		let { count = 0, id = '' } = data;
-		if (Number.isInteger(data))
-			id = '0', count = data;
+		if (Number.isInteger(data)) {
+			var id = '0', count = data, errors = false;
+		} else
+			var { count, id, errors } = data;
+		if (errors)
+			throw errors.join(', ');
 		if (id)
 			this.setAttribute('m_tag', id);
 		cntr.textContent = count;
@@ -2627,13 +2707,42 @@ const toggleForm = (underc, tid, cid, quote) => {
 	}
 }
 
-const handleReplyToBtn = anc => {
+const handleReplyLinks = (msg, cid) => {
 
-	const qut = anc.cloneNode();
+	const { path, topic } = LOR;
 
-	anc.className = 'replyComment', anc.textContent = 'Ответить';
-	qut.className = 'quoteComment', qut.textContent = 'с цитатой';
-	anc.after('\n.\n', qut);
+	for(const a of msg.querySelectorAll('.reply a')) {
+
+		const { pathname, search } = a;
+		switch (pathname) {
+		case '/comment-message.jsp':
+		case '/add_comment.jsp':
+			const rep = a.cloneNode();
+			const qut = a.cloneNode();
+		
+			rep.className = 'link-reply', rep.textContent = 'Ответить';
+			qut.className = 'link-quote', qut.textContent = 'с цитатой';
+			  a.replaceWith(rep, '\n.\n', qut);
+			break;
+		case '/resolve.jsp':
+		case '/edit.jsp':
+			break;
+		default:
+			if (pathname.startsWith(path)) {
+				let reid = search.substring('?cid='.length);
+				if (topic === cid || reid === cid) {
+					a.className = 'link-self';
+					a.textContent = '';
+				} else {
+					if (reid)
+						a.setAttribute('href', `${pathname}/thread/${cid}#comment-${reid}`);
+					a.className = 'link-thread';
+					a.textContent = '\nОтветы';
+					a.after( _setup('span', { class: 'response-block' }, mousePreviewHandler) );
+				}
+			}
+		}
+	}
 }
 
 function convMsgBody(msg) {
@@ -2811,7 +2920,7 @@ function WebExt() {
 						main_events_count.textContent = data ? `(${data})`: '';
 					break;
 				case 'scroll-to-comment':
-					goToCommentPage(data.split('?cid=')[1], data);
+					Navigation.goToCommentPage(data.split('?cid=')[1]);
 					break;
 				case 'need-codestyles':
 					getHLJSStyle('names').then(names => {
@@ -2985,7 +3094,7 @@ function UserScript() {
 					break;
 				case 'note-link':
 					if (btn.pathname === LOR.path) {
-						goToCommentPage(btn.search.substring('?cid='.length), btn.pathname + btn.search);
+						Navigation.goToCommentPage(btn.search.substring('?cid='.length));
 						e.preventDefault();
 					}
 				}
