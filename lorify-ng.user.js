@@ -1053,6 +1053,11 @@ const onDOMReady = () => {
 	const realtime = document.getElementById('realtime'),
 	      infotext = realtime.nextElementSibling.textContent;
 
+	if(!realtime.childNodes.length) {
+		realtime.append(
+		  '\n', _setup('a', { text: 'Обновить.', href: path })
+		);
+	}
 	const user = body.querySelector('#loginGreating > a[href$="/profile"]');
 	LOR.Login  = new RegExp( user ? '[\\s\\n]*'+ user.innerText +'[\\s\\n]*$' : '(!^)');
 	Navigation = new TopicNavigation;
@@ -1096,11 +1101,11 @@ const onDOMReady = () => {
 			const lastp = Navigation.preloadPage('/page'+ lastPageIdx);
 			lastp.then(({ comm_map }) => {
 				const ids = Object.keys(comm_map);
-				RealtimeWatcher.start(ids[ids.length - 1]);
+				RealtimeHub.watch(ids[ids.length - 1]);
 			});
 			promisList.push( lastp );
 		} else {
-			RealtimeWatcher.start(
+			RealtimeHub.watch(
 				msg_list.length ? msg_list[msg_list.length - 1].id.substring('comment-'.length) : ''
 			);
 		}
@@ -1146,54 +1151,46 @@ const onDOMReady = () => {
 	});
 };
 
-const RealtimeWatcher = {
+const RealtimeHub = {
 
-	start: (last_id) => {
+	watch: (last_id) => {
 
-		const realtime = document.getElementById('realtime');
-		var dbCiD = [];
+		const id = 'lorify_realtime_js';
 
-		if (!realtime.childNodes.length) {
-			realtime.append(
-				document.createTextNode(' '),
-				_setup('a', { text: 'Обновить.', href: LOR.path + (last_id ? '?cid='+ last_id : '') })
-			);
-		}
-		window.addEventListener('wsData', ({ detail }) => {
-			if (!detail || detail === '!') {
-				Favicon.draw(Favicon.index || detail, Number(detail === '!'));
-				return;
+		window.addEventListener('wsData', onWSData);
+		window.addEventListener('wsInfo', RealtimeHub);
+
+		document.getElementById(id) || document.head.appendChild(
+			_setup('script', { id, text: 'const startRealtimeWS = '+
+				RealtimeHub.start.toString() +';\n'+
+				'startRealtimeWS('+LOR.topic+', '+last_id+');'
+			})
+		);
+	},
+	start: (tid, cid) => {
+
+		let buffer = [], ct = -1;
+
+		const wS = new WebSocket('wss://www.linux.org.ru:9000/ws');
+		const _stop  = ({ detail }) => wS.close(1000, detail);
+		wS.onmessage = ({ data   }) => {
+			let evt = data.split(' ');
+			if (evt[0] === 'comment') {
+				clearTimeout(ct),
+				buffer.push(evt[1]),
+				ct = setTimeout(() => {
+					window.dispatchEvent( new CustomEvent('wsData', { detail: buffer }) );
+					buffer = [];
+				}, 1e3);
+			} else {
+				window.dispatchEvent( new CustomEvent('wsInfo', { detail: evt }) );
 			}
-			dbCiD.push( detail );
-			Timer.set('WebSocket Data', () => {
-				if (USER_SETTINGS['Realtime Loader']) {
-					realtime.style.display = 'none';
-					onWSData(dbCiD);
-					dbCiD = [];
-				} else {
-					let cnt = dbCiD.length;
-					realtime.childNodes[0].textContent = 'Добавлено ('+ cnt +') новых.\n';
-					realtime.childNodes[1].href = LOR.path +'?cid='+ dbCiD[0];
-					realtime.style.display = null;
-				}
-			}, 2e3);
-		});
-
-		document.head.appendChild(
-
-_setup('script', { text: `
-	const startRealtimeWS = (tid, cid) => {
-		const wS = new window.WebSocket('wss://www.linux.org.ru:9000/ws');
-		const _stop = ({ detail }) => wS.close(1000, detail);
-		wS.onmessage = ({ data }) => {
-			if (data.startsWith('comment '))
-			window.dispatchEvent(
-				new CustomEvent('wsData', { bubbles: true, detail: (cid = data.substring('comment '.length)) }) );
 		}
 		wS.onopen = () => {
 			console.info('Установлено соединение c '+ wS.url);
 			wS.send((cid ? tid +' '+ cid : tid));
 			window.addEventListener('wsStop', _stop);
+			window.dispatchEvent( new CustomEvent('wsInfo', { detail: ['ws-state', 0] }) );
 		}
 		wS.onclose = ({ code, reason }) => {
 			if (code === 1000 || code === 1001) {
@@ -1202,22 +1199,27 @@ _setup('script', { text: `
 				console.warn('Соединение c '+ wS.url +' было прервано "'+ reason +'" [код: '+ code +']');
 			}
 			if (code === 1008 || code === 1012 || code === 1013) {
-				setTimeout(() => {
-					window.dispatchEvent( new CustomEvent('wsData', { bubbles: true, detail: '' }) );
-					startRealtimeWS(tid, cid);
-				}, 15e3);
-				window.dispatchEvent( new CustomEvent('wsData', { bubbles: true, detail: '!' }) );
+				setTimeout(() => startRealtimeWS(tid, cid), 15e3);
+				window.dispatchEvent( new CustomEvent('wsInfo', { detail: ['ws-state', 1] }) );
 			}
 			window.removeEventListener('wsStop', _stop);
 		}
 		wS.onerror = e => console.error(e);
-	};
-	startRealtimeWS('${LOR.topic}', '${last_id}');
-`})
-		);
+	},
+	handleEvent: ({ detail: [inf, val] }) => {
+		switch (inf) {
+		case 'events-refresh':
+			App.checkNow(val);
+			break;
+		case 'ws-state':
+			Favicon.draw(Favicon.index || (val ? '!' : ''), val);
+			break;
+		}
 	},
 	terminate: (reason) => {
-		window.dispatchEvent( new CustomEvent('wsStop', { bubbles: true, detail: reason }) );
+		window.dispatchEvent( new CustomEvent('wsStop', { detail: reason }) );
+		window.removeEventListener('wsData', onWSData);
+		window.removeEventListener('wsInfo', RealtimeHub);
 		Favicon.draw('\u2013', 2);
 	}
 }
@@ -1486,15 +1488,20 @@ function lorcodeMarkup(open, close) {
 	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
-const onWSData = (cids) => {
-	Navigation.preloadPage('?cid='+ cids[0], 1).then(
-	({ comm_map, ref_list, you_mens, page_num }) => {
-		const { pcont } = Navigation,
-		       new_list = [];
-		for (let i = 0; i < cids.length; i++) {
-			const msg = comm_map[ cids[i] ];
+const onWSData = ({ detail }) => {
+
+	const realtime  = document.getElementById('realtime');
+	const   search  = '?cid='+ detail[0];
+	const { pcont } = Navigation;
+
+	let g = 0, count = detail.length;
+
+	const recuThen = ({ comm_map, ref_list, you_mens, page_num }) => {
+		const new_list = [];
+		for (; g < count; g++) {
+			const msg = comm_map[ detail[g] ];
 			if ( !msg ) {
-				onWSData( cids.splice(i) );
+				Navigation.preloadPage('/page'+ (page_num + 1)).then(recuThen);
 				break;
 			}
 			msg.classList.add('newadded');
@@ -1504,7 +1511,16 @@ const onWSData = (cids) => {
 			pcont.parentNode.append( ...new_list );
 		Favicon.draw((Favicon.index += new_list.length));
 		Navigation.setNavBoubble(page_num, new_list.length);
-	});
+	};
+
+	if (!USER_SETTINGS['Realtime Loader']) {
+		realtime.childNodes[0].textContent = 'Добавлено ('+ count +') новых.\n';
+		realtime.childNodes[1].search = search;
+		realtime.style.display = null;
+	} else {
+		realtime.style.display = 'none';
+		Navigation.preloadPage(search).then(recuThen);
+	}
 }
 
 const workComments = (comm_list, page_num) => new Promise(resolve => {
@@ -1601,7 +1617,7 @@ const getCommentsContent = (html) => new Promise(resolve => {
 			msgs.replaceChild(tinfo, info);
 		else
 			msgs.insertBefore(ninfo, msgs.lastElementChild);
-		RealtimeWatcher.terminate('Тема удалена');
+		RealtimeHub.terminate('Тема удалена');
 	}
 	// update topic body if modifed
 	updCommentContent(topic, newtp, 1);
