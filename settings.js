@@ -170,6 +170,7 @@ function pullNotes(html) {
 
 		const CALL_TYPE = trs[i].children[0].firstElementChild;
 		const LINK_ELEM = trs[i].children[1].firstElementChild;
+		const TAG_ELEMS = trs[i].children[1].querySelectorAll('.tag');
 		const TIME_ELEM = trs[i].children[2].firstElementChild;
 		const USER_NAME = trs[i].children[2].lastChild;
 
@@ -194,7 +195,7 @@ function pullNotes(html) {
 		);
 		if (/^[\s\n]*\d+[\s\n]*$/.test(USER_NAME.textContent))
 			USER_NAME.insertData(1, '💬 ');
-		tags.append( ...LINK_ELEM.children );
+		tags.append( ...TAG_ELEMS );
 		op_c.append( LINK_ELEM.lastChild );
 		item.append( tags, info, op_c );
 		info.append( user, time );
