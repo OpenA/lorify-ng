@@ -1052,7 +1052,7 @@ const onDOMReady = () => {
 	const navPages = messages.querySelectorAll('#comments ~ .nav > .page-number'),
 	      pg_count = navPages.length ? navPages.length - 2 : 1;
 	const realtime = document.getElementById('realtime'),
-	      infotext = realtime.nextElementSibling.textContent;
+	      infotext = (realtime.nextElementSibling || realtime).textContent;
 
 	if(!realtime.childNodes.length) {
 		realtime.append(
@@ -1078,7 +1078,7 @@ const onDOMReady = () => {
 			msg_list[0].before(nav_t, pcont);
 		else
 			comments.append(nav_t, pcont);
-			realtime.after (nav_b);
+			comments.after (nav_b);
 	}
 	messages.addEventListener('click', Navigation);
 
