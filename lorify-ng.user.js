@@ -1150,6 +1150,16 @@ const onDOMReady = () => {
 			(Favicon.index -= ncount)
 		);
 	});
+
+	window.addEventListener('keydown', e => {
+		const { target, key, ctrlKey } = e;
+		const c = ['ArrowLeft', 'ArrowRight'].indexOf(key);
+
+		if (ctrlKey && c >= 0) {
+			const a = document.getElementById(['Prev','Next'][c] +'Link');
+			location.href = a.href;
+		}
+	});
 };
 
 const RealtimeHub = {
