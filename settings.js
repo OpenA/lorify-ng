@@ -49,7 +49,7 @@ note_lst.addEventListener('click', e => {
 				body: new FormData( document.forms.reset_form )
 			}).then(({ ok }) => {
 				if (ok) {
-					applyAnim('l0rNG-notes-reset');
+					applyAnim('l0rNG-notes-set', 0);
 					document.forms.reset_form.remove();
 				}
 				el.id = 'reset-notes';
@@ -192,6 +192,8 @@ function pullNotes(html) {
 			CALL_TYPE.classList.contains('icon-user-color' ) ? 'пригл.' :
 			CALL_TYPE.classList.contains('icon-reply-color') ? 'ответ'  : '') || 'новый'
 		);
+		if (/^[\s\n]*\d+[\s\n]*$/.test(USER_NAME.textContent))
+			USER_NAME.insertData(1, '💬 ');
 		tags.append( ...LINK_ELEM.children );
 		op_c.append( LINK_ELEM.lastChild );
 		item.append( tags, info, op_c );

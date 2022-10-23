@@ -13,9 +13,9 @@ const defaults = Object.freeze({ // default settings
 	'Code Highlight Style' : 0
 });
 
-var notes = 0;
+let notes = 0, codestyles = null,
+      wss = 0, need_login = false;
 
-var codestyles  = null;
 const settings  = Object.assign({}, defaults);
 const openPorts = new Set;
 const isFirefox = navigator.userAgent.includes('Firefox');
@@ -30,22 +30,26 @@ const loadStore = isFirefox ?
 		}
 	});
 
-if ('onSuspend' in chrome.runtime) {
-	chrome.runtime.onSuspend.addListener(() => {
-		setBadge({ color: '#e5be5b' });
-		openPorts.clear();
-	});
-}
-
 chrome.notifications.onClicked.addListener(() => {
 	const ismob = Number(settings['Desktop Notification']) === 2;
 	openTab(`${ ismob ? '#' : 'lor://' }notifications`,
 	            ismob ? 'notes-show' : 'rel');
 });
 chrome.runtime.onConnect.addListener(port => {
+	if (port.name === 'lory-wss') {
+		chrome.alarms.clear('T-chk-notes');
+	}
 	port.onMessage.addListener(messageHandler);
 	port.onDisconnect.addListener(() => {
 		openPorts.delete(port);
+		for(const p of openPorts) {
+			if (p.name === 'lory-wss')
+				return;
+		}
+		chrome.alarms.create('T-chk-notes', {
+			delayInMinutes: 1,
+			periodInMinutes: 4
+		});
 	});
 	openPorts.add(port);
 	loadStore.then(() => port.postMessage({ action: 'connection-resolve', data: settings }));
@@ -71,8 +75,9 @@ const setBadge = 'setBadgeText' in chrome.browserAction ? (
 )(chrome.browserAction) : () => void 0;
 
 chrome.alarms.onAlarm.addListener(getNotifications);
-chrome.alarms.create('check-lor-notifications', {
-	when: Date.now() + 1e3
+chrome.alarms.create('T-chk-notes', {
+	when: Date.now() + 3e3,
+	periodInMinutes: 4
 });
 
 const queryScheme = isFirefox
@@ -148,21 +153,24 @@ function messageHandler({ action, data }, port) {
 		case 'l0rNG-setts-change':
 			changeSettings(data, port);
 			break;
-		case 'l0rNG-notes-reset':
-			updNoteStatus(0);
+		case 'l0rNG-notes-chk':
+			chrome.alarms.clear('Q-chk-notes');
+			chrome.alarms.create('Q-chk-notes', {
+				when: Date.now() + 1e3
+			});
 			break;
 		case 'l0rNG-codestyles':
-			codestyles = data;
+			if(!codestyles)
+				codestyles = data;
 			break;
 		case 'l0rNG-open-tab':
 			openTab(data, 'scroll-to-comment');
 			break;
-		case 'l0rNG-reval':
-			if ( notes < data || data > notes )
-				updNoteStatus(Number(data));
-		case 'l0rNG-checkNow':
-			chrome.alarms.clear('check-lor-notifications');
-			getNotifications();
+		case 'l0rNG-notes-set':
+			if ( notes < data || notes > data ) {
+				chrome.alarms.clear('Q-chk-notes');
+				updNoteStatus(data);
+			}
 			break;
 		case 'l0rNG-extra-sets':
 			if (codestyles)
@@ -172,7 +180,7 @@ function messageHandler({ action, data }, port) {
 	}
 }
 
-function getNotifications() {
+function getNotifications(alm) {
 
 	fetch('https://www.linux.org.ru/notifications-count', {
 		credentials: 'same-origin',
@@ -181,18 +189,12 @@ function getNotifications() {
 		response => {
 			if (response.ok) {
 				response.json().then( count => {
-					if ( notes < count || count > notes )
-						updNoteStatus(Number(count));
+					if ( notes < count || notes > count )
+						updNoteStatus(count);
 				});
-			}
-			if (response.status < 400) {
-				chrome.alarms.create('check-lor-notifications', {
-					delayInMinutes: 1
-				});
-			} else if (response.status >= 500) {
-				chrome.alarms.create('check-lor-notifications', {
-					delayInMinutes: 5
-				});
+			} else if (response.status === 403) {
+				chrome.alarms.clearAll();
+				need_login = true;
 			}
 		}
 	);

@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.2
+// @version     3.2.3
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -102,6 +102,16 @@ const Dynamic_Style = (() => {
 	return {
 		_Main_, _CodeShrink_,
 
+		set main_counter (n) {
+			let m_counter = document.getElementById('main_events_count');
+			if (m_counter)
+				m_counter.textContent = n ? `(${n})`: '';
+			else if ((m_counter = document.getElementById('counter_block'))) {
+				const txt = m_counter.firstChild.textContent.replace(/\d+/, n);
+				m_counter.firstChild.textContent = txt;
+				m_counter.hidden = !n;
+			}
+		},
 		set 'Center Image Scale'    (v) { img_center_scale .textContent = v.toFixed(2); },
 		set 'Center Image Rotate'   (v) { img_center_rotate.textContent = v.toString(); },
 		set 'Code Block Short Size' (v) { max_shrink_height.textContent = v.toString();
@@ -757,8 +767,8 @@ class TopicNavigation {
 	swapContent(num, reAnim = false, resolve = () => void 0) {
 
 		const { pcont } = this;
-		const msg_list = num !== undefined && this.getPageComments(num),
-		      is_empty = num === undefined || !msg_list.length;
+		const msg_list = Number.isInteger(num) && this.getPageComments(num),
+		      is_empty = !msg_list || !msg_list.length;
 
 		pcont.className = 'hidaft page-'+ (is_empty ? 'loader' : 'content hidden');
 
@@ -928,7 +938,8 @@ const onDOMReady = () => {
 	const { path, page, lastmod, cid, topic } = LOR;
 
 	const body = document.getElementById('bd') || document.body;
-	const init = App.init();
+	const main = document.getElementById('main_events_count');
+	const init = App.init(); RealtimeHub.init();
 
 	ContentNode = body.appendChild(
 		_setup('div', { class: 'lorify-cont' })
@@ -945,9 +956,12 @@ const onDOMReady = () => {
 		_setup('div', { id: 'scroll_down', class: 'scroll-btn' })
 	);
 
-	const favBtns  = body.querySelectorAll('.fav-buttons > a');
-
-	for (const fav of favBtns)
+	if (main) {
+		let notes = Number(main.textContent.match(/\d+/));
+		if (notes)
+			App.setNotes( notes );
+	}
+	for (const fav of body.querySelectorAll('.fav-buttons > a'))
 		fav.href = 'javascript:void(0)';
 
 	if ((CommentForm = document.forms.commentForm || document.forms.messageForm)) {
@@ -970,20 +984,7 @@ const onDOMReady = () => {
 			}), ')\n');
 		}
 	} else if ('reset_form' in document.forms) {
-		const { reset_form } = document.forms,
-		         reset_btn   = reset_form.lastElementChild;
-		reset_btn.className = 'btn btn-danger';
-		reset_form.onsubmit = e => { e.preventDefault();
-			if (reset_btn.className === 'btn btn-danger') {
-				reset_btn.className = 'btn btn-primary';
-				reset_btn.textContent = '...';
-				sendFormData('/notifications-reset',
-				new FormData(reset_form)).then(() => {
-					reset_form.parentNode.style.display = 'none';
-					App.reset();
-				});
-			}
-		}
+		handleResetForm(document.forms.reset_form);
 	}
 
 	if (topic) {
@@ -1094,18 +1095,18 @@ const onDOMReady = () => {
 		history.replaceState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod, cid));
 
 	if (infotext.includes('Тема удалена')) {
-		Favicon.draw('\u2013', 2);
+		RealtimeHub.terminate('Тема удалена');
 	} else
 	if (!infotext.includes('Тема перемещена в архив')) {
 		if (page !== lastPageIdx) {
 			const lastp = Navigation.preloadPage('/page'+ lastPageIdx);
 			lastp.then(({ comm_map }) => {
 				const ids = Object.keys(comm_map);
-				RealtimeHub.watch(ids[ids.length - 1]);
+				RealtimeHub.watch(topic, ids[ids.length - 1]);
 			});
 			promisList.push( lastp );
 		} else {
-			RealtimeHub.watch(
+			RealtimeHub.watch(topic,
 				msg_list.length ? msg_list[msg_list.length - 1].id.substring('comment-'.length) : ''
 			);
 		}
@@ -1153,74 +1154,101 @@ const onDOMReady = () => {
 
 const RealtimeHub = {
 
-	watch: (last_id) => {
+	state: -1, to_send: '',
 
+	init() {
 		const id = 'lorify_realtime_js';
 
-		window.addEventListener('wsData', onWSData);
-		window.addEventListener('wsInfo', RealtimeHub);
-
+		window.addEventListener('message', this);
 		document.getElementById(id) || document.head.appendChild(
 			_setup('script', { id, text: 'const startRealtimeWS = '+
-				RealtimeHub.start.toString() +';\n'+
-				'startRealtimeWS('+LOR.topic+', '+last_id+');'
+				this.start.toString()  +';\nstartRealtimeWS();'
 			})
 		);
 	},
-	start: (tid, cid) => {
+	watch(topic_id = '', last_id = '') {
+
+		const wsText = topic_id + (last_id ? ' '+ last_id : '');
+		this.to_send = wsText;
+
+		if (this.state === 0)
+			window.postMessage({ wsRequest: 'send', wsText });
+	},
+	start: () => {
 
 		let buffer = [], ct = -1;
 
 		const wS = new WebSocket('wss://www.linux.org.ru:9000/ws');
-		const _stop  = ({ detail }) => wS.close(1000, detail);
-		wS.onmessage = ({ data   }) => {
+		const _handler  = ({ origin, data }) => {
+			if (origin !== location.origin || !data.wsRequest)
+				return;
+			switch(data.wsRequest) {
+			case 'stop':
+				wS.close(1000, data.wsText);
+				break;
+			case 'send':
+				wS.send(data.wsText);
+				break;
+			}
+		}
+		wS.onmessage = ({ data }) => {
 			let evt = data.split(' ');
 			if (evt[0] === 'comment') {
 				clearTimeout(ct),
 				buffer.push(evt[1]),
 				ct = setTimeout(() => {
-					window.dispatchEvent( new CustomEvent('wsData', { detail: buffer }) );
+					window.postMessage({ wsEvent: 'new-comments', wsData: buffer }, location.origin);
 					buffer = [];
 				}, 1e3);
 			} else {
-				window.dispatchEvent( new CustomEvent('wsInfo', { detail: evt }) );
+				window.postMessage({ wsEvent: evt[0], wsData: evt[1] }, location.origin);
 			}
 		}
 		wS.onopen = () => {
 			console.info('Установлено соединение c '+ wS.url);
-			wS.send((cid ? tid +' '+ cid : tid));
-			window.addEventListener('wsStop', _stop);
-			window.dispatchEvent( new CustomEvent('wsInfo', { detail: ['ws-state', 0] }) );
+			window.addEventListener('message', _handler);
+			window.postMessage({ wsEvent: 'stat-change', wsData: 0 }, location.origin);
 		}
 		wS.onclose = ({ code, reason }) => {
+			let wsData = 2;
 			if (code === 1000 || code === 1001) {
 				console.info('Закрыто соединение c '+ wS.url +' ('+ reason +')');
+				wsData = 3;
 			} else {
 				console.warn('Соединение c '+ wS.url +' было прервано "'+ reason +'" [код: '+ code +']');
 			}
 			if (code === 1008 || code === 1012 || code === 1013) {
-				setTimeout(() => startRealtimeWS(tid, cid), 15e3);
-				window.dispatchEvent( new CustomEvent('wsInfo', { detail: ['ws-state', 1] }) );
+				setTimeout(startRealtimeWS, 15e3);
+				wsData = 1;
 			}
-			window.removeEventListener('wsStop', _stop);
+			window.removeEventListener('message', _handler);
+			window.postMessage({ wsEvent: 'stat-change', wsData }, location.origin);
 		}
 		wS.onerror = e => console.error(e);
 	},
-	handleEvent: ({ detail: [inf, val] }) => {
-		switch (inf) {
+	handleEvent({ origin, data }) {
+		if (origin !== location.origin || !data.wsEvent)
+			return;
+		let wd = data.wsData;
+		switch ( data.wsEvent ) {
+		case 'new-comments':
+			onWSData(wd);
+			break;
 		case 'events-refresh':
-			App.checkNow(val);
+			App.checkNow(wd);
 			break;
-		case 'ws-state':
-			Favicon.draw(Favicon.index || (val ? '!' : ''), val);
-			break;
+		case 'stat-change':
+			if (this.state === 2 || wd === 3)
+				return;
+			if (this.state !== -1)
+				Favicon.draw(Favicon.index || (wd ? '!' : ''), wd);
+			if ((this.state = wd) === 0 && this.to_send)
+				window.postMessage({ wsRequest: 'send', wsText: this.to_send });
 		}
 	},
-	terminate: (reason) => {
-		window.dispatchEvent( new CustomEvent('wsStop', { detail: reason }) );
-		window.removeEventListener('wsData', onWSData);
-		window.removeEventListener('wsInfo', RealtimeHub);
-		Favicon.draw('\u2013', 2);
+	terminate(reason = '') {
+		this.to_send = reason;
+		Favicon.draw('\u2013', (this.state = 2));
 	}
 }
 
@@ -1488,18 +1516,18 @@ function lorcodeMarkup(open, close) {
 	this.dispatchEvent( new InputEvent('input', { bubbles: true }) );
 }
 
-const onWSData = ({ detail }) => {
+const onWSData = (cids) => {
 
 	const realtime  = document.getElementById('realtime');
-	const   search  = '?cid='+ detail[0];
+	const   search  = '?cid='+ cids[0];
 	const { pcont } = Navigation;
 
-	let g = 0, count = detail.length;
+	let g = 0, count = cids.length;
 
 	const recuThen = ({ comm_map, ref_list, you_mens, page_num }) => {
 		const new_list = [];
 		for (; g < count; g++) {
-			const msg = comm_map[ detail[g] ];
+			const msg = comm_map[ cids[g] ];
 			if ( !msg ) {
 				Navigation.preloadPage('/page'+ (page_num + 1)).then(recuThen);
 				break;
@@ -1595,7 +1623,8 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 const getCommentsContent = (html) => new Promise(resolve => {
 	// Create new DOM tree
 	const newdoc = new DOMParser().parseFromString(html, 'text/html'),
-	       comms = newdoc.getElementById('comments');
+	       comms = newdoc.getElementById('comments'),
+	       evets = newdoc.getElementById('main_events_count');
 	// resolve promis with comment nodes
 	resolve({
 		nav_count: comms.querySelectorAll('.nav > .page-number').length,
@@ -1619,6 +1648,8 @@ const getCommentsContent = (html) => new Promise(resolve => {
 			msgs.insertBefore(ninfo, msgs.lastElementChild);
 		RealtimeHub.terminate('Тема удалена');
 	}
+	if (evets)
+		App.setNotes( Number(evets.textContent.match(/\d+/)) );
 	// update topic body if modifed
 	updCommentContent(topic, newtp, 1);
 });
@@ -2115,7 +2146,7 @@ const popupPreview = (preview, bunds, isNew) => {
 	preview.style.visibility = 'visible';
 }
 
-const correctBlockCode = (max_h, parent) => {
+function correctBlockCode (max_h, parent) {
 	for(const s of parent.getElementsByClassName('shrink-line')) {
 		const code     = s.nextElementSibling.firstElementChild,
 		    { height } = code.getBoundingClientRect();
@@ -2206,6 +2237,24 @@ const sendFormData = (uri, formData, json = false, signal = null) => (
 		     : res => (res.ok ? Promise.resolve(res) : Promise.reject(res.status +' '+ res.statusText))
 	)
 );
+
+const handleResetForm = (rf_form) => {
+	const rf_btn = rf_form.lastElementChild;
+	rf_btn.className = 'btn btn-danger';
+	rf_form.onsubmit = e => { e.preventDefault();
+		if (rf_btn.disabled === false) {
+			rf_btn.className = 'btn btn-primary';
+			rf_btn.disabled = true;
+			rf_btn.textContent = '...';
+			const fd = new FormData(rf_form);
+			sendFormData('/notifications-reset', fd).then(() => {
+				rf_btn.className = 'btn btn-danger';
+				rf_btn.textContent = 'Сбросить';
+				App.setNotes(0);
+			});
+		}
+	}
+}
 
 function handleCommentForm(form) {
 	
@@ -2924,32 +2973,31 @@ function domToMarkdown(childNodes, deep = 0) {
 
 function WebExt() {
 
-	let main_events_count, opened;
+	let opened;
 
 	const portConnect = resolve => {
-		const port = chrome.runtime.connect();
+		const port = chrome.runtime.connect({ name: 'lory-wss' });
 		port.onMessage.addListener(({ action, data }) => {
 // try {
 			switch (action) {
-				case 'notes-count-update':
-					if (main_events_count)
-						main_events_count.textContent = data ? `(${data})`: '';
-					break;
-				case 'scroll-to-comment':
-					Navigation.goToCommentPage(data.split('?cid=')[1]);
-					break;
-				case 'need-codestyles':
-					getHLJSStyle('names').then(names => {
-						port.postMessage({ action: 'l0rNG-codestyles', data: names });
-					});
-					break;
-				case 'connection-resolve':
-					console.info('WebExt Runtime Connected!');
-					resolve(port);
-				case 'settings-change':
-					for (const key in data) {
-						Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
-					}
+			case 'notes-count-update':
+				Dynamic_Style.main_counter = data;
+				break;
+			case 'scroll-to-comment':
+				Navigation.goToCommentPage(data.split('?cid=')[1]);
+				break;
+			case 'need-codestyles':
+				getHLJSStyle('names').then(names => {
+					port.postMessage({ action: 'l0rNG-codestyles', data: names });
+				});
+				break;
+			case 'connection-resolve':
+				console.info('WebExt Runtime Connected!');
+				resolve(port);
+			case 'settings-change':
+				for (const key in data) {
+					Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
+				}
 			}
 /*} catch(emsg) {
 	if (/can.*t.*access.*init/i.test(emsg)) {
@@ -2978,82 +3026,54 @@ function WebExt() {
 	}
 
 	return {
-		checkNow : () => sendMessage( 'l0rNG-checkNow' ),
+		checkNow : () => sendMessage( 'l0rNG-notes-chk' ),
 		openUrl  : al => sendMessage( 'l0rNG-open-tab', 'lor:/'+ al ),
-		reset    : () => sendMessage( 'l0rNG-notes-reset' ),
-		init     : () => {
-			if ( (main_events_count = document.getElementById('main_events_count')) ) {
-				const notes = Number(main_events_count.textContent.match(/\d+/));
-				sendMessage('l0rNG-reval', notes);
-			}
-			return opened;
-		}
+		setNotes : nc => sendMessage( 'l0rNG-notes-set', nc),
+		init     : () => opened
 	}
 }
 
 function UserScript() {
 
-	var main_events_count, reset_form, lorylist;
-	var notes   = Number(localStorage.getItem('l0rNG-notes'));
+	let notes, ready, lorypanel, lorylist, loryform, granted = false;
 
 	const self = {
 		checkNow: () => void 0,
 		openUrl : () => true,
-		reset   : () => setNotes(true, 0),
+		setNotes: () => void 0,
 		init    : () => {
-			if ( (main_events_count = document.getElementById('main_events_count')) ) {
-				if ( (notes = Number(main_events_count.textContent.match(/\d+/))) ) {
-					lorypanel.children['lorynotify'].setAttribute('cnt-new', notes);
-				}
-				Timer.set('Check Notifications', (self.checkNow = startWatch), delay);
-			}
 			document.body.append(lorypanel);
-			return Promise.resolve();
+			return ready;
 		}
 	}
 
-	const sendNotify = (permission => {
-		// Определяем статус оповещений:
-		var granted = (permission === 'granted'); // - разрешены
-
-		switch (permission) {
-			case 'denied':  // - отклонены
-				return () => void 0;
-			case 'default': // - требуется подтверждение
-				Notification.requestPermission(p => { granted = (p === 'granted'); });
+	const sendNotify = count => {
+		if (USER_SETTINGS['Desktop Notification'] && granted) {
+			const notif = new Notification('LINUX.ORG.RU', {
+				icon: 'data:image/webp;base64,UklGRoIDAABXRUJQVlA4THUDAAAvL8ALELXIsm3btJ36pD5OFYw/2zx77vtabNu2vmzbtn3w1kMBdjzSzB2nsW0kSXGyntlFl/k/5NC2duzRsm3bTiqjs23bTpWUrIyxbbuzZzrbjPXpTECoDsXMiXMqnR7p/+PVO2ll7CpHO6pOidwWWciVl38ShhXnWcsdiss3SamoAczlHeUVSeoq5iEV5xrlF8VJqxCvEEtZFKcKmEhN3pngnKoAyQOG+7nawm7sxFRkjMcmnMYprPV7oBUBntrJLQaRDuMh0n9KwGMt7uMhYow3MBkgN80c21+e9Dxmn8efM4jZNzDYlkAiyMqrYJpX0XIbAZw+K2c7O3w0uQNPQK5ayV2ukEziED+R1YnUbB5SkSXuwWa8/5Bws0nYC54cbaeQoCS5yADmXnFfxjkSA+XahInYgRjjGIB0FZFe5J/TPpFahlcB9xEvozZqoD5ijItbFnbsaLgaE2Mz1EQnxBgHA2RHEWkG5LbnnnKG4Xt8gNHYip8xHito+NPg522fhZj9AB4CcqeIEwAgq15LO6ohyBW4iZitibdv37a8yPkOyEKRIDdJy30JD/IT7iDrXkDXjbdv336+E5J1DwAlrkW8hAyQt1CGB8iKV2I6HDT4afEwY+RuQFYcCkCqijykIs+zgAmI+RcSFrXciIj5cwHIhSJB0gssR4HiewDIludQ5CEVeZR3AEZ3MQCA7C8SnMScf3dgFN8DOBlFgtzJmopovR4p+S9+RRJhomSsg9kepJBPZewKBNmdsQVme5GBvBjAqEAZS1lI/Tfbhyzkdk96ecFpT22F2cccfg+jnTeRmlwF1sBsHTEP7+hDKjmhL2O5IjCXaDbLAsg3kTJwevKClwoDCPdhNdAmOLmetbT9FgEQKRGdlzCUDTgMo7MA/ocQfkm6DHpzTwcwzwtyEBbAaBVAHgXL/jxEhBMwuY2BACkwCV9hEt5YrAV4r9tRt/ntfIeFMDhOEZlfJbHB2IkXBV48QHnOkwdYAGc4mHsDwFRcRbFjhJJVkJMTqdkFZwYYiNW4jLwrWE76BfJ5CINgL6Gyh7TH8xXYjj02d1vdaXWtjUk2PpKWNwlfsxIvETCVJVmRMbN2NJ0G6Zf7ObIqv+S9/P/xQ2TkpbxDhkKFOnHvnHs888YHMA/ZXrCc9goH0OjPox31igkhYS9dnk+oXgEA',
+				body: `\n${ count } новых сообщений`,
+			});
+			notif.onclick = () => { window.focus() };
 		}
-		return count => {
-			if (USER_SETTINGS['Desktop Notification'] && granted) {
-				const notif = new Notification('LINUX.ORG.RU', {
-					icon: 'https://github.com/OpenA/lorify-ng/blob/master/icons/penguin-mono.svg?raw=true',
-					body: `\n${ count } новых сообщений`,
-				});
-				notif.onclick = () => { window.focus() };
-			}
-		}
-	})( window.Notification ? Notification.permission : 'denied' );
+	}
 
-	const delay      = 5e4;
-	const defaults   = Object.assign({}, USER_SETTINGS);
-	const startWatch = getDataResponse.bind(null, '/notifications-count',
+	const checkNow = () => Timer.set(
+		'Check Notifications',
+		getDataResponse.bind(null, '/notifications-count',
 		( response ) => {
 			let count = Number(response);
 			if (count > notes)
 				sendNotify(count);
-			setNotes(true, count);
-		}, ({ status }) => {
-			if (status < 400 || status >= 500)
-				Timer.set('Check Notifications', startWatch, delay * (status >= 500 ? 5 : 1));
-		});
+			setNotes(count);
+		}),
+	1300); /*  */ self.checkNow = checkNow;
 
-	const setNotes = (save, count) => {
-		const lorynotify = lorypanel.children.lorynotify,
-			  cleared    = !(notes = count);
-		if (main_events_count)
-			main_events_count.textContent = cleared ? '' : `(${count})`;
+	const setNotes = (count, save = true) => {
+		const lorynotify = lorypanel.children.lorynotify;
+		Dynamic_Style.main_counter = (notes = count);
 		if (save)
 			localStorage.setItem('l0rNG-notes', count);
-		if (cleared) {
+		if (!count) {
 			lorynotify.removeAttribute('cnt-new');
 			lorynotify.classList.remove('pushed');
 			getNotesList(-1).remove();
@@ -3062,8 +3082,7 @@ function UserScript() {
 				getNotesList(count);
 			lorynotify.setAttribute('cnt-new', count);
 		}
-		Timer.set('Check Notifications', startWatch, delay);
-	}
+	}; /*  */ self.setNotes = setNotes;
 
 	const setValues = items => {
 		for (const name in Object.assign(USER_SETTINGS, items)) {
@@ -3094,19 +3113,13 @@ function UserScript() {
 	const getNotesList = (max) => {
 		let empty = true;
 
-		if (!lorylist) {
+		if(!lorylist) {
 			lorylist = _setup('div', { class: 'lorify-notes-panel'}, { click: e => {
 				const btn = e.target;
 				switch (btn.id) {
 				case 'notify-clear':
-					if (!btn.disabled && reset_form) {
-						btn.disabled = true;
-						sendFormData('/notifications-reset',
-						new FormData( reset_form )).then(() => {
-							reset_form = setNotes(true, 0);
-							btn.disabled = false;
-						});
-					}
+					if (document.forms.reset_form)
+						document.forms.reset_form.submit();
 					break;
 				case 'note-link':
 					if (btn.pathname === LOR.path) {
@@ -3128,10 +3141,24 @@ function UserScript() {
 			getDataResponse('/notifications', html => {
 				const doc = new DOMParser().parseFromString(html, 'text/html'),
 					  tab = _setup(doc.querySelector('.message-table'), { id: 'notify-list' });
-				reset_form = doc.forms.reset_form;
+				let new_rf = doc.forms.reset_form;
+				if (new_rf) {
+					const isNf = location.pathname !== '/notifications';
+					const body = document.getElementById('bd');
+					let old_rf = document.forms.reset_form;
+					if (old_rf) {
+						old_rf.elements.topId.value = new_rf.elements.topId.value;
+						old_rf.parentNode.hidden = isNf;
+						old_rf.lastElementChild.disabled = false;
+					} else {
+						handleResetForm(new_rf);
+						new_rf.parentNode.hidden = isNf;
+						body.children[1].after(new_rf.parentNode);
+					}
+				}
 				for (let i = 0; i < max; i++) {
-					tab.rows[i].children[1].className                = 'note-target';
-					tab.rows[i].children[1].firstElementChild.id     = 'note-link';
+					tab.rows[i].children[1].className = 'note-target';
+					tab.rows[i].children[1].firstElementChild.id = 'note-link';
 					tab.rows[i].children[1].firstElementChild.target = '_blank';
 				}
 				while (tab.rows[max])
@@ -3142,7 +3169,12 @@ function UserScript() {
 		return lorylist;
 	}
 
-	const loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
+ready = new Promise(resolve => {
+
+	notes = Number(localStorage.getItem('l0rNG-notes'));
+	const defaults = Object.assign({}, USER_SETTINGS);
+
+	loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
 		<div class="tab-row">
 			<span class="tab-cell">Автоподгрузка комментариев:</span>
 			<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
@@ -3222,7 +3254,7 @@ function UserScript() {
 		input.selectedIndex = USER_SETTINGS['Code Highlight Style'];
 	});
 
-	const lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
+	lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
 	<svg id="loriko-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 	  <path id="loriko-belly" fill="snow" d="m14.2 8 9.4-3.2 10.2 2.8 3.7 15-1.9 12.8-6.4 6-11 .2-5.6-5.5-2.5-10Z"/>
 	  <path id="loriko-body" fill="#2a1725" d="M8.8 31.1c.5 3.7 3 7.1 5.6 9.7-1.7 0-3.3 1.3-4.1 2.2-1 1.1 0 1.4 2 1.4 0 1.4.4 1 2.3 1.4 0 2 2.4.5 5.5-1.4a89 89 0 0 1 9-.1c2.7 2.6 4.4 3.2 4.7 1.2 2.5.4 2.6-.3 2.8-2 5 2 .8-3.1-2.6-3.2a16 16 0 0 0 5-9c1.2.5 8.1 3.3 9 1.1.3-.8-.8-2-1.3-2.7-1.5-2.1-6.3-5.3-7.3-7.7-1.7-4.2-1.3-8.8-2.8-13-2.3-6.3-6-9-12.6-9-6.7 0-9.6 2.6-12 9-1.4 4-1.4 8.3-3 12.5-1 2.4-6.2 6.1-7.7 8.2-.5.6-1.6 1.9-1.2 2.7.8 2.2 1.9 1 3.2.5m15-26C21 6.8 22 9.2 24 9.2c1 0 2.1-1.3 3-1.8a5 5 0 0 1 6 1.1c3 3.5 1 7.3 1.4 11.2.2 2 1.5 3.9 1.6 6 .6 7.3-2.5 13.8-10 14.7-8 .8-14-3.7-14.3-12-.1-3 1.4-5.5 1.7-8.3.4-5-2.1-12.3 5.6-13"/>
@@ -3378,10 +3410,30 @@ function UserScript() {
 	});
 	window.addEventListener('storage', ({ key, newValue }) => {
 		switch(key) {
-			case 'lorify-ng'  : setValues( JSON.parse( newValue ) ); break;
-			case 'l0rNG-notes': setNotes ( false, Number(newValue) ); break;
+		case 'lorify-ng':
+			setValues( JSON.parse( newValue ) );
+			break;
+		case 'l0rNG-notes':
+			Timer.delete('Check Notifications');
+			setNotes ( Number(newValue), false);
+			break;
 		}
 	});
+
+	(permission => {
+		// Определяем статус оповещений:
+		granted = (permission === 'granted'); // - разрешены
+
+		if (permission === 'default') {
+			// - требуется подтверждение
+			Notification.requestPermission(p => {
+				granted = (p === 'granted');
+			});
+		}
+	})( window.Notification ? Notification.permission : 'denied' );
+
+resolve() });
+
 	return self;
 }
 
