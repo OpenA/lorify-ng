@@ -2752,8 +2752,13 @@ const toggleForm = (underc, tid, cid, quote) => {
 
 	let toshow = (parent.style.display === 'none');
 	if (quote) {
+		let sel = window.getSelection(), frag;
+		if (sel.rangeCount > 0 && underc.contains(sel.anchorNode)) {
+			frag = sel.getRangeAt(0).cloneContents();
+		} else
+			frag = underc.querySelector('[itemprop="articleBody"]') || underc;
 		convMsgBody(
-			underc.querySelector('[itemprop="articleBody"]') || underc
+			frag
 		);
 		if (parent.parentNode === underc && !toshow)
 			return;
@@ -2967,7 +2972,6 @@ function domToMarkdown(childNodes, deep = 0) {
 				text += getRawText(el);
 		}
 	}
-	
 	return text;
 }
 
