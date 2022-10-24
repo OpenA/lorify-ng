@@ -191,7 +191,8 @@ function pullNotes(html) {
 		item.setAttribute( 'comment-link', 'lor:/'+ LINK_ELEM.pathname + LINK_ELEM.search );
 		info.setAttribute( 'answer'      , CALL_TYPE && (
 			CALL_TYPE.classList.contains('icon-user-color' ) ? 'пригл.' :
-			CALL_TYPE.classList.contains('icon-reply-color') ? 'ответ'  : '') || 'новый'
+			CALL_TYPE.classList.contains('icon-reply-color') ? 'ответ'  :
+			CALL_TYPE.title === /*    */ 'Сообщение удалено' ? 'удалено': '') || 'новый'
 		);
 		if (/^[\s\n]*\d+[\s\n]*$/.test(USER_NAME.textContent))
 			USER_NAME.insertData(1, '💬 ');

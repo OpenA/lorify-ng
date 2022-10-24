@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.3
+// @version     3.2.4
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -238,7 +238,15 @@ document.documentElement.append(
 			position: absolute;
 			z-index: 300;
 		}
-		.preview #commentForm, .hidden, .hidaft ~ *, .hidaft > * {
+		#realtime.ws-warn  { background-color: rgb(202, 114, 71); }
+		#realtime.ws-error { background-color: rgb(160, 52, 52); }
+
+		.ws-warn:before  { content: 'Соединение приостановлено.\\A'; }
+		.ws-error:before { content: 'Соединение разорвано.\\A'; }
+
+		.ws-warn  > *:first-child, .hidaft > *,
+		.ws-error > *:first-child, .hidaft ~ *,
+		.preview #commentForm, .hidden {
 			display: none;
 		}
 		.show-in {
@@ -723,6 +731,13 @@ class TopicNavigation {
 			if (parent.scrollHeight > window.innerHeight)
 				parent.scrollIntoView();
 			break;
+		case 'link-rthub':
+			if (parent.classList.contains('ws-warn') && USER_SETTINGS['Realtime Loader']) {
+				parent.style.display = 'none';
+				RealtimeHub.restart();
+			} else
+				location.href = aPath + aSearch;
+			break;
 		case 'link-navs':
 			if (aPath !== LOR.path) {
 				if (App.openUrl(aPath + aSearch)) {
@@ -816,6 +831,7 @@ const Favicon = {
 	
 	original : '//www.linux.org.ru/favicon.ico',
 	index    : 0,
+	colors   : ['#48de3d', '#e47702', '#F00'], // ok, warn, error
 
 	setTitle: (label) => {
 		document.title = document.title.replace(/\s\(\d+\)|$/, ` (${label})`);
@@ -843,7 +859,7 @@ const Favicon = {
 	
 	draw: function(label = '', color = 0) {
 
-		const { icon, canvas, original } = this;
+		const { icon, canvas, original, colors } = this;
 
 		if (!label) {
 			icon.href = original;
@@ -865,7 +881,7 @@ const Favicon = {
 
 		// colored icon
 		ctx.strokeStyle = 'rgba(0,0,0,.5)';
-		ctx.fillStyle = ['#48de3d', '#e47702', '#F00'][color]; // ok, warn, error
+		ctx.fillStyle = colors[color];
 		ctx.fill(d);
 
 		// text label
@@ -939,7 +955,7 @@ const onDOMReady = () => {
 
 	const body = document.getElementById('bd') || document.body;
 	const main = document.getElementById('main_events_count');
-	const init = App.init(); RealtimeHub.init();
+	const init = App.init();
 
 	ContentNode = body.appendChild(
 		_setup('div', { class: 'lorify-cont' })
@@ -963,6 +979,19 @@ const onDOMReady = () => {
 	}
 	for (const fav of body.querySelectorAll('.fav-buttons > a'))
 		fav.href = 'javascript:void(0)';
+
+	if ('regform' in document.forms) {
+		const user = document.getElementById('loginGreating');
+		user.addEventListener('click', (e) => {
+			if (e.target.id.endsWith('loginbutton')) {
+				const h = e.target.id.startsWith('hide');
+				user.children[0].style.display = h ?  null : 'none';
+				user.children[1].style.display = h ? 'none':  null ;
+				e.preventDefault();
+			}
+		});
+	} else
+		RealtimeHub.init();
 
 	if ((CommentForm = document.forms.commentForm || document.forms.messageForm)) {
 
@@ -1056,14 +1085,11 @@ const onDOMReady = () => {
 
 	if(!realtime.childNodes.length) {
 		realtime.append(
-		  '\n', _setup('a', { text: 'Обновить.', href: path })
+		   document.createElement('span'),
+		  _setup('a', { text: 'Обновить.', class: 'link-rthub', href: path })
 		);
 	}
-	const user = body.querySelector('#loginGreating > a[href$="/profile"]');
-	LOR.Login  = new RegExp( user ? '[\\s\\n]*'+ user.innerText +'[\\s\\n]*$' : '(!^)');
-	Navigation = new TopicNavigation;
-
-	const { nav_t, nav_b, pcont } = Navigation;
+	const { nav_t, nav_b, pcont } = (Navigation = new TopicNavigation);
 	pcont.id = 'pcont_'+ Navigation.resetNav(pg_count);
 
 	let lastPageIdx = pg_count - 1;
@@ -1078,7 +1104,7 @@ const onDOMReady = () => {
 			msg_list[0].before(nav_t, pcont);
 		else
 			comments.append(nav_t, pcont);
-			comments.after (nav_b);
+			realtime.after (nav_b);
 	}
 	messages.addEventListener('click', Navigation);
 
@@ -1095,7 +1121,7 @@ const onDOMReady = () => {
 		history.replaceState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod, cid));
 
 	if (infotext.includes('Тема удалена')) {
-		RealtimeHub.terminate('Тема удалена');
+		RealtimeHub.terminate();
 	} else
 	if (!infotext.includes('Тема перемещена в архив')) {
 		if (page !== lastPageIdx) {
@@ -1163,7 +1189,13 @@ const onDOMReady = () => {
 };
 
 const RealtimeHub = {
-
+/* - - - 
+  -2: onhold
+  -1: oninit
+   0: running
+   1: stopped
+   2: crushed
+ - - - */
 	state: -1, to_send: '',
 
 	init() {
@@ -1186,13 +1218,20 @@ const RealtimeHub = {
 	},
 	start: () => {
 
-		let buffer = [], ct = -1;
+		let buffer = [], ct = -1, err = false;
 
 		const wS = new WebSocket('wss://www.linux.org.ru:9000/ws');
 		const _handler  = ({ origin, data }) => {
 			if (origin !== location.origin || !data.wsRequest)
 				return;
 			switch(data.wsRequest) {
+			case 'restart':
+				if (wS.readyState === wS.CLOSED)
+					window.removeEventListener('message', _handler);
+				else
+					wS.close(1000, 'restarting...');
+				startRealtimeWS();
+				break;
 			case 'stop':
 				wS.close(1000, data.wsText);
 				break;
@@ -1220,21 +1259,22 @@ const RealtimeHub = {
 			window.postMessage({ wsEvent: 'stat-change', wsData: 0 }, location.origin);
 		}
 		wS.onclose = ({ code, reason }) => {
-			let wsData = 2;
+			let wsData = 1 + err;
 			if (code === 1000 || code === 1001) {
 				console.info('Закрыто соединение c '+ wS.url +' ('+ reason +')');
-				wsData = 3;
+				wsData = -2;
 			} else {
 				console.warn('Соединение c '+ wS.url +' было прервано "'+ reason +'" [код: '+ code +']');
 			}
-			if (code === 1008 || code === 1012 || code === 1013) {
-				setTimeout(startRealtimeWS, 15e3);
-				wsData = 1;
-			}
-			window.removeEventListener('message', _handler);
+			if (wsData === -2)
+				window.removeEventListener('message', _handler);
 			window.postMessage({ wsEvent: 'stat-change', wsData }, location.origin);
 		}
-		wS.onerror = e => console.error(e);
+		wS.onerror = () => { err = true; };
+	},
+	restart() {
+		this.state = 1;
+		window.postMessage({ wsRequest: 'restart', wsText: '' });
 	},
 	handleEvent({ origin, data }) {
 		if (origin !== location.origin || !data.wsEvent)
@@ -1248,18 +1288,29 @@ const RealtimeHub = {
 			App.checkNow(wd);
 			break;
 		case 'stat-change':
-			if (this.state === 2 || wd === 3)
+			if (this.state === -2 || wd === -2)
 				return;
 			if (this.state !== -1)
-				Favicon.draw(Favicon.index || (wd ? '!' : ''), wd);
+				onWSChange(wd);
 			if ((this.state = wd) === 0 && this.to_send)
 				window.postMessage({ wsRequest: 'send', wsText: this.to_send });
 		}
 	},
-	terminate(reason = '') {
-		this.to_send = reason;
-		Favicon.draw('\u2013', (this.state = 2));
+	terminate(wasStop = false, reason = '') {
+		this.state = -2;
+		if (wasStop)
+			window.postMessage({ wsRequest: 'stop', wsText: reason });
+		Favicon.draw('\u2013', 2);
 	}
+}
+
+const onWSChange = (s) => {
+
+	const realtime = document.getElementById('realtime');
+
+	realtime.className = s ? `ws-${ s === 1 ? 'warn' : 'error' }` : '';
+	realtime.style.display = s ? null : 'none';
+	Favicon.draw(Favicon.index || (s ? '!' : ''), s);
 }
 
 const injectText = (str, nl = false) => {
@@ -1534,7 +1585,7 @@ const onWSData = (cids) => {
 
 	let g = 0, count = cids.length;
 
-	const recuThen = ({ comm_map, ref_list, you_mens, page_num }) => {
+	const recuThen = ({ comm_map, ref_list, page_num }) => {
 		const new_list = [];
 		for (; g < count; g++) {
 			const msg = comm_map[ cids[g] ];
@@ -1550,10 +1601,10 @@ const onWSData = (cids) => {
 		Favicon.draw((Favicon.index += new_list.length));
 		Navigation.setNavBoubble(page_num, new_list.length);
 	};
+	realtime.children[0].textContent = 'Добавлено ('+ count +') новых.\n';
+	realtime.children[1].search = search;
 
 	if (!USER_SETTINGS['Realtime Loader']) {
-		realtime.childNodes[0].textContent = 'Добавлено ('+ count +') новых.\n';
-		realtime.childNodes[1].search = search;
 		realtime.style.display = null;
 	} else {
 		realtime.style.display = 'none';
@@ -1563,9 +1614,9 @@ const onWSData = (cids) => {
 
 const workComments = (comm_list, page_num) => new Promise(resolve => {
 
-	const { path, Login } = LOR;
+	const { path } = LOR;
 	let comm_map = Object.create(null),
-	    ref_list = [], you_mens = 0;
+	    ref_list = [];
 
 	for(const msg of comm_list) {
 		const djm = msg.previousElementSibling;
@@ -1577,7 +1628,6 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 			let user = msg.querySelector('a[itemprop="creator"]');
 			// Create new response-map for this comment
 			ref_list.push({ cid, name: (user ? user.innerText : 'anon'), reid });
-			you_mens += Login.test(reply.nextSibling.textContent);
 			// Write special attributes
 			_setup(reply, { class: 'link-pref' }, mousePreviewHandler);
 		}
@@ -1591,7 +1641,7 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 	}
 	if (comm_list.length > 1)
 		ref_list = addRefLinks(comm_map, ref_list);
-	resolve({ comm_map, ref_list, you_mens, page_num });
+	resolve({ comm_map, ref_list, page_num });
 });
 
  const addRefLinks = (comm_map, ref_list) => {
@@ -1656,7 +1706,7 @@ const getCommentsContent = (html) => new Promise(resolve => {
 			msgs.replaceChild(tinfo, info);
 		else
 			msgs.insertBefore(ninfo, msgs.lastElementChild);
-		RealtimeHub.terminate('Тема удалена');
+		RealtimeHub.terminate();
 	}
 	if (evets)
 		App.setNotes( Number(evets.textContent.match(/\d+/)) );
