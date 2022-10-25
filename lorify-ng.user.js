@@ -27,7 +27,7 @@ const USER_SETTINGS = {
 }
 
 let ContentNode, Navigation, CommentForm;
-let LORCODE_MODE = 0, Drops = 1, RefList = [];
+let LORCODE_MODE = 0, Drops = 1;
 
 const LOR           = parseLORUrl(location.href);
 const TOUCH_DEVICE  = 'ontouchstart' in window;
@@ -464,6 +464,19 @@ class TopicNavigation {
 		}
 		this.pages_count = 0;
 
+		let gRefList = [];
+		const refMapTable = ( ref_list ) => {
+			let comb_map = Object.create(null),
+			      hasMap = false,
+			    ref_comb = gRefList.concat(ref_list);
+
+			for (let { reid } of ref_comb) {
+				if((hasMap = reid in table))
+					comb_map[reid] = table[reid].msg;
+			}
+			gRefList = hasMap ? addRefLinks(comb_map, ref_comb) : ref_comb;
+		}
+
 		window.addEventListener('popstate', e => {
 			const { page, cid } = parseLORUrl(location.href);
 			const _jmpTo = () => {
@@ -494,6 +507,7 @@ class TopicNavigation {
 
 			get: { value: cid => table[cid] },
 			has: { value: cid => cid in table },
+			ref: { value: refMapTable },
 			add: { value: addToStack }
 		});
 	}
@@ -523,6 +537,10 @@ class TopicNavigation {
 					);
 					if (nav_count && nav_count - 2 !== this.pages_count)
 						this.resetNav(nav_count - 2);
+					if (pass & 0x01)
+						wrk.then(
+							({ ref_list }) => ref_list.length && this.ref(ref_list)
+						);
 					return wrk;
 				});
 			} else {
@@ -620,7 +638,7 @@ class TopicNavigation {
 		pcont.id = 'pcont_'+ tmpid;
 		return new Promise(resolve => {
 			if (this.swapContent( num, reAnim, resolve )) {
-				this.preloadPage('/page'+ num).then(() => {
+				this.preloadPage('/page'+ num, 1).then(() => {
 					if (tmpid === pcont.id.substring('pcont_'.length)) {
 						pcont.id = 'pcont_'+ num;
 						this.swapContent( num, reAnim, resolve );
@@ -699,7 +717,7 @@ class TopicNavigation {
 				_jmpPage();
 			} else {
 				this.swapContent();
-				this.preloadPage('?cid='+ cid).then(_jmpPage);
+				this.preloadPage('?cid='+ cid, 1).then(_jmpPage);
 			}
 		});
 	}
@@ -1151,15 +1169,12 @@ const onDOMReady = () => {
 		Promise.all(promisList).then(arr => {
 			if (!arr.length)
 				return;
-			const { ref_list, comm_map } = arr[0];
+			const g_ref = [];
 
-			for (let i = 1; i < arr.length; i++) {
-				ref_list.push(...arr[i].ref_list);
-				Object.assign(comm_map, arr[i].comm_map);
-			}
-			if (ref_list.length) {
-				RefList = addRefLinks(comm_map, ref_list);
-			}
+			for(let { ref_list } of arr)
+				g_ref.push(...ref_list);
+			if (g_ref.length)
+				Navigation.ref(g_ref);
 		});
 	});
 
@@ -1583,7 +1598,7 @@ const onWSData = (cids) => {
 	const   search  = '?cid='+ cids[0];
 	const { pcont } = Navigation;
 
-	let g = 0, count = cids.length;
+	let g = 0, count = cids.length, g_ref = [];
 
 	const recuThen = ({ comm_map, ref_list, page_num }) => {
 		const new_list = [];
@@ -1600,8 +1615,11 @@ const onWSData = (cids) => {
 			pcont.parentNode.append( ...new_list );
 		Favicon.draw((Favicon.index += new_list.length));
 		Navigation.setNavBoubble(page_num, new_list.length);
+		g_ref.push(...ref_list);
+		if (g === count)
+			Navigation.ref(g_ref);
 	};
-	realtime.children[0].textContent = 'Добавлено ('+ count +') новых.\n';
+	realtime.children[0].textContent = `Добавлено ${count} новых.\n'`;
 	realtime.children[1].search = search;
 
 	if (!USER_SETTINGS['Realtime Loader']) {
@@ -1639,7 +1657,7 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 		);
 		ContentFinder.check(msg);
 	}
-	if (comm_list.length > 1)
+	if (comm_list.length > 1 && ref_list.length)
 		ref_list = addRefLinks(comm_map, ref_list);
 	resolve({ comm_map, ref_list, page_num });
 });
@@ -1659,7 +1677,7 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 		    res_block = comment.querySelector('.response-block');
 		if(!res_block) {
 			res_block = _setup('span', { class: 'response-block' }, mousePreviewHandler);
-			const lt  = _setup('a'   , { class: 'link-thread', text: '\nОтветы', href: path +'/thread/'+ cid }),
+			const lt  = _setup('a'   , { class: 'link-thread', text: '\nОтветы', href: path +'/thread/'+ reid }),
 			      li  = document.createElement('li'),
 			      ls  = comment.querySelector('.link-self');
 			if ( !ls  ) {
@@ -2156,7 +2174,7 @@ const showPreview = (anc) => {
 		preview = _setup('article', attrs, events);
 		preview.textContent = 'Загрузка...';
 		// Get an HTML containing the comment
-		Navigation.preloadPage(anc.search).then(({ comm_map }) => {
+		Navigation.preloadPage(anc.search, 1).then(({ comm_map }) => {
 			preview.style.visibility = 'hidden';
 			preview.textContent = '';
 			for (const ch of comm_map[cid].children)
