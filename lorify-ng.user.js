@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.4
+// @version     3.2.5
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -27,7 +27,7 @@ const USER_SETTINGS = {
 }
 
 let ContentNode, Navigation, CommentForm;
-let LORCODE_MODE = 0, Drops = 1;
+let LORCODE_MODE = 0, Drops = 1, ThrMap = {};
 
 const LOR           = parseLORUrl(location.href);
 const TOUCH_DEVICE  = 'ontouchstart' in window;
@@ -208,6 +208,8 @@ document.documentElement.append(
 			border-radius: 50%;
 			width: 50px;
 			height: 50px;
+		}
+		#comments > .page-loader {
 			margin: 500px auto;
 		}
 		.slide-left  { animation-name: slideLeft; }
@@ -246,7 +248,7 @@ document.documentElement.append(
 
 		.ws-warn  > *:first-child, .hidaft > *,
 		.ws-error > *:first-child, .hidaft ~ *,
-		.preview #commentForm, .hidden {
+		.hidden {
 			display: none;
 		}
 		.show-in {
@@ -343,13 +345,22 @@ document.documentElement.append(
 			position: fixed;
 			background-color: rgba(77,77,77,.7);
 			overscroll-behavior: contain;
+			z-index: 1;
 		}
 		.reply-thread > .messages {
 			border: 0 solid rgba(0,0,0,.3);
 			border-width: 0 2px 3px 0;
-			margin: 40px auto;
 			max-width: 800px;
 			position: relative;
+		}
+		.reply-thread > * {
+			margin: 40px auto;
+		}
+		.fake-flee + * {
+			position: absolute;
+			left: 0; right: 0;
+			max-height: 400px;
+			overflow-y: auto;
 		}
 		.reply-thread > .messages > .msg {
 			margin-bottom: 1px;
@@ -726,10 +737,10 @@ class TopicNavigation {
 
 		const el  = e.target,
 		   aClass = el.classList,
-		   parent = el.parentNode,
 		   aPath  = el.pathname,
 		  aSearch = el.search;
 		let alter = true;
+		let parent= el.parentNode;
 
 		switch (aClass[0]) {
 		case 'page-number':
@@ -775,15 +786,14 @@ class TopicNavigation {
 			showReplyThread(aPath, tid, cid);
 			break;
 		case 'link-quote': alter = false;
-		case 'link-reply':
+		case 'link-reply': parent = parent.parentNode.parentNode.parentNode;
 			var [ tid, cid ] = parseReplyUrl(aSearch);
-			if (aClass.contains('preview')) {
+			if (parent.classList.contains('no-reply')) {
 				this.goToCommentPage(cid).then(target => {
 					toggleForm(target.lastElementChild.lastElementChild, tid, cid, !alter);
 				});
-			} else {
-				toggleForm(parent.parentNode.parentNode.parentNode, tid, cid, !alter);
-			}
+			} else
+				toggleForm(parent, tid, cid, !alter);
 			break;
 		case 'medium-image': alter = false;
 		case   'link-image':
@@ -1055,7 +1065,7 @@ const onDOMReady = () => {
 		let shwdel = body.querySelector('input[name=deleted] + [type=submit]');
 		if (shwdel) {
 			shwdel.className = 'btn btn-default';
-			shwdel.parentNode.onsubmit = e => {
+			/*shwdel.parentNode.onsubmit = e => {
 				e.preventDefault();
 				if (shwdel.className === 'btn btn-default') {
 					shwdel.className =   'btn btn-primary';
@@ -1067,7 +1077,7 @@ const onDOMReady = () => {
 						}
 					});
 				}
-			}
+			}*/
 		}
 		handleReplyLinks( top, topic );
 		ContentFinder.check( top );
@@ -1630,7 +1640,7 @@ const onWSData = (cids) => {
 	}
 }
 
-const workComments = (comm_list, page_num) => new Promise(resolve => {
+const workComments = (comm_list, page_num, mouse = mousePreviewHandler) => new Promise(resolve => {
 
 	const { path } = LOR;
 	let comm_map = Object.create(null),
@@ -1647,22 +1657,22 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 			// Create new response-map for this comment
 			ref_list.push({ cid, name: (user ? user.innerText : 'anon'), reid });
 			// Write special attributes
-			_setup(reply, { class: 'link-pref' }, mousePreviewHandler);
+			_setup(reply, { class: 'link-pref' }, mouse);
 		}
 		if (djm && djm.className === 'datejump')
 			msg.setAttribute('datejump', djm.innerText);
 
 		handleReplyLinks(
-			(comm_map[cid] = msg), cid
+			(comm_map[cid] = msg), cid, mouse
 		);
 		ContentFinder.check(msg);
 	}
 	if (comm_list.length > 1 && ref_list.length)
-		ref_list = addRefLinks(comm_map, ref_list);
+		ref_list = addRefLinks(comm_map, ref_list, mouse);
 	resolve({ comm_map, ref_list, page_num });
 });
 
- const addRefLinks = (comm_map, ref_list) => {
+ const addRefLinks = (comm_map, ref_list, mouse = mousePreviewHandler) => {
 
 	const { path, TopicStarter } = LOR;
 	const unused = [];
@@ -1676,7 +1686,7 @@ const workComments = (comm_list, page_num) => new Promise(resolve => {
 		let comment   = comm_map[reid],
 		    res_block = comment.querySelector('.response-block');
 		if(!res_block) {
-			res_block = _setup('span', { class: 'response-block' }, mousePreviewHandler);
+			res_block = _setup('span', { class: 'response-block' }, mouse);
 			const lt  = _setup('a'   , { class: 'link-thread', text: '\nОтветы', href: path +'/thread/'+ reid }),
 			      li  = document.createElement('li'),
 			      ls  = comment.querySelector('.link-self');
@@ -1948,40 +1958,25 @@ if (!('scrollTopMax' in Element.prototype)) {
 
 const showReplyThread = (uri, tid, cid) => {
 
-	const id = 'thread-'+ tid;
-	if (  id in ContentNode.children )
-		return  ContentNode.append(ContentNode.children[id]);
+	const id = 'thread-'+ tid,
+	    exis = ContentNode.children[id] || ThrMap[tid];
+	if (exis)
+		return ContentNode.append(exis);
 
 	const msgcol = _setup('div', { class: 'page-loader' });
 	const thread = _setup('div', { class: 'reply-thread', id });
 
-	if (cid) {
-		const cmAdd = () => {
-			msgcol.classList.remove('page-loader');
-			msgcol.classList.add('show-in');
-			msgcol.append(
-				Navigation.get(tid).msg.cloneNode(true),
-				Navigation.get(cid).msg.cloneNode(true));
-		}
-		if (Navigation.has(cid)) {
-			cmAdd();
-		} else
-			Navigation.preloadPage(uri).then(cmAdd);
-	} else {
-		getDataResponse(uri, html => {
-			const comms = getCommentsContent(html);
+	getDataResponse(uri, html => {
+		const comms = getCommentsContent(html);
 
-			const { path } = LOR;
-			for (let a of comms.querySelectorAll(`.msg .title > a[href^="${ path }?cid="]`)) {
-				a.className = 'link-pref';
-			}
-			ContentFinder.check( comms );
-			msgcol.classList.remove('page-loader');
-			msgcol.classList.add('show-in');
-			msgcol.append(...comms.children);
+		comms.then(({ msg_list }) => {
+			workComments(msg_list, -2, null);
+			msgcol.className = 'messages show-in';
+			msgcol.append(...msg_list);
+			ThrMap[tid] = thread;
 		});
-	}
-	addThreadHandler( thread, msgcol, TOUCH_DEVICE );
+	});
+	addThreadHandler( thread, msgcol );
 	ContentNode.appendChild(thread).append(msgcol);
 }
 
@@ -1990,7 +1985,7 @@ const addThreadHandler = (thread, msgcol) => {
 	const _start = TOUCH_DEVICE ? 'touchstart' : 'mouseover';
 	const _end   = TOUCH_DEVICE ? 'touchend'   : 'mouseout';
 
-	msgcol.classList.add('messages');
+	const fle = _setup('div', { class: 'msg fake-flee' });
 	msgcol.addEventListener('animationstart', (e) => {
 		if (e.animationName === 'showIn' && thread.scrollTopMax) {
 			thread.style.touchAction = null;
@@ -2026,10 +2021,17 @@ const addThreadHandler = (thread, msgcol) => {
 			}
 		});
 	}
+	const onOut = ({ target: anc }) => {
+		let cid = anc.search.substring('?cid='.length),
+		    msg = msgcol.children['comment-'+ cid];
+		msg.classList.remove('highlight');
+		fle.remove(); msg.style = '';
+		anc.removeEventListener(_end, onOut)
+	};
 
 	msgcol.addEventListener(_start, e => {
 
-		let anc = e.target, div = null;
+		let anc = e.target;
 		if (anc.classList[0] !== 'link-pref')
 			return;
 		e.preventDefault();
@@ -2041,24 +2043,14 @@ const addThreadHandler = (thread, msgcol) => {
 
 		const { height: mH, y: mY } = msg.getBoundingClientRect();
 
-		const onOut = () => {
-			msg.classList.remove('highlight');
-			if (div) {
-				msg.style = '';
-				msgcol.replaceChild(msg, div);
-			}
-			anc.removeEventListener(_end, onOut);
-		};
 		if (!(mY + mH > 60 && mY < winH - 60)) {
 			const { height: aH, y: aY } = anc.getBoundingClientRect();
-			const visibleH = winH * 0.75;
-			const offsetY  = thread.scrollTop;
-			msgcol.replaceChild(
-				(div = _setup('div', { class: 'msg', style: 'height: '+ mH +'px' }))
-			, msg);
-			msg.style = `position: absolute; max-height: 400px;  overflow-y: auto; top: ${
-				offsetY + (aY < visibleH ? aY + aH : -18) }px; left: 0; right: 0;`;
-			div.after(msg);
+			fle.style.height = mH +'px';
+			fle.style.padding = '0';
+			msg.before(fle);
+			msg.style.visibility = 'hidden';
+			msg.style.top = `${thread.scrollTop + aY + aH}px`;
+			msg.style.visibility = 'visible';
 		}
 		msg.classList.add('highlight');
 		anc.addEventListener(_end, onOut);
@@ -2085,15 +2077,14 @@ const addThreadHandler = (thread, msgcol) => {
 				} else
 					break;
 			}
+		case 'link-self': param = true;
 		case 'link-pref':
-			var cid = aSearch.substring('?cid='.length);
-			if (`comment-${cid}` in msgcol.children ) {
-				Timer.delete('Show Thread Reply');
-				msgcol.children[`comment-${cid}`].scrollIntoView();
+			var cid = aSearch.substring('?cid='.length),
+			    msg = msgcol.children[`comment-${cid}`];
+			if (!param && msg) {
+				onOut(e), msg.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				break;
 			}
-		case 'link-self':
-			var cid = aSearch.substring('?cid='.length);
 			Navigation.goToCommentPage(cid);
 		case 'reply-thread': thread.remove();
 			break;
@@ -2165,9 +2156,12 @@ const showPreview = (anc) => {
 	if (Navigation.has(cid)) {
 		if (!(preview = document.getElementById(attrs.id))) {
 			// Without the 'clone' call we'll just move the original comment
-			preview = _setup(
-				Navigation.get(cid).msg.cloneNode((isNew = true)), attrs, events
-			);
+			const msg = Navigation.get(cid).msg;
+			  preview = _setup(msg.cloneNode((isNew = true)), attrs, events);
+			let mbody = preview.querySelector('.msg_body');
+			    mbody.classList.add('no-reply');
+			if (msg.contains(CommentForm))
+			    mbody.removeChild(mbody.lastElementChild);
 		}
 	} else {
 		// Add Loading Process stub
@@ -2267,7 +2261,7 @@ function _setup(el, attrs, events) {
 
 const lorifyUrl = (path, page, lastmod, cid) => (path +
 	(page    ? `/page${     page    }` : '') +
-//  (lastmod ? `?lastmod=${ lastmod }` : '') +
+	(lastmod ? `?lastmod=${ lastmod }` : '') +
 	(cid     ? `#comment-${ cid     }` : '')
 )
 
@@ -2855,7 +2849,7 @@ const toggleForm = (underc, tid, cid, quote) => {
 	}
 }
 
-const handleReplyLinks = (msg, cid) => {
+const handleReplyLinks = (msg, cid, mouse = mousePreviewHandler) => {
 
 	const { path, topic } = LOR;
 
@@ -2886,7 +2880,7 @@ const handleReplyLinks = (msg, cid) => {
 						a.setAttribute('href', `${pathname}/thread/${cid}#comment-${reid}`);
 					a.className = 'link-thread';
 					a.textContent = '\nОтветы';
-					a.after( _setup('span', { class: 'response-block' }, mousePreviewHandler) );
+					a.after( _setup('span', { class: 'response-block' }, mouse) );
 				}
 			}
 		}
