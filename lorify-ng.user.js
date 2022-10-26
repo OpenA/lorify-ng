@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.5
+// @version     3.2.6
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -243,8 +243,8 @@ document.documentElement.append(
 		#realtime.ws-warn  { background-color: rgb(202, 114, 71); }
 		#realtime.ws-error { background-color: rgb(160, 52, 52); }
 
-		.ws-warn:before  { content: 'Соединение приостановлено.\\A'; }
-		.ws-error:before { content: 'Соединение разорвано.\\A'; }
+		.ws-warn:before  { content: 'Соединение разорвано.\\A'; }
+		.ws-error:before { content: 'Соединение аварийно прервано.\\A'; }
 
 		.ws-warn  > *:first-child, .hidaft > *,
 		.ws-error > *:first-child, .hidaft ~ *,
@@ -548,10 +548,9 @@ class TopicNavigation {
 					);
 					if (nav_count && nav_count - 2 !== this.pages_count)
 						this.resetNav(nav_count - 2);
+
 					if (pass & 0x01)
-						wrk.then(
-							({ ref_list }) => ref_list.length && this.ref(ref_list)
-						);
+						wrk.then(({ ref_list }) => this.ref(ref_list));
 					return wrk;
 				});
 			} else {
@@ -704,29 +703,32 @@ class TopicNavigation {
 		return page;
 	}
 
-	goToCommentPage(cid) {
+	goToCommentPage(cid, alt = `topic-${LOR.topic}`, newState = true) {
 
-		const href = location.pathname + location.search,
-		      comm = document.getElementById(cid ? `comment-${LOR.cid = cid}` : 'topic-'+ LOR.topic);
+		const { path, lastmod, page: prev } = LOR
+		const href = lorifyUrl(path, prev, lastmod),
+		     state = history.state || {},
+		      comm = document.getElementById(cid ? `comment-${LOR.cid = cid}` : alt);
 
-		history.replaceState(
-			{ lorYoffset: window.pageYOffset }, null, href
-		);
+		state.lorYoffset = window.pageYOffset;
+		history.replaceState(state, null, href);
+
 		return new Promise(resolve => {
 			const _jmpMsg = (comm, href) => {
 				comm.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				history.pushState({ lorYoffset: 0 }, null, href);
+				if (newState)
+					history.pushState({ lorYoffset: 0, prev }, null, href);
 				resolve(comm);
 			}
 			const _jmpPage = () => {
 				const { msg, page } = this.get(cid);
-				this.gotoPage(page).then(() => _jmpMsg(msg, lorifyUrl(LOR.path, page, LOR.lastmod, cid)));
+				this.gotoPage(page).then(() => _jmpMsg(msg, lorifyUrl(path, page, lastmod, cid)));
 			}
 			if (comm) {
 				_jmpMsg(comm, href);
 			} else if (this.has(cid)) {
 				_jmpPage();
-			} else {
+			} else if (cid) {
 				this.swapContent();
 				this.preloadPage('?cid='+ cid, 1).then(_jmpPage);
 			}
@@ -745,14 +747,18 @@ class TopicNavigation {
 		switch (aClass[0]) {
 		case 'page-number':
 			if (!aClass.contains('broken')) {
-				let { page, path, lastmod } = LOR;
+				let { path, page, lastmod } = LOR,  prev = page;
 				switch (aClass[1]) {
 					case 'prev': page--; break;
 					case 'next': page++; break;
 					default    : page = Number(el.id.substring(5));
 				}
-				this.gotoPage(page);
-				history.pushState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod));
+				if (history.state && history.state.prev === page) {
+					history.back();
+				} else {
+					this.gotoPage(page);
+					history.pushState({ lorYoffset: 0, prev }, null, lorifyUrl(path, page, lastmod));
+				}
 			}
 			break;
 		case 'shrink-line':
@@ -968,8 +974,8 @@ const ContentFinder = {
 			block.classList.add('cutted');
 			block.prepend( shrink_line );
 		}
-		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply):not(.sign) a[href*="?cid="]')) {
-			_setup(a, { class: 'link-navs', target: '_blank', cid: a.search.replace('?cid=', '') })
+		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply):not(.sign) a[href*="?cid="], a[class^="event-unread"]')) {
+			a.className = `link-navs${ a.className ? ' '+ a.className : ''}`;
 		}
 		for (const a of comment.querySelectorAll(IMAGE_LINKS)) {
 			a.className = 'link-image';
@@ -1044,7 +1050,13 @@ const onDOMReady = () => {
 		handleResetForm(document.forms.reset_form);
 	}
 
-	if (topic) {
+	if (/\/(?:notifications|history)$/.test(location.pathname)) {
+		const is_hist = location.pathname.endsWith('history');
+		const el = body.querySelector(`.message${is_hist ? 's' : '-table'}`);
+		el.addEventListener('click', TopicNavigation.prototype.handleEvent);
+		ContentFinder.check( el );
+		return;
+	} else if (topic) {
 
 		const top = document.getElementById(`topic-${ topic }`);
 		const ts = top.querySelector(`a[itemprop="creator"]`);
@@ -1089,17 +1101,6 @@ const onDOMReady = () => {
 			ContentFinder.check( tps );
 			tps.addEventListener('click', TopicNavigation.prototype.handleEvent);
 		}
-		if (location.pathname === '/notifications') {
-			_setup(body.querySelector('.message-table'), null, {
-				click:  e => {
-					let { pathname,   search } = e.target;
-					if  ( pathname && search ) {
-						if (!App.openUrl(pathname + search))
-							e.preventDefault();
-					}
-				}
-			});
-		}
 		return;
 	}
 
@@ -1141,17 +1142,11 @@ const onDOMReady = () => {
 		promisList.push( Navigation.add(msg_list, page) );
 	}
 
-	if (location.pathname.includes(`${topic}/thread/`))
-		return;
-	if (cid)
-		Navigation.goToCommentPage(cid);
-	else
-		history.replaceState({ lorYoffset: 0 }, null, lorifyUrl(path, page, lastmod, cid));
+	Navigation.goToCommentPage(cid, location.hash.substring(1), false);
 
-	if (infotext.includes('Тема удалена')) {
-		RealtimeHub.terminate();
-	} else
-	if (!infotext.includes('Тема перемещена в архив')) {
+	if (/\/thread\/|.jsp/.test(location.pathname))
+		return;
+	if (!/Тема (?:удалена|перемещена в архив)/.test(infotext)) {
 		if (page !== lastPageIdx) {
 			const lastp = Navigation.preloadPage('/page'+ lastPageIdx);
 			lastp.then(({ comm_map }) => {
@@ -1201,17 +1196,21 @@ const onDOMReady = () => {
 			(Favicon.index -= ncount)
 		);
 	});
-
-	window.addEventListener('keydown', e => {
-		const { target, key, ctrlKey } = e;
-		const c = ['ArrowLeft', 'ArrowRight'].indexOf(key);
-
-		if (ctrlKey && c >= 0) {
-			const a = document.getElementById(['Prev','Next'][c] +'Link');
-			location.href = a.href;
-		}
-	});
 };
+
+window.addEventListener('keydown', e => {
+	const { target, key, ctrlKey } = e;
+	const c = ['ArrowLeft', 'ArrowRight'].indexOf(key);
+
+	if (ctrlKey && c >= 0) {
+		let a = (
+		  document.body.querySelector(`a[rel="${['prev','next'][c]}"]`) ||
+		  document.body.querySelector(`td[align="${['left','right'][c]}"] > a[href^="${location.pathname}"]`)
+		);
+		if (a)
+			location.href = a.href;
+	}
+});
 
 const RealtimeHub = {
 /* - - - 
@@ -1229,7 +1228,7 @@ const RealtimeHub = {
 		window.addEventListener('message', this);
 		document.getElementById(id) || document.head.appendChild(
 			_setup('script', { id, text: 'const startRealtimeWS = '+
-				this.start.toString()  +';\nstartRealtimeWS();'
+				this.start.toString().replace('RealtimeHub.start', 'startRealtimeWS')  +'; startRealtimeWS();'
 			})
 		);
 	},
@@ -1255,7 +1254,7 @@ const RealtimeHub = {
 					window.removeEventListener('message', _handler);
 				else
 					wS.close(1000, 'restarting...');
-				startRealtimeWS();
+				RealtimeHub.start();
 				break;
 			case 'stop':
 				wS.close(1000, data.wsText);
@@ -1313,7 +1312,7 @@ const RealtimeHub = {
 			App.checkNow(wd);
 			break;
 		case 'stat-change':
-			if (this.state === -2 || wd === -2)
+			if (wd === -2)
 				return;
 			if (this.state !== -1)
 				onWSChange(wd);
@@ -1322,10 +1321,9 @@ const RealtimeHub = {
 		}
 	},
 	terminate(wasStop = false, reason = '') {
-		this.state = -2;
+		this.to_send = '';
 		if (wasStop)
 			window.postMessage({ wsRequest: 'stop', wsText: reason });
-		Favicon.draw('\u2013', 2);
 	}
 }
 
@@ -1335,7 +1333,7 @@ const onWSChange = (s) => {
 
 	realtime.className = s ? `ws-${ s === 1 ? 'warn' : 'error' }` : '';
 	realtime.style.display = s ? null : 'none';
-	Favicon.draw(Favicon.index || (s ? '!' : ''), s);
+	Favicon.draw(Favicon.index || ['','!','–'][s], s);
 }
 
 const injectText = (str, nl = false) => {
