@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.6
+// @version     3.2.7
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -48,20 +48,15 @@ const Timer = {
 		this[name] = setTimeout(func, USER_SETTINGS['Delay '+ name] || t);
 	}
 }
+
+const lory_css = document.getElementById('loryCSS') || _setup('style', { id: 'loryCSS' });
+const code_css = document.getElementById('codeCSS') || _setup('style', { id: 'codeCSS' });
+const lory_js  = document.getElementById('loryJS') || _setup('script', { id: 'loryJS'  });
+
 const Dynamic_Style = (() => {
 
-	const _Main_            = document.createElement('style');
-	const _CodeShrink_      = document.createElement('style');
-	const max_shrink_height = document.createTextNode('150');
-	const img_center_scale  = document.createTextNode('1'); // scale XY size 100%
-	const img_center_rotate = document.createTextNode('0'); // rotate angle 0/deg
-	const _lc_              = document.createTextNode('');
-
-	_Main_.append(
-		'.central-pic-img { transform: scale(', img_center_scale, ') rotate(', img_center_rotate,'deg); }\n',
-
-		'.lc .emphasis { font-style: italic!important; } .lc .strong { font-weight: 700!important; } .lc .link { text-decoration: underline!important; }\n',
-	_lc_);
+	const shrink_h = document.createTextNode('15');
+	const _lc_     = document.createTextNode('');
 
 	const cut = document.createTextNode(`
 	.cutted > .shrink-line:before,*:not(.cutted) > .shrink-line:after { color: #689b19; }
@@ -96,12 +91,13 @@ const Dynamic_Style = (() => {
 	.cutted > .shrink-line:before { content: 'Развернуть'; }
 	.cutted,`);
 
-	_CodeShrink_.append(
-		'\n','.shrinked { max-height:', max_shrink_height, 'px!important; overflow-y: hidden!important; }'
-	);
-	return {
-		_Main_, _CodeShrink_,
+	code_css.textContent = '\n';
+	code_css.append(
+		'.shrinked { max-height:', shrink_h, 'px!important; overflow-y: hidden!important; }\n'+
+		'.lc .emphasis { font-style: italic!important; } .lc .strong { font-weight: 700!important; } .lc .link { text-decoration: underline!important; }\n',
+	_lc_);
 
+	return {
 		set main_counter (n) {
 			let m_counter = document.getElementById('main_events_count');
 			if (m_counter)
@@ -112,10 +108,8 @@ const Dynamic_Style = (() => {
 				m_counter.hidden = !n;
 			}
 		},
-		set 'Center Image Scale'    (v) { img_center_scale .textContent = v.toFixed(2); },
-		set 'Center Image Rotate'   (v) { img_center_rotate.textContent = v.toString(); },
-		set 'Code Block Short Size' (v) { max_shrink_height.textContent = v.toString();
-			_CodeShrink_.replaceChild((v > 35 ? short : cut), _CodeShrink_.firstChild);
+		set 'Code Block Short Size' (v) { shrink_h.textContent = v.toString();
+			code_css.replaceChild((v > 35 ? short : cut), code_css.firstChild);
 			correctBlockCode(v, document);
 		},
 		set 'Code Highlight Style'  (v) {
@@ -129,332 +123,336 @@ const Dynamic_Style = (() => {
 
 const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id ? WebExt() : UserScript();
 
+lory_js.textContent = `
+
+	var initNextPrevKeys,  initStarPopovers, $ = _c => {_c()};
+	    initNextPrevKeys = initStarPopovers = () => void 0;
+
+	var tag_memories_form_setup,  topic_memories_form_setup;
+	    tag_memories_form_setup = topic_memories_form_setup = (a,b,c,d) => {
+			window.dispatchEvent(
+				new CustomEvent('setMemories', { bubbles: true, detail: [a,b,c,d] }) );
+		};
+
+	const $script = function(src, name = '_') {
+		const { _resol, _loads } = $script;
+		const ok = resolve => {
+			const hd = document.getElementsByTagName('head')[0] || document.documentElement;
+			const js = document.createElement('script');
+			js.type = 'text/javascript', js.async = true, js.src = src;
+			js.onload = () => resolve(true); js.onerror = () => resolve(false);
+			hd.append(js);
+		}
+		if (!(name in _loads)) {
+			_loads[name] = new Promise(ok);
+		} else if (_resol[name]) {
+			ok(_resol[name]);
+			delete _resol[name];
+		}
+	};
+	const is_user  = ${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)};
+	$script._resol = Object.create(null);
+	$script._loads = { lorjs: !is_user, hljs: false, realtime: false, plugins: is_user, jquery: is_user, jqueryui: false, _: false };
+	$script.ready  = (names, call) => {
+		const { _resol, _loads } = $script;
+		const ok = n => (
+			n in _loads ? _loads[n] : (_loads[n] = new Promise(r => {_resol[n] = r}))
+		);
+		Promise.all(Array.isArray(names) ? names.map(ok) : [ok(names)]).then(res => {
+			if (!res.includes(false))
+				call();
+		});
+	}
+	const moment = function(dt) {
+		return {
+			format: fmt => dt.toLocaleDateString('ru', (fmt[0] === 'M' ? { month: 'long' } : { dateStyle: 'short' }))
+		}
+	};
+	moment.locale = () => void 0;
+`;
+
+lory_css.textContent = `
+	.newadded  { border: 1px solid #006880; }
+	.msg-error { color: red; font-weight: bold; }
+	.broken    { color: inherit !important; cursor: default; }
+	.select-break::selection { background: rgba(99,99,99,.3); }
+	.response-block, .response-block > a { padding: 0 3px !important; }
+	.page-number, .icode { position: relative; margin-right: 5px; }
+	.page-number[cnt-new]:not(.broken):after {
+		content: attr(cnt-new);
+		position: absolute;
+		font-size: 12px;
+		top: -6px;
+		color: white;
+		background: #3d96ab;
+		line-height: 12px;
+		padding: 3px;
+		border-radius: 5px;
+		z-index: 1;
+	}
+	.deleted > .title:before {
+		content: "Сообщение удалено";
+		font-weight: bold;
+		display: block;
+	}
+	.page-loader {
+		border: 5px solid #f3f3f3;
+		-webkit-animation: spin 1s linear infinite;
+		animation: spin 1s linear infinite;
+		border-top: 5px solid #555;
+		border-radius: 50%;
+		width: 50px;
+		height: 50px;
+	}
+	#comments > .page-loader {
+		margin: 500px auto;
+	}
+	.slide-left  { animation-name: slideLeft; }
+	.slide-right { animation-name: slideRight; }
+	.slide-left, .slide-right {
+		animation-duration: .4s;
+		position: relative;
+	}
+	.msg[datejump]:before {
+		content: attr(datejump);
+		position: absolute;
+		text-align: center;
+		margin-bottom: 10px;
+		display: block;
+		bottom: 100%;
+		left: 0; right: 0;
+	}
+	.msg[datejump] {
+		position: relative;
+		margin-top: 3em;
+	}
+	.datejump + .msg[datejump]:before,
+	        .preview[datejump]:before { content: ''; }
+	.datejump + .msg[datejump],
+			.preview[datejump] { margin-top: 0; }
+	.preview {
+		animation-duration: .3s;
+		position: absolute;
+		z-index: 300;
+	}
+	#realtime.ws-warn  { background-color: rgb(202, 114, 71); }
+	#realtime.ws-error { background-color: rgb(160, 52, 52); }
+
+	.ws-warn:before  { content: 'Соединение разорвано.\\A'; }
+	.ws-error:before { content: 'Соединение аварийно прервано.\\A'; }
+
+	.ws-warn  > *:first-child, .hidaft > *,
+	.ws-error > *:first-child, .hidaft ~ *,
+	.hidden {
+		display: none;
+	}
+	.show-in {
+		animation: showIn .3s ease-in;
+	}
+	.swipe-up {
+		top: -100%;
+		animation: swipeUp .5s ease-in-out;
+	}
+	.swipe-down {
+		top: 100%;
+		animation: swipeDown .5s ease-in-out;
+	}
+	.slide-down {
+		overflow-y: hidden;
+		animation: slideUp 1.5s linear reverse;
+	}
+	.slide-up {
+		max-height: 0;
+		overflow-y: hidden;
+		animation: slideUp 1s ease-out;
+	}
+	#markup-panel > .btn {
+		font-size: smaller!important;
+		padding: 3px 10px!important;
+		font-variant: small-caps;
+		margin: 0 5px 5px 0;
+		border: 0!important;
+	}
+	.lorcode > .btn:before {
+		content: attr(lorcode);
+	}
+	.markdown > .btn:not([markdown]), *[hidden] {
+		display: none!important;
+	}
+	#yandex_rtb * {
+		z-index: 0!important;
+	}
+	.markdown > .btn:before {
+		content: attr(markdown);
+	}
+	.markdown > .btn[lorcode=pre]:before { content: "•\xA0"; }
+	.process {
+		color: transparent!important;
+		position: relative;
+		max-width: 80px;
+	}
+	.process:after {
+		content: "....";
+		margin: 6px 20px;
+		top: 0;
+		display: block;
+		position: absolute;
+		color: white!important;
+		overflow: hidden;
+		animation: process 3s linear infinite;
+		-webkit-animation: process 3s linear infinite;
+	}
+	.scroll-nav {
+		position: fixed;
+		background-color: rgba(0,0,0,.5);
+		border-radius: 7px;
+		right: 15px;
+		bottom: 15px;
+		overflow: hidden;
+		opacity: .5;
+	}
+	.scroll-nav:hover {
+		opacity: .8;
+	}
+	#scroll_up:before   { transform: rotate(90deg); }
+	#scroll_down:before { transform: rotate(-90deg); }
+	.scroll-btn {
+		cursor: pointer;
+		padding: 6px;
+	}
+	.scroll-btn:before {
+		font-size: 22px;
+		font-weight: bold;
+		display: block;
+	}
+	.link-self:before, .scroll-btn:before {
+		content: 'R';
+		font-family: fontello;
+	}
+	.scroll-btn:hover {
+		background-color: black;
+		filter: invert(100%);
+	}
+	.reply-thread {
+		left: 0; right: 0;
+		top: 0; bottom: 0;
+		overflow: scroll;
+		position: fixed;
+		background-color: rgba(77,77,77,.7);
+		overscroll-behavior: contain;
+		z-index: 1;
+	}
+	.reply-thread > .messages {
+		border: 0 solid rgba(0,0,0,.3);
+		border-width: 0 2px 3px 0;
+		max-width: 800px;
+		position: relative;
+	}
+	.reply-thread > * {
+		margin: 40px auto;
+	}
+	.fake-flee + * {
+		position: absolute;
+		left: 0; right: 0;
+		max-height: 400px;
+		overflow-y: auto;
+	}
+	.reply-thread > .messages > .msg {
+		margin-bottom: 1px;
+		border-radius: 0;
+	}
+	.link-self, .link-thread {
+		text-decoration: none;
+	}
+	.highlight { outline: 2px dashed red; }
+	.response-block:before      { content: ':\\A' }
+	.response-block:empty:after { content: '...' }
+	.central-pic-overlay {
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(17,17,17,.9);
+		position: fixed;
+		z-index: 99999;
+	}
+	.central-pic-overlay * {
+		position: absolute;
+	}
+	.central-pic-rotate {
+		left: 8px;
+		bottom: 8px;
+		width: 32px;
+		cursor: pointer;
+		user-select: none;
+	}
+	.svg-circle-arrow {
+		fill: rgba(99,99,99,.5);
+	}
+	.central-pic-rotate:hover .svg-circle-arrow {
+		fill: #777;
+	}
+	.tag-list {
+		max-height: 120px;
+		overflow-y: auto;
+		position: absolute;
+	}
+	.tag-list > .tag {
+		display: list-item;
+		padding: 4px 1em;
+		list-style: none;
+	}
+	#reset_form { display: inline; }
+	#reset_form button { border: none!important; margin-left: 10px; }
+	@media screen and (max-width: 960px) {
+		#bd { padding: 0 !important; }
+		#bd > article[id^="topic"] { margin-left: 5px !important; margin-right: 5px !important; }
+		.message-w-userpic { padding: 0 !important; }
+		.message-w-userpic > * { margin-left: 115px !important; }
+		.message-w-userpic > .form-container { margin-left: 0 !important; clear: both; }
+	}
+	@media screen and (max-width: 640px) {
+		#markup-panel > .btn { padding: 3px!important; width: 30px; }
+		#markup-panel > .btn:before { display: block; overflow: hidden; }
+		.msg .reply { clear: both !important; }
+		.messages .msg { padding: 2px 10px 7px 14px !important; }
+		.message-w-userpic > * { margin-left: 0 !important; }
+		.message-w-userpic > *:first-child:not(p) { margin-left: 60px !important; }
+		.msg_body ul, .msg_body ol { margin: 0 0 1em !important; }
+		.userpic { margin-right: 14px !important; }
+		.photo[src="/img/p.gif"] { display: none !important; }
+	}
+	@media screen and (max-width: 460px) {
+		.title > [datetime] { display: none !important; }
+		.sign  > [datetime], .sign > .sign_more { font-size: 12px; }
+	}
+	@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
+	@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
+
+	@-webkit-keyframes swipeDown { from { top: 0; } to { top: 100%; } }
+	@keyframes swipeDown { from { top: 0; } to { top: 100%; } }
+
+	@-webkit-keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
+	@keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
+
+	@-webkit-keyframes showIn { from { opacity: 0; } to { opacity: 1; } }
+	@keyframes showIn { from { opacity: 0; } to { opacity: 1; } }
+
+	@-webkit-keyframes swipeUp { from { top: 0; } to { top: -100%; } }
+	@keyframes swipeUp { from { top: 0; } to { top: -100%; } }
+
+	@-webkit-keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+	@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+	@-webkit-keyframes slideRight { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
+	@keyframes slideRight { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
+
+	@-webkit-keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
+	@keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
+`;
 document.documentElement.append(
-	_setup('script', { text: `
-
-		var initNextPrevKeys,  initStarPopovers, $ = _c => {_c()};
-		    initNextPrevKeys = initStarPopovers = () => void 0;
-
-		var tag_memories_form_setup,  topic_memories_form_setup;
-		    tag_memories_form_setup = topic_memories_form_setup = (a,b,c,d) => {
-				window.dispatchEvent(
-					new CustomEvent('setMemories', { bubbles: true, detail: [a,b,c,d] }) );
-			};
-
-		const $script = function(src, name = '_') {
-			const { _resol, _loads } = $script;
-			const ok = resolve => {
-				const hd = document.getElementsByTagName('head')[0] || document.documentElement;
-				const js = document.createElement('script');
-				js.type = 'text/javascript', js.async = true, js.src = src;
-				js.onload = () => resolve(true); js.onerror = () => resolve(false);
-				hd.append(js);
-			}
-			if (!(name in _loads)) {
-				_loads[name] = new Promise(ok);
-			} else if (_resol[name]) {
-				ok(_resol[name]);
-				delete _resol[name];
-			}
-		};
-		$script._resol = Object.create(null);
-		$script._loads = { lorjs: ${!/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)}, hljs: false, realtime: false, plugins: true, jquery: true, _: false };
-		$script.ready  = (names, call) => {
-			const { _resol, _loads } = $script;
-			const ok = n => (
-				n in _loads ? _loads[n] : (_loads[n] = new Promise(r => {_resol[n] = r}))
-			);
-			Promise.all(Array.isArray(names) ? names.map(ok) : [ok(names)]).then(res => {
-				if (!res.includes(false))
-					call();
-			});
-		}
-		const moment = function(dt) {
-			return {
-				format: fmt => dt.toLocaleDateString('ru', (fmt[0] === 'M' ? { month: 'long' } : { dateStyle: 'short' }))
-			}
-		};
-		moment.locale = () => void 0;
-	`}),
-	_setup('style' , { id: 'loryCSS', text: `
-		.newadded  { border: 1px solid #006880; }
-		.msg-error { color: red; font-weight: bold; }
-		.broken    { color: inherit !important; cursor: default; }
-		.select-break::selection { background: rgba(99,99,99,.3); }
-		.response-block, .response-block > a { padding: 0 3px !important; }
-		.page-number, .icode { position: relative; margin-right: 5px; }
-		.page-number[cnt-new]:not(.broken):after {
-			content: attr(cnt-new);
-			position: absolute;
-			font-size: 12px;
-			top: -6px;
-			color: white;
-			background: #3d96ab;
-			line-height: 12px;
-			padding: 3px;
-			border-radius: 5px;
-			z-index: 1;
-		}
-		.deleted > .title:before {
-			content: "Сообщение удалено";
-			font-weight: bold;
-			display: block;
-		}
-		.page-loader {
-			border: 5px solid #f3f3f3;
-			-webkit-animation: spin 1s linear infinite;
-			animation: spin 1s linear infinite;
-			border-top: 5px solid #555;
-			border-radius: 50%;
-			width: 50px;
-			height: 50px;
-		}
-		#comments > .page-loader {
-			margin: 500px auto;
-		}
-		.slide-left  { animation-name: slideLeft; }
-		.slide-right { animation-name: slideRight; }
-		.slide-left, .slide-right {
-			animation-duration: .4s;
-			position: relative;
-		}
-		.msg[datejump]:before {
-			content: attr(datejump);
-			position: absolute;
-			text-align: center;
-			margin-bottom: 10px;
-			display: block;
-			bottom: 100%;
-			left: 0; right: 0;
-		}
-		.msg[datejump] {
-			position: relative;
-			margin-top: 3em;
-		}
-		.datejump + .msg[datejump]:before,
-		        .preview[datejump]:before { content: ''; }
-		.datejump + .msg[datejump],
-				.preview[datejump] { margin-top: 0; }
-		.preview {
-			animation-duration: .3s;
-			position: absolute;
-			z-index: 300;
-		}
-		#realtime.ws-warn  { background-color: rgb(202, 114, 71); }
-		#realtime.ws-error { background-color: rgb(160, 52, 52); }
-
-		.ws-warn:before  { content: 'Соединение разорвано.\\A'; }
-		.ws-error:before { content: 'Соединение аварийно прервано.\\A'; }
-
-		.ws-warn  > *:first-child, .hidaft > *,
-		.ws-error > *:first-child, .hidaft ~ *,
-		.hidden {
-			display: none;
-		}
-		.show-in {
-			animation: showIn .3s ease-in;
-		}
-		.swipe-up {
-			top: -100%;
-			animation: swipeUp .5s ease-in-out;
-		}
-		.swipe-down {
-			top: 100%;
-			animation: swipeDown .5s ease-in-out;
-		}
-		.slide-down {
-			overflow-y: hidden;
-			animation: slideUp 1.5s linear reverse;
-		}
-		.slide-up {
-			max-height: 0;
-			overflow-y: hidden;
-			animation: slideUp 1s ease-out;
-		}
-		#markup-panel > .btn {
-			font-size: smaller!important;
-			padding: 3px 10px!important;
-			font-variant: small-caps;
-			margin: 0 5px 5px 0;
-			border: 0!important;
-		}
-		.lorcode > .btn:before {
-			content: attr(lorcode);
-		}
-		.markdown > .btn:not([markdown]), *[hidden] {
-			display: none!important;
-		}
-		#yandex_rtb * {
-			z-index: 0!important;
-		}
-		.markdown > .btn:before {
-			content: attr(markdown);
-		}
-		.markdown > .btn[lorcode=pre]:before { content: "•\xA0"; }
-		.process {
-			color: transparent!important;
-			position: relative;
-			max-width: 80px;
-		}
-		.process:after {
-			content: "....";
-			margin: 6px 20px;
-			top: 0;
-			display: block;
-			position: absolute;
-			color: white!important;
-			overflow: hidden;
-			animation: process 3s linear infinite;
-			-webkit-animation: process 3s linear infinite;
-		}
-		.scroll-nav {
-			position: fixed;
-			background-color: rgba(0,0,0,.5);
-			border-radius: 7px;
-			right: 15px;
-			bottom: 15px;
-			overflow: hidden;
-			opacity: .5;
-		}
-		.scroll-nav:hover {
-			opacity: .8;
-		}
-		#scroll_up:before   { transform: rotate(90deg); }
-		#scroll_down:before { transform: rotate(-90deg); }
-		.scroll-btn {
-			cursor: pointer;
-			padding: 6px;
-		}
-		.scroll-btn:before {
-			font-size: 22px;
-			font-weight: bold;
-			display: block;
-		}
-		.link-self:before, .scroll-btn:before {
-			content: 'R';
-			font-family: fontello;
-		}
-		.scroll-btn:hover {
-			background-color: black;
-			filter: invert(100%);
-		}
-		.reply-thread {
-			left: 0; right: 0;
-			top: 0; bottom: 0;
-			overflow: scroll;
-			position: fixed;
-			background-color: rgba(77,77,77,.7);
-			overscroll-behavior: contain;
-			z-index: 1;
-		}
-		.reply-thread > .messages {
-			border: 0 solid rgba(0,0,0,.3);
-			border-width: 0 2px 3px 0;
-			max-width: 800px;
-			position: relative;
-		}
-		.reply-thread > * {
-			margin: 40px auto;
-		}
-		.fake-flee + * {
-			position: absolute;
-			left: 0; right: 0;
-			max-height: 400px;
-			overflow-y: auto;
-		}
-		.reply-thread > .messages > .msg {
-			margin-bottom: 1px;
-			border-radius: 0;
-		}
-		.link-self, .link-thread {
-			text-decoration: none;
-		}
-		.highlight { outline: 2px dashed red; }
-		.response-block:before      { content: ':\\A' }
-		.response-block:empty:after { content: '...' }
-		.central-pic-overlay {
-			left: 0;
-			top: 0;
-			right: 0;
-			bottom: 0;
-			background-color: rgba(17,17,17,.9);
-			position: fixed;
-			z-index: 99999;
-		}
-		.central-pic-overlay * {
-			position: absolute;
-		}
-		.central-pic-rotate {
-			left: 8px;
-			bottom: 8px;
-			width: 32px;
-			cursor: pointer;
-			user-select: none;
-		}
-		.svg-circle-arrow {
-			fill: rgba(99,99,99,.5);
-		}
-		.central-pic-rotate:hover .svg-circle-arrow {
-			fill: #777;
-		}
-		.tag-list {
-			max-height: 120px;
-			overflow-y: auto;
-			position: absolute;
-		}
-		.tag-list > .tag {
-			display: list-item;
-			padding: 4px 1em;
-			list-style: none;
-		}
-		#reset_form { display: inline; }
-		#reset_form button { border: none!important; margin-left: 10px; }
-		@media screen and (max-width: 960px) {
-			#bd { padding: 0 !important; }
-			#bd > article[id^="topic"] { margin-left: 5px !important; margin-right: 5px !important; }
-			.message-w-userpic { padding: 0 !important; }
-			.message-w-userpic > * { margin-left: 115px !important; }
-			.message-w-userpic > .form-container { margin-left: 0 !important; clear: both; }
-		}
-		@media screen and (max-width: 640px) {
-			#markup-panel > .btn { padding: 3px!important; width: 30px; }
-			#markup-panel > .btn:before { display: block; overflow: hidden; }
-			.msg .reply { clear: both !important; }
-			.messages .msg { padding: 2px 10px 7px 14px !important; }
-			.message-w-userpic > * { margin-left: 0 !important; }
-			.message-w-userpic > *:first-child:not(p) { margin-left: 60px !important; }
-			.msg_body ul, .msg_body ol { margin: 0 0 1em !important; }
-			.userpic { margin-right: 14px !important; }
-			.photo[src="/img/p.gif"] { display: none !important; }
-		}
-		@media screen and (max-width: 460px) {
-			.title > [datetime] { display: none !important; }
-			.sign  > [datetime], .sign > .sign_more { font-size: 12px; }
-		}
-		@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
-		@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
-		
-		@-webkit-keyframes swipeDown { from { top: 0; } to { top: 100%; } }
-		@keyframes swipeDown { from { top: 0; } to { top: 100%; } }
-		
-		@-webkit-keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
-		@keyframes slideUp { from { max-height: 2000px; } to { max-height: 0; } }
-		
-		@-webkit-keyframes showIn { from { opacity: 0; } to { opacity: 1; } }
-		@keyframes showIn { from { opacity: 0; } to { opacity: 1; } }
-		
-		@-webkit-keyframes swipeUp { from { top: 0; } to { top: -100%; } }
-		@keyframes swipeUp { from { top: 0; } to { top: -100%; } }
-		
-		@-webkit-keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-		@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-		
-		@-webkit-keyframes slideRight { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
-		@keyframes slideRight { 0% { right: 100%; opacity: 0; } 100% { right: 0%; opacity: 1; } }
-		
-		@-webkit-keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
-		@keyframes slideLeft { 0% { left: 100%; opacity: 0; } 100% { left: 0%; opacity: 1; } }
-`}), Dynamic_Style._Main_, Dynamic_Style._CodeShrink_);
+	lory_js, lory_css, code_css
+);
 
 class TopicNavigation {
 
@@ -983,6 +981,13 @@ const ContentFinder = {
 	}
 }
 
+const onClickScroll = ({ target: { id } }) => {
+	if (!id) return;
+	const up = id === 'scroll_up',
+		  el = up ? document.body : ( document.getElementById('related-topics') || ContentNode ).previousElementSibling;
+	el.scrollIntoView({ block: up ? 'start' : 'end', behavior: 'smooth' });
+}
+
 const onDOMReady = () => {
 
 	const { path, page, lastmod, cid, topic } = LOR;
@@ -991,20 +996,17 @@ const onDOMReady = () => {
 	const main = document.getElementById('main_events_count');
 	const init = App.init();
 
-	ContentNode = body.appendChild(
-		_setup('div', { class: 'lorify-cont' })
-	);
-	ContentNode.appendChild( // add scroll top button
-		_setup('div', { class: 'scroll-nav' }, { click: ({ target: { id } }) => {
-			if (!id) return;
-			const up = id === 'scroll_up',
-			      el = up ? document.body : ( document.getElementById('related-topics') || ContentNode ).previousElementSibling;
-			el.scrollIntoView({ block: up ? 'start' : 'end', behavior: 'smooth' });
-		}})
-	).append(
-		_setup('div', { id: 'scroll_up',   class: 'scroll-btn' }),
-		_setup('div', { id: 'scroll_down', class: 'scroll-btn' })
-	);
+	if (!(ContentNode = document.getElementById('lorify_cont'))) {
+		body.appendChild(
+			ContentNode = _setup('div', { id: 'lorify_cont' })
+		).appendChild( // add scroll top button
+			_setup('div', { class: 'scroll-nav' }, { click: onClickScroll })
+		).append(
+			_setup('div', { id: 'scroll_up',   class: 'scroll-btn' }),
+			_setup('div', { id: 'scroll_down', class: 'scroll-btn' })
+		);
+	} else
+		ContentNode.firstElementChild.addEventListener('click', onClickScroll);
 
 	if (main) {
 		let notes = Number(main.textContent.match(/\d+/));
@@ -1063,15 +1065,15 @@ const onDOMReady = () => {
 
 		if (ts) {
 			LOR.TopicStarter = ts.innerText;
-			document.getElementById('loryCSS').append(`\n
-				a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
-				a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
-					content: "тс";
-					font-size: 75%;
-					color: dimgrey!important;
-					display: inline-block;
-					vertical-align: super;
-				}`);
+			lory_css.append(`\n
+			a[itemprop="creator"][href="${ ts.pathname }"], .ts { color: indianred!important; }
+			a[itemprop="creator"][href="${ ts.pathname }"]:after, .ts:after {
+				content: "тс";
+				font-size: 75%;
+				color: dimgrey!important;
+				display: inline-block;
+				vertical-align: super;
+			}`);
 		}
 
 		let shwdel = body.querySelector('input[name=deleted] + [type=submit]');
@@ -1627,7 +1629,7 @@ const onWSData = (cids) => {
 		if (g === count)
 			Navigation.ref(g_ref);
 	};
-	realtime.children[0].textContent = `Добавлено ${count} новых.\n'`;
+	realtime.children[0].textContent = `Добавлено ${count} новых.\n`;
 	realtime.children[1].search = search;
 
 	if (!USER_SETTINGS['Realtime Loader']) {
@@ -1773,52 +1775,48 @@ const clearPreviews = preview => {
 
 class CentralPicture {
 
-	static expose(s,w,h) {
+	static expose(src) {
 		const pic = new CentralPicture;
 		Object.defineProperty(CentralPicture, 'expose', {
-			value: (s,w,h) => pic.expose(s,w,h)
+			value: src => pic.expose(src)
 		});
-		pic.expose(s,w,h);
+		pic.expose(src);
 	}
 
 	constructor() {
+		this.posX = 0; this.angle = 0;
+		this.posY = 0; this.scale = 1;
 
-		var _Scale = 1.0;
-		var _Rdeg  = 0;
-		var _X     = 0;
-		var _Y     = 0;
-
-		const _IMG = _setup('img', {
-			class: 'central-pic-img',
-			style: 'left: 0; top: 0;'
+		const image = _setup('img', {
+			class: 'central-pic-img'
 		}, { load: this,
 			error: ({ target: { style } }) => {
 				style.visibility = 'visible';
 			}
 		});
 
-		const _Overlay = _setup('div', {
+		const overly = _setup('div', {
 			class : 'central-pic-overlay',
-			html  : `<div style="left: 50%; top: 50%;"></div>
+			html  : `
 				<svg class="central-pic-rotate" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-					<path class="svg-circle-arrow" d="m31 20c-0.6 4.5-3.7 8.6-8 10.5-2 1.25-5 1.6-7.7 1.5l-1.7-0.15c-2.5-0.6-5-1.7-7-3.5-4.3-3.6-6-10-4-15 1.6-4.55 6-8.1 11-9 1.2-0.25 2.45-0.3 3.7-0.25l0.6-4.1h0.1c2.1 2.7 4.15 5.34 6.3 8-2.8 2-5.6 4.1-8.4 6 0.2-1.4 0.4-2.7 0.56-4.1-2.5-0.025-5.1 1.1-6.6 3.1-2.5 2.75-2.5 7.1-0.13 10 1.8 2.5 5.25 3.6 8.4 3 2.156-0.3 4.1-1.6 5.3-3.4 0.8-1 1.1-2.25 1.5-3.4 2 0.25 3.9592 0.5 7 0.8l0.1-0.05z"></path>
+					<path class="svg-circle-arrow" d="m31 20c-0.6 4.5-3.7 8.6-8 10.5-2 1.25-5 1.6-7.7 1.5l-1.7-0.15c-2.5-0.6-5-1.7-7-3.5-4.3-3.6-6-10-4-15 1.6-4.55 6-8.1 11-9 1.2-0.25 2.45-0.3 3.7-0.25l0.6-4.1h0.1c2.1 2.7 4.15 5.34 6.3 8-2.8 2-5.6 4.1-8.4 6 0.2-1.4 0.4-2.7 0.56-4.1-2.5-0.025-5.1 1.1-6.6 3.1-2.5 2.75-2.5 7.1-0.13 10 1.8 2.5 5.25 3.6 8.4 3 2.156-0.3 4.1-1.6 5.3-3.4 0.8-1 1.1-2.25 1.5-3.4 2 0.25 4 0.5 7 0.8l0.1-0.05z"/>
 				</svg>`
 		});
 
 		const cleanUp = () => {
-			_Overlay.remove();
-			_IMG.src = '';
-			_IMG.style.left = _X = 0;
-			_IMG.style.top  = _Y = 0;
-			Dynamic_Style['Center Image Scale'] = _Scale = 1;
-			Dynamic_Style['Center Image Rotate'] = _Rdeg = 0;
-			window.removeEventListener(RESIZE_FUNCT, this, false);
+			overly.remove();
+			window.removeEventListener(RESIZE_FUNCT, this);
+			image.src = ''; this.transform(0, 0, 1, 0);
+			image.className = 'central-pic-img';
 		}
 		const handler = e => {
 			switch (e.target.classList[0]) {
 				case 'central-pic-rotate':
 				case 'svg-circle-arrow':
-					Dynamic_Style['Center Image Rotate'] = _Rdeg === 270 ? (_Rdeg = 0) : (_Rdeg += 90);
+					this.transform(
+						this.posX, this.posY, this.scale,
+						this.angle === 270 ? 0 : this.angle + 90
+					);
 					break;
 				case 'central-pic-overlay':
 					cleanUp();
@@ -1828,95 +1826,104 @@ class CentralPicture {
 
 		if (TOUCH_DEVICE) {
 
-			let start2D = -1;
-			let startX  = 0;
-			let startY  = 0;
-			let startS  = 1;
+			let startX = 0, iS = 1;
+			let startY = 0, iY = 0, point2D = -1;
 
-			const getPoint2D = ([a, b]) => Math.sqrt(
-				(a.clientX - b.clientX) * (a.clientX - b.clientX) + (a.clientY - b.clientY) * (a.clientY - b.clientY)
-			);
+			image.addEventListener('touchstart', e => {
 
-			_IMG.addEventListener('touchstart', e => {
+				const [p0, p1] = e.touches;
 
-				start2D = e.touches.length > 1 ? getPoint2D(e.touches) : -1;
-				startX  = e.touches[0].clientX - _X;
-				startY  = e.touches[0].clientY - _Y;
-				startS  = _Scale;
+				let x0 = p0.clientX, y0 = p0.clientY;
 
-				e.preventDefault();
+				point2D = p1 ? Math.sqrt(
+					(x0 - p1.clientX) * (x0 - p1.clientX) +
+					(y0 - p1.clientY) * (y0 - p1.clientY)
+				) : -1;
+				startX = x0 - this.posX, iS = this.scale;
+				startY = y0 - this.posY, iY = y0;
+
+				e.stopPropagation(), e.preventDefault();
 			});
-			_IMG.addEventListener('touchmove', ({ touches, changedTouches }) => {
-				if (start2D != -1) {
-					const scale = getPoint2D(touches) / start2D * startS;
-					Dynamic_Style['Center Image Scale'] = _Scale = Math.min(
-						(scale < 0.5 ? 0.5 : scale >= 0.9 && scale <= 1.1 ? 1 : scale), 9
-					);
-				} else if (_Scale > 1) {
-					_IMG.style.left = (_X = touches[0].clientX - startX) +'px';
-					_IMG.style.top  = (_Y = touches[0].clientY - startY) +'px';
+			image.addEventListener('touchmove', ({ changedTouches: [p0, p1] }) => {
+
+				let x0 = p0.clientX, y0 = p0.clientY;
+
+				let moveY = this.posY, scale = this.scale,
+				    moveX = this.posX;
+				if (point2D !== -1) {
+					scale = Math.sqrt(
+						(x0 - p1.clientX) * (x0 - p1.clientX) +
+						(y0 - p1.clientY) * (y0 - p1.clientY)
+					) / point2D * iS;
+					if (scale >= 0.95 && scale <= 1.05)
+						scale = 1;
+					else if (scale < 0.4)
+						scale = 0.4;
 				} else {
-					_IMG.style.top  = (/**/ touches[0].clientY - startY) +'px';
+					/**/moveY = y0 - startY, y0 -= iY;
+					if (scale > 1) {
+						moveX = x0 - startX;
+					} else if (y0 <= -this.swipeY) {
+						image.classList.add('swipe-up');
+					} else if (y0 >=  this.swipeY) {
+						image.classList.add('swipe-down');
+					}
+				}
+				this.transform(moveX, moveY, scale);
+			});
+			image.addEventListener('touchend', ({ touches, changedTouches: [p0] }) => {
+				if (!touches.length && this.scale <= 1) {
+					this.transform(
+						(window.innerWidth  - image.width ) / 2,
+						(window.innerHeight - image.height) / 2
+					);
 				}
 			});
-			_IMG.addEventListener('touchend', ({ touches, changedTouches }) => {
-				if (!touches.length && _Scale <= 1) {
-					if (changedTouches[0].clientY >= 25) {
-						this.setImagePos( _IMG.width, _IMG.height );
-					} else
-						cleanUp();
-				}
-			});
-			_Overlay.addEventListener('touchstart', handler);
+			image.addEventListener('animationend', cleanUp);
+			overly.addEventListener('touchstart', handler);
 		} else {
 
 			_IMG.addEventListener('mousedown', e => {
 
-				if ( e.button != 0 ) return;
+				if ( e.button !== 0 ) return;
 
-				const style  = e.target.style;
-				const startX = e.clientX - _X;
-				const startY = e.clientY - _Y;
-				const dragIMG = ({ clientX, clientY }) => {
-					style.left = (_X = clientX - startX) +'px';
-					style.top  = (_Y = clientY - startY) +'px';
+				const startX = e.clientX - this.posX;
+				const startY = e.clientY - this.posY;
+				const onMove = m => this.transform(
+					m.clientX - startX,
+					m.clientY - startY
+				);
+				const onEnd = () => {
+					window.removeEventListener('mousemove', onMove);
+					window.removeEventListener('mouseup', onEnd);
 				}
-				const rmHandle = () => {
-					window.removeEventListener('mousemove', dragIMG);
-					window.removeEventListener('mouseup', rmHandle);
-				}
-				window.addEventListener('mousemove', dragIMG);
-				window.addEventListener('mouseup', rmHandle);
+				window.addEventListener('mousemove', onMove);
+				window.addEventListener('mouseup', onEnd);
 				e.preventDefault();
 			});
-			_IMG.addEventListener('wheel', e => {
+			image.addEventListener('wheel', e => {
 
-				const delta = e.deltaX || e.deltaY;
-				const ratio = _Scale / 7.4;
+				let d = e.deltaX || e.deltaY,
+				    s = scale, r = s * 0.15;
 
-				if (delta > 0 && (_Scale - ratio ) > 0.1) {
-					Dynamic_Style['Center Image Scale'] = (_Scale -= ratio);
-				} else if (delta < 0) {
-					Dynamic_Style['Center Image Scale'] = (_Scale += ratio);
-				}
+				this.transform(
+					this.posX, this.posY,
+					(d < 0 ? r + s : (s - r) > 0.1 ? s - r : 0.1)
+				);
 				e.preventDefault();
 			});
-			_Overlay.addEventListener('click', handler);
+			overly.addEventListener('click', handler);
 		}
-		this._Overlay = _Overlay;
-		this._IMG     = _Overlay.firstElementChild.appendChild( _IMG );
-
-		this.setImagePos = (w, h) => {
-			_IMG.style.left = `${ (_X = 0 - w / 2) }px`;
-			_IMG.style.top  = `${ (_Y = 0 - h / 2) }px`;
-		}
+		this._Box = overly;
+		this._IMG = overly.appendChild( image );
 	}
 	handleEvent() {
 
 		const { naturalWidth, naturalHeight } = this._IMG;
 		const {   innerWidth,   innerHeight } = window;
 
-		var iW = naturalWidth, iH = naturalHeight, iS = innerWidth < 960 ? 1 : 0.85;
+		let iW = naturalWidth, iS = innerWidth < 960 ? 1 : 0.85,
+		    iH = naturalHeight,iK = innerHeight * 0.75;
 
 		if (innerWidth / innerHeight < iW / iH) {
 			const ratio = innerWidth * iS;
@@ -1929,20 +1936,27 @@ class CentralPicture {
 				iW *= (iH = ratio) / naturalHeight;
 			}
 		}
-		this._IMG.style.visibility = 'visible';
-		this.setImagePos(
-			(this._IMG.width  = iW),
-			(this._IMG.height = iH)
+		this._IMG.width  = iW; this.swipeY = iK;
+		this._IMG.height = iH;
+		this.transform(
+			(innerWidth  - iW) / 2,
+			(innerHeight - iH) / 2
 		);
+		this._IMG.style.visibility = 'visible';
+	}
+	transform(x, y, s = this.scale, a = this.angle) {
+		this._IMG.style.transform = `translate(${
+			this.posX  = x}px, ${
+			this.posY  = y}px) scale(${
+			this.scale = s}) rotate(${
+			this.angle = a}deg)`;
 	}
 	expose(src) {
-
 		this._IMG.style.visibility = 'hidden';
 		this._IMG.src = src;
 
 		window.addEventListener(RESIZE_FUNCT, this, false);
-
-		ContentNode.append( this._Overlay );
+		ContentNode.append( this._Box );
 	}
 }
 
@@ -2327,7 +2341,8 @@ const handleResetForm = (rf_form) => {
 }
 
 function handleCommentForm(form) {
-	
+
+	const URI_ACTION   = form.action.substring(form.action.indexOf('/'));
 	const TEXT_AREA    = form.elements.msg;
 	const TITLE_AREA   = form.elements.title || { value: '' };
 	const FACT_PANNEL  = form.querySelector('.form-actions');
@@ -2405,7 +2420,7 @@ function handleCommentForm(form) {
 				}
 			);
 		} else {
-			sendFormData(form.getAttribute('action'), formData).then(
+			sendFormData(URI_ACTION, formData).then(
 				res => res.text().then(html => {
 					const doc = new DOMParser().parseFromString(html, 'text/html'),
 					      msg = doc.querySelector('.messages');
@@ -2467,8 +2482,7 @@ function handleCommentForm(form) {
 
 		'do_upload': (btn, param) => {
 
-			const delay = USER_SETTINGS['Upload Post Delay'] * 1e3,
-			        uri = form.getAttribute('action');
+			const delay = USER_SETTINGS['Upload Post Delay'] * 1e3;
 
 			const onAbort = () => {
 				Timer.delete('Upload Post Delay');
@@ -2498,7 +2512,7 @@ function handleCommentForm(form) {
 				if (param)
 					formData.append(param, '');
 
-				sendFormData(uri, formData, false, signal).then(({ url }) => {
+				sendFormData(URI_ACTION, formData, false, signal).then(({ url }) => {
 					if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
 						window.onbeforeunload = null;
 						location.href         = url + (
@@ -3052,7 +3066,6 @@ function WebExt() {
 	const portConnect = resolve => {
 		const port = chrome.runtime.connect({ name: 'lory-wss' });
 		port.onMessage.addListener(({ action, data }) => {
-// try {
 			switch (action) {
 			case 'notes-count-update':
 				Dynamic_Style.main_counter = data;
@@ -3073,15 +3086,6 @@ function WebExt() {
 					Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
 				}
 			}
-/*} catch(emsg) {
-	if (/can.*t.*access.*init/i.test(emsg)) {
-		port.disconnect();
-		if (action === 'scroll-to-comment')
-			 location.href = data;
-		else location.reload();
-	} else
-		console.error(emsg);
-}*/
 		});
 		port.onDisconnect.addListener(() => {
 			console.info('WebExt Runtime Disconnected!');
