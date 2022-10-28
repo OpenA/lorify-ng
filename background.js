@@ -28,6 +28,7 @@ const loadStore = isFirefox ?
 		for (const key in items) {
 			settings[key] = items[key];
 		}
+		setNotifCheck();
 	});
 
 chrome.notifications.onClicked.addListener(() => {
@@ -46,10 +47,7 @@ chrome.runtime.onConnect.addListener(port => {
 			if (p.name === 'lory-wss')
 				return;
 		}
-		chrome.alarms.create('T-chk-notes', {
-			delayInMinutes: 1,
-			periodInMinutes: 4
-		});
+		setNotifCheck(5e4);
 	});
 	openPorts.add(port);
 	loadStore.then(() => port.postMessage({ action: 'connection-resolve', data: settings }));
@@ -75,10 +73,14 @@ const setBadge = 'setBadgeText' in chrome.browserAction ? (
 )(chrome.browserAction) : () => void 0;
 
 chrome.alarms.onAlarm.addListener(getNotifications);
-chrome.alarms.create('T-chk-notes', {
-	when: Date.now() + 3e3,
-	periodInMinutes: 4
-});
+
+function setNotifCheck(sec = 4e3) {
+	if (settings['Desktop Notification']) {
+		chrome.alarms.create('T-chk-notes', {
+			when: Date.now() + sec, periodInMinutes: 4
+		});
+	}
+}
 
 const queryScheme = isFirefox
    ? url => browser.tabs.query({ url })
@@ -215,10 +217,14 @@ function updNoteStatus(count = 0) {
 	}
 }
 function changeSettings(newSetts, exclupe = null) {
+	let hasChecks = 0;
 	for (const port of openPorts) {
+		hasChecks += Number(port.name === 'lory-wss');
 		if ( port !== exclupe )
 			port.postMessage({ action: 'settings-change', data: newSetts });
 	}
 	Object.assign(settings, newSetts);
+	if (!hasChecks)
+		setNotifCheck();
 	chrome.storage.local.set(newSetts);
 }
