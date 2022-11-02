@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.7
+// @version     3.2.8
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -2342,7 +2342,7 @@ const handleResetForm = (rf_form) => {
 
 function handleCommentForm(form) {
 
-	const URI_ACTION   = form.action.substring(form.action.indexOf('/'));
+	const URI_ACTION   = form.action.substring(form.action.lastIndexOf('/'));
 	const TEXT_AREA    = form.elements.msg;
 	const TITLE_AREA   = form.elements.title || { value: '' };
 	const FACT_PANNEL  = form.querySelector('.form-actions');
