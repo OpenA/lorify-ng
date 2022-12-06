@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.8
+// @version     3.2.9
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -125,8 +125,10 @@ const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id 
 
 lory_js.textContent = `
 
-	var initNextPrevKeys,  initStarPopovers, $ = _c => {_c()};
-	    initNextPrevKeys = initStarPopovers = () => void 0;
+	const $ = _c => {_c()}, _Void = () => void 0;
+
+	var initNextPrevKeys,  initStarPopovers,  fixTimezone;
+	    initNextPrevKeys = initStarPopovers = fixTimezone = _Void;
 
 	var tag_memories_form_setup,  topic_memories_form_setup;
 	    tag_memories_form_setup = topic_memories_form_setup = (a,b,c,d) => {
@@ -163,12 +165,11 @@ lory_js.textContent = `
 				call();
 		});
 	}
-	const moment = function(dt) {
-		return {
-			format: fmt => dt.toLocaleDateString('ru', (fmt[0] === 'M' ? { month: 'long' } : { dateStyle: 'short' }))
-		}
-	};
-	moment.locale = () => void 0;
+	const moment = (date) => ({
+		format: m => date.toLocaleDateString('ru', (
+			m.charAt(0) === 'M' ? { month: 'long' } : { dateStyle: 'short' }
+		))
+	}); moment.locale = _Void;
 `;
 
 lory_css.textContent = `
@@ -1883,7 +1884,7 @@ class CentralPicture {
 			overly.addEventListener('touchstart', handler);
 		} else {
 
-			_IMG.addEventListener('mousedown', e => {
+			image.addEventListener('mousedown', e => {
 
 				if ( e.button !== 0 ) return;
 
@@ -1904,7 +1905,7 @@ class CentralPicture {
 			image.addEventListener('wheel', e => {
 
 				let d = e.deltaX || e.deltaY,
-				    s = scale, r = s * 0.15;
+				    s = this.scale, r = s * 0.15;
 
 				this.transform(
 					this.posX, this.posY,
@@ -1914,12 +1915,14 @@ class CentralPicture {
 			});
 			overly.addEventListener('click', handler);
 		}
-		this._Box = overly;
-		this._IMG = overly.appendChild( image );
+		Object.defineProperties(this, {
+			_Box: { value: overly },
+			_Img: { value: overly.appendChild( image ) }
+		});
 	}
 	handleEvent() {
 
-		const { naturalWidth, naturalHeight } = this._IMG;
+		const { naturalWidth, naturalHeight } = this._Img;
 		const {   innerWidth,   innerHeight } = window;
 
 		let iW = naturalWidth, iS = innerWidth < 960 ? 1 : 0.85,
@@ -1936,24 +1939,24 @@ class CentralPicture {
 				iW *= (iH = ratio) / naturalHeight;
 			}
 		}
-		this._IMG.width  = iW; this.swipeY = iK;
-		this._IMG.height = iH;
+		this._Img.width  = iW; this.swipeY = iK;
+		this._Img.height = iH;
 		this.transform(
 			(innerWidth  - iW) / 2,
 			(innerHeight - iH) / 2
 		);
-		this._IMG.style.visibility = 'visible';
+		this._Img.style.visibility = 'visible';
 	}
 	transform(x, y, s = this.scale, a = this.angle) {
-		this._IMG.style.transform = `translate(${
+		this._Img.style.transform = `translate(${
 			this.posX  = x}px, ${
 			this.posY  = y}px) scale(${
 			this.scale = s}) rotate(${
 			this.angle = a}deg)`;
 	}
 	expose(src) {
-		this._IMG.style.visibility = 'hidden';
-		this._IMG.src = src;
+		this._Img.style.visibility = 'hidden';
+		this._Img.src = src;
 
 		window.addEventListener(RESIZE_FUNCT, this, false);
 		ContentNode.append( this._Box );
