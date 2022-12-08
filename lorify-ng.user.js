@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.2.9
+// @version     3.3.0
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -166,9 +166,9 @@ lory_js.textContent = `
 		});
 	}
 	const moment = (date) => ({
-		format: m => date.toLocaleDateString('ru', (
-			m.charAt(0) === 'M' ? { month: 'long' } : { dateStyle: 'short' }
-		))
+		format: (m = '') => Intl.DateTimeFormat('ru', (
+			m.charAt(0) === 'M' ? { month: 'long' } : { weekday: 'short', day: 'numeric', month: '2-digit', year: 'numeric' }
+		)).format(date)
 	}); moment.locale = _Void;
 `;
 
@@ -244,7 +244,7 @@ lory_css.textContent = `
 
 	.ws-warn  > *:first-child, .hidaft > *,
 	.ws-error > *:first-child, .hidaft ~ *,
-	.hidden {
+	.hidden, .mobile-show {
 		display: none;
 	}
 	.show-in {
@@ -315,8 +315,8 @@ lory_css.textContent = `
 	.scroll-nav:hover {
 		opacity: .8;
 	}
-	#scroll_up:before   { transform: rotate(90deg); }
-	#scroll_down:before { transform: rotate(-90deg); }
+	.scroll-up:before   { transform: rotate(90deg); }
+	.scroll-down:before { transform: rotate(-90deg); }
 	.scroll-btn {
 		cursor: pointer;
 		padding: 6px;
@@ -403,6 +403,19 @@ lory_css.textContent = `
 		padding: 4px 1em;
 		list-style: none;
 	}
+	.lory-time {
+		font: 14px fontello;
+	}
+	.title > .lory-time {
+		background-color: #0000001c;
+		border: 1px dashed #0004;
+		border-radius: 2px;
+		padding: 0 1px;
+		opacity: .7;
+	}
+	.sign > .lory-time:after {
+		content: attr(data-format);
+	}
 	#reset_form { display: inline; }
 	#reset_form button { border: none!important; margin-left: 10px; }
 	@media screen and (max-width: 960px) {
@@ -424,8 +437,9 @@ lory_css.textContent = `
 		.photo[src="/img/p.gif"] { display: none !important; }
 	}
 	@media screen and (max-width: 460px) {
-		.title > [datetime] { display: none !important; }
-		.sign  > [datetime], .sign > .sign_more { font-size: 12px; }
+		.mobile-show { display: inherit; }
+		.mobile-hide { display: none;    }
+		.sign time   { font-size: 12px;  }
 	}
 	@-webkit-keyframes process { 0% { width: 0; } 100% { width: 20px; } }
 	@keyframes process { 0% { width: 0; } 100% { width: 20px; } }
@@ -740,8 +754,8 @@ class TopicNavigation {
 		   aClass = el.classList,
 		   aPath  = el.pathname,
 		  aSearch = el.search;
-		let alter = true;
-		let parent= el.parentNode;
+		let alter = true,
+		   parent = el.parentNode;
 
 		switch (aClass[0]) {
 		case 'page-number':
@@ -759,6 +773,14 @@ class TopicNavigation {
 					history.pushState({ lorYoffset: 0, prev }, null, lorifyUrl(path, page, lastmod));
 				}
 			}
+			break;
+		case 'scroll-btn':
+			if ((alter = aClass[1] === 'scroll-down')) {
+				let rt = document.getElementById('related-topics');
+				parent = rt ? rt.previousElementSibling : parent.parentNode;
+			} else
+				parent = document.body;
+			parent.scrollIntoView({ block: alter ? 'end' : 'start', behavior: 'smooth' });
 			break;
 		case 'shrink-line':
 			parent.classList.toggle('cutted');
@@ -809,7 +831,7 @@ class TopicNavigation {
 		default:
 			return;
 		}
-		e.preventDefault();
+		e.stopPropagation(), e.preventDefault();
 	}
 
 	swapContent(num, reAnim = false, resolve = () => void 0) {
@@ -973,20 +995,69 @@ const ContentFinder = {
 			block.classList.add('cutted');
 			block.prepend( shrink_line );
 		}
-		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply):not(.sign) a[href*="?cid="], a[class^="event-unread"]')) {
+		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply, .sign) a[href*="?cid="], a[class^="event-unread"]')) {
 			a.className = `link-navs${ a.className ? ' '+ a.className : ''}`;
 		}
 		for (const a of comment.querySelectorAll(IMAGE_LINKS)) {
 			a.className = 'link-image';
 		}
-	}
-}
+		for (const t of comment.querySelectorAll('time[data-format]:not(.lory-time)')) {
+			this.localizeTime(t, t.getAttribute('data-format'));
+		}
+	},
+	localizeTime: (el, fmt = '') => {
+		const date = new Date(el.dateTime);
+		let full_d = '', short_d = '', time_c = '', offs_t = '', simple = false;
+		let format = {
+			day: 'numeric', month: '2-digit', year: 'numeric',
+			hour: '2-digit', minute: '2-digit', second: '2-digit'
+		}, formaZ = {
+			weekday: 'short', timeZoneName:'shortOffset'
+		}, lang = 'it';
 
-const onClickScroll = ({ target: { id } }) => {
-	if (!id) return;
-	const up = id === 'scroll_up',
-		  el = up ? document.body : ( document.getElementById('related-topics') || ContentNode ).previousElementSibling;
-	el.scrollIntoView({ block: up ? 'start' : 'end', behavior: 'smooth' });
+		switch(fmt) {
+		case 'interval': simple = true;
+		case 'compact-interval':
+			const today = new Date,
+			       diff = today - date;
+			if (date >= today.setHours(0,0,0)) {
+				let h = Math.floor(diff / 36e5),
+					m = Math.floor(diff /  6e4) % 60;
+				time_c = (h ? `${h}ч.` : '') + (m ? `${m}мин.` : '');
+				full_d = simple ? '' : '\nназад';
+				break;
+			} else
+			if (date >= today.setDate(today.getDate() - 1)) {
+				time_c = date.toLocaleString('ru', { hour: '2-digit', minute: '2-digit' });
+				full_d = '\nвчера', short_d = '\n1дн';
+				if (simple)
+					time_c += short_d, full_d = short_d = '';
+				break;
+			} else {
+				delete format.minute, delete format.hour, 
+				delete format.second, lang = 'ru';
+			}
+		default:
+			let [wday, gmt = ''] = date.toLocaleString('ru', formaZ).split(/,?\s+/),
+			    [caln, tim = ''] = date.toLocaleString(lang, format).split(/,?\s+/);
+
+			short_d = `\n${wday}:`+ caln.substr(0, caln.length - 4) + caln.substr(-2);
+			 time_c = tim;
+			if (simple) {
+				time_c += short_d, short_d = '';
+			} else {
+				offs_t = '\n'+ gmt.replace('+', '＋');
+				full_d = `\n${wday.charAt(0).toUpperCase() + wday.substr(1) } ${caln}`;
+			}
+		}
+		el.textContent = time_c;
+		if (full_d)
+			el.append( _setup('span', { class: 'mobile-hide', text: full_d }) );
+		if (short_d)
+			el.append( _setup('span', { class: 'mobile-show', text: short_d }) );
+		el.setAttribute('data-format', offs_t);
+		el.classList.add('lory-time');
+	}
 }
 
 const onDOMReady = () => {
@@ -1001,13 +1072,12 @@ const onDOMReady = () => {
 		body.appendChild(
 			ContentNode = _setup('div', { id: 'lorify_cont' })
 		).appendChild( // add scroll top button
-			_setup('div', { class: 'scroll-nav' }, { click: onClickScroll })
+			_setup('div', { class: 'scroll-nav' })
 		).append(
-			_setup('div', { id: 'scroll_up',   class: 'scroll-btn' }),
-			_setup('div', { id: 'scroll_down', class: 'scroll-btn' })
+			_setup('div', { class: 'scroll-btn scroll-up' }),
+			_setup('div', { class: 'scroll-btn scroll-down' })
 		);
-	} else
-		ContentNode.firstElementChild.addEventListener('click', onClickScroll);
+	}
 
 	if (main) {
 		let notes = Number(main.textContent.match(/\d+/));
@@ -1053,13 +1123,17 @@ const onDOMReady = () => {
 		handleResetForm(document.forms.reset_form);
 	}
 
-	if (/\/(?:notifications|history)$/.test(location.pathname)) {
-		const is_hist = location.pathname.endsWith('history');
-		const el = body.querySelector(`.message${is_hist ? 's' : '-table'}`);
-		el.addEventListener('click', TopicNavigation.prototype.handleEvent);
-		ContentFinder.check( el );
-		return;
-	} else if (topic) {
+	const realtime = document.getElementById('realtime') || ContentNode.insertBefore(
+	   _setup('div', { id: 'realtime', style: 'display: none;' }), ContentNode.firstElementChild
+	);
+	if(!realtime.childNodes.length) {
+		realtime.append(
+		   document.createElement('span'),
+		  _setup('a', { text: 'Обновить.', class: 'link-rthub', href: path || location.pathname })
+		);
+	}
+
+	if (topic) {
 
 		const top = document.getElementById(`topic-${ topic }`);
 		const ts = top.querySelector(`a[itemprop="creator"]`);
@@ -1099,11 +1173,8 @@ const onDOMReady = () => {
 
 	} else {
 
-		for (const tps of body.querySelectorAll('[id^="topic-"]')) {
-
-			ContentFinder.check( tps );
-			tps.addEventListener('click', TopicNavigation.prototype.handleEvent);
-		}
+		body.addEventListener('click', TopicNavigation.prototype.handleEvent);
+		ContentFinder.check( body );
 		return;
 	}
 
@@ -1111,16 +1182,9 @@ const onDOMReady = () => {
 	      msg_list = comments.querySelectorAll('.msg[id^="comment-"]'),
 	      messages = comments.parentNode;
 	const navPages = messages.querySelectorAll('#comments ~ .nav > .page-number'),
-	      pg_count = navPages.length ? navPages.length - 2 : 1;
-	const realtime = document.getElementById('realtime'),
+	      pg_count = navPages.length ? navPages.length - 2 : 1,
 	      infotext = (realtime.nextElementSibling || realtime).textContent;
 
-	if(!realtime.childNodes.length) {
-		realtime.append(
-		   document.createElement('span'),
-		  _setup('a', { text: 'Обновить.', class: 'link-rthub', href: path })
-		);
-	}
 	const { nav_t, nav_b, pcont } = (Navigation = new TopicNavigation);
 	pcont.id = 'pcont_'+ Navigation.resetNav(pg_count);
 
@@ -1138,7 +1202,7 @@ const onDOMReady = () => {
 			comments.append(nav_t, pcont);
 			realtime.after (nav_b);
 	}
-	messages.addEventListener('click', Navigation);
+	body.addEventListener('click', Navigation);
 
 	let promisList = [];
 	if (msg_list.length) {
@@ -1822,7 +1886,7 @@ class CentralPicture {
 				case 'central-pic-overlay':
 					cleanUp();
 			}
-			e.preventDefault();
+			e.stopPropagation(), e.preventDefault();
 		}
 
 		if (TOUCH_DEVICE) {
@@ -1900,7 +1964,7 @@ class CentralPicture {
 				}
 				window.addEventListener('mousemove', onMove);
 				window.addEventListener('mouseup', onEnd);
-				e.preventDefault();
+				e.stopPropagation(), e.preventDefault();
 			});
 			image.addEventListener('wheel', e => {
 
@@ -2049,8 +2113,7 @@ const addThreadHandler = (thread, msgcol) => {
 		let anc = e.target;
 		if (anc.classList[0] !== 'link-pref')
 			return;
-		e.preventDefault();
-		e.stopPropagation();
+		e.stopPropagation(), e.preventDefault();
 
 		const cid = anc.search.substring('?cid='.length),
 		      msg = msgcol.children['comment-'+ cid],
@@ -2074,17 +2137,11 @@ const addThreadHandler = (thread, msgcol) => {
 	thread.addEventListener('click', e => {
 		const el  = e.target,
 		   aClass = el.classList,
-		   parent = el.parentNode,
 		   aPath  = el.pathname,
 		  aSearch = el.search;
 		let param = false;
 
 		switch(aClass[0]) {
-		case 'shrink-line':
-			parent.classList.toggle('cutted');
-			if (parent.scrollHeight > window.innerHeight)
-				parent.scrollIntoView();
-			break;
 		case 'link-navs':
 			if (aPath !== LOR.path) {
 				if (App.openUrl(aPath + aSearch)) {
@@ -2103,24 +2160,15 @@ const addThreadHandler = (thread, msgcol) => {
 			Navigation.goToCommentPage(cid);
 		case 'reply-thread': thread.remove();
 			break;
-		case 'link-thread':
-			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
-			showReplyThread(aPath, tid, cid);
-			break;
 		case 'link-quote': param = true;
 		case 'link-reply':
 			var [ tid, cid ] = parseReplyUrl(aSearch);
 			toggleForm(msgcol.children[`comment-${cid}`], tid, cid, param);
 			break;
-		case 'link-image':
-			if (USER_SETTINGS['Picture Viewer'] === 2) {
-				CentralPicture.expose(el.origin + aPath + aSearch);
-				break;
-			}
 		default:
 			return;
 		}
-		e.preventDefault();
+		e.stopPropagation(), e.preventDefault();
 	});
 }
 
@@ -2327,7 +2375,8 @@ const sendFormData = (uri, formData, json = false, signal = null) => (
 
 const handleResetForm = (rf_form) => {
 	const rf_btn = rf_form.lastElementChild;
-	rf_btn.className = 'btn btn-danger';
+	rf_btn.className = 'btn btn-danger',
+	rf_btn.id = 'do_reset';
 	rf_form.onsubmit = e => { e.preventDefault();
 		if (rf_btn.disabled === false) {
 			rf_btn.className = 'btn btn-primary';
@@ -3195,22 +3244,9 @@ function UserScript() {
 		let empty = true;
 
 		if(!lorylist) {
-			lorylist = _setup('div', { class: 'lorify-notes-panel'}, { click: e => {
-				const btn = e.target;
-				switch (btn.id) {
-				case 'notify-clear':
-					if (document.forms.reset_form)
-						document.forms.reset_form.submit();
-					break;
-				case 'note-link':
-					if (btn.pathname === LOR.path) {
-						Navigation.goToCommentPage(btn.search.substring('?cid='.length));
-						e.preventDefault();
-					}
-				}
-			}});
+			lorylist = _setup('div', { class: 'lorify-notes-panel'});
 			lorylist.append(
-				_setup('div', { id: 'notify-clear', class: 'lory-btn', text: 'Очистить уведомления' })
+				_setup('label', { class: 'note-clear lory-btn', for: 'do_reset', text: 'Очистить уведомления' })
 			);
 		} else
 		if ('notify-list' in lorylist.children) {
@@ -3225,22 +3261,23 @@ function UserScript() {
 				let new_rf = doc.forms.reset_form;
 				if (new_rf) {
 					const isNf = location.pathname !== '/notifications';
-					const body = document.getElementById('bd');
 					let old_rf = document.forms.reset_form;
 					if (old_rf) {
 						old_rf.elements.topId.value = new_rf.elements.topId.value;
 						old_rf.parentNode.hidden = isNf;
 						old_rf.lastElementChild.disabled = false;
 					} else {
+						const bd = isNf ? lorylist : document.getElementById('bd');
 						handleResetForm(new_rf);
-						new_rf.parentNode.hidden = isNf;
-						body.children[1].after(new_rf.parentNode);
+						bd.insertBefore(new_rf.parentNode, bd.children[2]).hidden = isNf;
 					}
 				}
 				for (let i = 0; i < max; i++) {
-					tab.rows[i].children[1].className = 'note-target';
-					tab.rows[i].children[1].firstElementChild.id = 'note-link';
-					tab.rows[i].children[1].firstElementChild.target = '_blank';
+					/*  ....  */ tab.rows[i].children[1].className = 'note-target';
+					const anc  = tab.rows[i].children[1].querySelector('a');
+					const time = tab.rows[i].children[2].querySelector('time');
+					anc.className = 'link-navs',anc.target = '_blank';
+					ContentFinder.localizeTime(time, 'interval');
 				}
 				while (tab.rows[max])
 					   tab.rows[max].remove();
@@ -3395,7 +3432,8 @@ ready = new Promise(resolve => {
 		.lorify-notes-panel tr:hover {
 			background: #e1e1e1;
 		}
-		#notify-clear {
+		.note-clear {
+			display: block;
 			text-align: center;
 			font-size: 18px;
 			color: #299a7b;
@@ -3452,7 +3490,7 @@ ready = new Promise(resolve => {
 			content: counter(stepIdx);
 			font: italic 10px Arial;
 		}
-		#loginGreating { margin-right: 42px!important; }
+		#loginGreating { margin-right: 60px!important; }
 		#reset-setts, .info-line:before { position: absolute; right: 0; }
 		.info-line:before {
 			-webkit-animation: 2s ease-in 2 alternate showIn;
@@ -3479,7 +3517,7 @@ ready = new Promise(resolve => {
 			            btn.id === 'lorytoggle' ? loryform : null;
 			if (pannel) {
 				if (btn.classList.toggle('pushed')) {
-					btn.parentNode.before(pannel);
+					ContentNode.append(pannel);
 				} else
 					pannel.remove();
 			}
