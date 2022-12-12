@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.0
+// @version     3.3.1
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -57,8 +57,10 @@ const Dynamic_Style = (() => {
 
 	const shrink_h = document.createTextNode('15');
 	const _lc_     = document.createTextNode('');
+	const cs_type  = document.createTextNode('');
+	const reacts_s = document.createTextNode('');
 
-	const cut = document.createTextNode(`
+	const cut = `
 	.cutted > .shrink-line:before,*:not(.cutted) > .shrink-line:after { color: #689b19; }
 	.cutted > .shrink-line:after,*:not(.cutted) > .shrink-line:before { font: bold 12px monospace; }
 	.cutted > *:not(.shrink-line) {
@@ -72,9 +74,9 @@ const Dynamic_Style = (() => {
 	.shrink-line:before           { content: '<<<\x20\x20';  }
 	.shrink-line:after            { content: 'убрать код';   }
 	.cutted > .shrink-line:after  { content: '\x20\x20>>>';  }
-	.cutted > .shrink-line:before { content: 'показать код'; }`);
+	.cutted > .shrink-line:before { content: 'показать код'; }`;
 
-	const short = document.createTextNode(`
+	const short = `
 	.shrink-line {
 		position: absolute;
 		bottom: 0; right: 0;
@@ -89,13 +91,18 @@ const Dynamic_Style = (() => {
 	.shrink-line:hover            { opacity: 1; }
 	.shrink-line:before           { content: 'Свернуть';   }
 	.cutted > .shrink-line:before { content: 'Развернуть'; }
-	.cutted,`);
+	.cutted,`;
 
-	code_css.textContent = '\n';
-	code_css.append(
+	const reacts_list = [
+		'.reactions, .reactions-form, .reactions-li { display: none !important; }',
+		'',
+	];
+
+	reacts_s.textContent = reacts_list[1];
+	code_css.append(cs_type,
 		'.shrinked { max-height:', shrink_h, 'px!important; overflow-y: hidden!important; }\n'+
 		'.lc .emphasis { font-style: italic!important; } .lc .strong { font-weight: 700!important; } .lc .link { text-decoration: underline!important; }\n',
-	_lc_);
+	_lc_, reacts_s);
 
 	return {
 		set main_counter (n) {
@@ -108,15 +115,19 @@ const Dynamic_Style = (() => {
 				m_counter.hidden = !n;
 			}
 		},
-		set 'Code Block Short Size' (v) { shrink_h.textContent = v.toString();
-			code_css.replaceChild((v > 35 ? short : cut), code_css.firstChild);
+		set 'Code Block Short Size' (v) {
+			shrink_h.textContent = v.toString();
+			cs_type.textContent = v > 35 ? short : cut;
 			correctBlockCode(v, document);
 		},
-		set 'Code Highlight Style'  (v) {
+		set 'Code Highlight Style' (v) {
 			_lc_.textContent = getHLJSStyle(v).css
 				.replace(/(;|})/g, '!important$1')
 				.replace(/(\.lc code)/, '.lc.cutted > .shrink-line:after,.lc:not(.cutted) > .shrink-line:before,$1')
 				.replace(/(\.lc \.string)/, '.lc.cutted > .shrink-line:before,.lc:not(.cutted) > .shrink-line:after,$1');
+		},
+		set 'Reactions Style' (v) {
+			reacts_s.textContent = reacts_list[v];
 		}
 	}
 })();
@@ -244,7 +255,7 @@ lory_css.textContent = `
 
 	.ws-warn  > *:first-child, .hidaft > *,
 	.ws-error > *:first-child, .hidaft ~ *,
-	.hidden, .mobile-show {
+	.mobile-show {
 		display: none;
 	}
 	.show-in {
@@ -277,7 +288,9 @@ lory_css.textContent = `
 	.lorcode > .btn:before {
 		content: attr(lorcode);
 	}
-	.markdown > .btn:not([markdown]), *[hidden] {
+	.preview .reaction-show-list, .preview .reaction-show,
+	.preview .zero-reactions-show, .preview .reactions-li,
+	.markdown > .btn:not([markdown]), *[hidden], .hidden {
 		display: none!important;
 	}
 	#yandex_rtb * {
@@ -362,8 +375,31 @@ lory_css.textContent = `
 		margin-bottom: 1px;
 		border-radius: 0;
 	}
-	.link-self, .link-thread {
+	.link-self, .link-thread, .reactions-li a {
 		text-decoration: none;
+	}
+	.reaction:not(.reactions-list) {
+		margin: 0 4px 0 0 !important;
+		cursor: pointer;
+	}
+	.reactions-list {
+		position: absolute;
+		bottom: 100%;
+	}
+	.reactions-form {
+		position: relative;
+	}
+	.reactions-li a:before {
+		content: '😶';
+		font-size: smaller;
+	}
+	.preview .reaction {
+		border-size: 0;
+		font-size: smaller;
+		padding: 0 4px;
+	}
+	.preview .reactions {
+		margin: 4px 0 0 0;
 	}
 	.highlight { outline: 2px dashed red; }
 	.response-block:before      { content: ':\\A' }
@@ -738,7 +774,7 @@ class TopicNavigation {
 				this.gotoPage(page).then(() => _jmpMsg(msg, lorifyUrl(path, page, lastmod, cid)));
 			}
 			if (comm) {
-				_jmpMsg(comm, href);
+				_jmpMsg(comm, href + (cid ? `#comment-${cid}`: ''));
 			} else if (this.has(cid)) {
 				_jmpPage();
 			} else if (cid) {
@@ -1202,6 +1238,7 @@ const onDOMReady = () => {
 			comments.append(nav_t, pcont);
 			realtime.after (nav_b);
 	}
+	messages.addEventListener('click', onReactionClick);
 	body.addEventListener('click', Navigation);
 
 	let promisList = [];
@@ -1813,6 +1850,8 @@ const updCommentContent = (old_msg, new_msg, si = 0) => {
 	const old_lmd = old_msg.querySelector('.sign_more > time');
 	const new_rly = new_msg.querySelector('.reply');
 	const old_rly = old_msg.querySelector('.reply');
+	const new_emj = new_msg.querySelector('.reactions-form');
+	const old_emj = old_msg.querySelector('.reactions-form');
 
 	let old_ebt = old_rly.querySelector('a[href^="/edit_comment"]');
 	if (old_ebt)
@@ -1828,6 +1867,27 @@ const updCommentContent = (old_msg, new_msg, si = 0) => {
 			old_body.removeChild(oc);
 		for (let nc; (nc = new_body.childNodes[si]) && nc !== new_rly;)
 			old_body.insertBefore(nc, old_rly);
+	}
+
+	let new_reacts = new_emj && new_emj.elements.reation;
+	if (new_reacts) {
+		let old_reacts = old_emj && old_emj.elements.reaction;
+		if (old_reacts) {
+			const val = {}, [show, hide] = preferReactions(old_emj);
+			for (const r of new_reation) {
+				let c  =  r.value.substr(0, r.value.indexOf('-'));
+				val[c] = [r.value, r.lastElementChild.innerText, r.title];
+			}
+			for (const r of Array.from(old_reacts)) {
+				let [f,c,t] = val[r.value.substr(0, r.value.indexOf('-'))],
+				       cont = f.endsWith('false') ? show : hide;
+				r.value = f, r.lastElementChild.textContent = c;
+				r.title = t, !cont.contains(r) && cont.append(r);
+			}
+		} else if (!old_emj) {
+			old_rly.after(new_emj.parentNode);
+		} else
+			old_emj.replaceWith(new_emj);
 	}
 }
 
@@ -2221,10 +2281,13 @@ const showPreview = (anc) => {
 			// Without the 'clone' call we'll just move the original comment
 			const msg = Navigation.get(cid).msg;
 			  preview = _setup(msg.cloneNode((isNew = true)), attrs, events);
-			let mbody = preview.querySelector('.msg_body');
+			let mbody = preview.querySelector('.msg_body')
+			      rfm = mbody.querySelector('.reactions-form');
 			    mbody.classList.add('no-reply');
 			if (msg.contains(CommentForm))
 			    mbody.removeChild(mbody.lastElementChild);
+			if (rfm)
+			    rfm.onsubmit = rfm.onclick = e => { e.stopPropagation(), e.preventDefault(); };
 		}
 	} else {
 		// Add Loading Process stub
@@ -2373,22 +2436,18 @@ const sendFormData = (uri, formData, json = false, signal = null) => (
 	)
 );
 
-const handleResetForm = (rf_form) => {
-	const rf_btn = rf_form.lastElementChild;
-	rf_btn.className = 'btn btn-danger',
-	rf_btn.id = 'do_reset';
-	rf_form.onsubmit = e => { e.preventDefault();
-		if (rf_btn.disabled === false) {
-			rf_btn.className = 'btn btn-primary';
-			rf_btn.disabled = true;
-			rf_btn.textContent = '...';
-			const fd = new FormData(rf_form);
-			sendFormData('/notifications-reset', fd).then(() => {
-				rf_btn.className = 'btn btn-danger';
-				rf_btn.textContent = 'Сбросить';
-				App.setNotes(0);
-			});
-		}
+function handleResetForm(form) {
+	const btn = form.lastElementChild;
+	btn.className = 'btn btn-danger', btn.id = 'do_reset';
+	form.onsubmit = e => { e.preventDefault();
+		if (btn.disabled)
+			return;
+		btn.disabled = true;
+		btn.className = 'btn btn-primary', btn.textContent = '...';
+		sendFormData('/notifications-reset', new FormData(form)).then(() => {
+			btn.className = 'btn btn-danger', btn.textContent = 'Сбросить';
+			App.setNotes(0);
+		});
 	}
 }
 
@@ -2913,7 +2972,98 @@ const toggleForm = (underc, tid, cid, quote) => {
 	}
 }
 
-const handleReplyLinks = (msg, cid, mouse = mousePreviewHandler) => {
+const preferReactions = (form) => {
+	let hide = form.querySelector('.zero-reactions, .zero-reactions-show');
+	let user = form.querySelector('.reaction-show-list');
+	let show = form.querySelector('.apply-reactions');
+
+	if (!user)
+	     user = _setup('span', { class: 'reaction reaction-show-list', text: '?' });
+	if (!hide) {
+		form.append(
+			 user,  _setup('span', { class: 'reaction reaction-show', text: '\u00BB' }),
+			(hide = _setup('span', { class: 'zero-reactions-show' }))
+		);
+		form.parentNode.classList.remove('zero-reactions-show');
+	}
+	if (!show) {
+		 show = form.insertBefore(
+			_setup('span', { class: 'apply-reactions' }), user);
+		for (const r of Array.from(form.elements.reaction))
+			(r.value.endsWith('true') ? hide : show).append(r);
+	}
+	return [show, hide];
+}
+
+function onReactionClick(e) {
+	let btn = e.target, parent = btn.parentNode;
+	let [clss0, clss1] = btn.classList;
+
+	if (clss1 && clss1.startsWith('reaction'))
+		clss0 = clss1;
+
+	switch(clss0) {
+	case 'reaction-count':
+		btn = parent, parent = parent.parentNode;
+	case 'reaction':
+		const { value, form } = btn;
+		if (value && form) {
+			const data = new FormData(form); data.append('reaction', value);
+			const p = sendFormData('/reactions/ajax', data, true),
+			      i = value.indexOf('-') + 1,
+			      f = value.substr(i) !== 'true';
+
+			const [show, hide] = preferReactions(form);
+
+			p.then(({ errors, count }) => {
+				if (errors)
+					return console.warn(errors.join('\n'));
+
+				btn.lastElementChild.textContent = count.toString();
+				btn.value = value.substr(0, i) + f;
+
+				if (f) btn.classList.remove('btn-primary');
+				else   btn.classList.add('btn-primary');
+
+				if (count === 0) hide.append(btn); else
+				if (count === 1) show.append(btn);
+			});
+		}
+		break;
+	case 'reaction-show':
+		if (parent.classList.contains('reactions-form')) {
+			if((parent = parent.querySelector('.zero-reactions, .zero-reactions-show')))
+				parent.classList.toggle('zero-reactions-show');
+		} else {
+			parent = parent.parentNode.parentNode.parentNode.querySelector('.reactions');
+		}
+		if (parent)
+			parent.classList.toggle('zero-reactions');
+		break;
+	case 'reaction-show-list':
+		let rlist = parent.querySelector('.reactions-list') || parent.insertBefore(
+			_setup('span', { class: 'reactions-list msg reaction hidden' }), btn
+		);
+		if (!rlist.classList.toggle('hidden')) {
+			let parts = [], users = {};
+			for (let { value, title } of parent.querySelectorAll('.reaction[title*="\\" "]')) {
+				value = value.substr(0,value.indexOf('-'));
+				title = title.substr(title.indexOf('" ')+2).trim().split(/\s+/);
+				for (let usr of title)
+					users[usr] = (users[usr] || '') + value;
+			}
+			for (let usr in users)
+				parts.push(usr + users[usr]);
+			rlist.textContent = parts.join('\n|\n');
+		}
+		break;
+	default:
+		return;
+	}
+	e.stopPropagation(), e.preventDefault();
+}
+
+function handleReplyLinks(msg, cid, mouse = mousePreviewHandler) {
 
 	const { path, topic } = LOR;
 
@@ -2929,6 +3079,10 @@ const handleReplyLinks = (msg, cid, mouse = mousePreviewHandler) => {
 			rep.className = 'link-reply', rep.textContent = 'Ответить';
 			qut.className = 'link-quote', qut.textContent = 'с цитатой';
 			  a.replaceWith(rep, '\n.\n', qut);
+			break;
+		case '/reactions':
+			a.parentNode.classList.add('reactions-li');
+			a.textContent = '';
 			break;
 		case '/resolve.jsp':
 		case '/edit.jsp':
@@ -3144,7 +3298,6 @@ function WebExt() {
 			opened = null;
 		});
 	}
-
 	opened = new Promise(portConnect);
 
 	const sendMessage = (action, data) => {
@@ -3154,7 +3307,6 @@ function WebExt() {
 			port => port.postMessage({ action, data })
 		);
 	}
-
 	return {
 		checkNow : () => sendMessage( 'l0rNG-notes-chk' ),
 		openUrl  : al => sendMessage( 'l0rNG-open-tab', 'lor:/'+ al ),
