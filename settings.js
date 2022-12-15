@@ -169,9 +169,9 @@ function pullNotes(html) {
 	for (let i = 0; i < limit; i++) {
 
 		const CALL_TYPE = trs[i].children[0].firstElementChild;
-		const LINK_ELEM = trs[i].children[1].firstElementChild;
+		const LINK_ELEM = trs[i].children[1].querySelector('a');
 		const TAG_ELEMS = trs[i].children[1].querySelectorAll('.tag');
-		const TIME_ELEM = trs[i].children[2].firstElementChild;
+		const TIME_ELEM = trs[i].children[2].querySelector('time');
 		const USER_NAME = trs[i].children[2].lastChild;
 
 		const item = document.createElement('div' ); item.className = 'note-item';
