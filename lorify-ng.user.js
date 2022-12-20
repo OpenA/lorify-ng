@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.1
+// @version     3.3.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -26,7 +26,7 @@ const USER_SETTINGS = {
 	'Code Highlight Style' : 0
 }
 
-let ContentNode, Navigation, CommentForm;
+let ContentNode, Navigation, CommentForm, gRefList;
 let LORCODE_MODE = 0, Drops = 1, ThrMap = {};
 
 const LOR           = parseLORUrl(location.href);
@@ -188,7 +188,7 @@ lory_css.textContent = `
 	.msg-error { color: red; font-weight: bold; }
 	.broken    { color: inherit !important; cursor: default; }
 	.select-break::selection { background: rgba(99,99,99,.3); }
-	.response-block, .response-block > a { padding: 0 3px !important; }
+	.ref-map, .ref-map > a { padding: 0 3px !important; }
 	.page-number, .icode { position: relative; margin-right: 5px; }
 	.page-number[cnt-new]:not(.broken):after {
 		content: attr(cnt-new);
@@ -402,8 +402,8 @@ lory_css.textContent = `
 		margin: 4px 0 0 0;
 	}
 	.highlight { outline: 2px dashed red; }
-	.response-block:before      { content: ':\\A' }
-	.response-block:empty:after { content: '...' }
+	.ref-map:before      { content: ':\\A' }
+	.ref-map:empty:after { content: '...' }
 	.central-pic-overlay {
 		left: 0;
 		top: 0;
@@ -509,41 +509,15 @@ class TopicNavigation {
 
 	constructor() {
 
-		const stack = [], table = {}, queue = Object.create(null);
-
-		const addToStack = (msg_list, num = 0) => {
-
-			const wrk = workComments( msg_list, num );
-			for(const msg of msg_list) {
-				const cid = Number(msg.id.substring('comment-'.length));
-				const com = { cid, msg, page: num };
-				stack.push(com), table[cid] = com;
-			}
-			queue[`/page${num}`] = null;
-			return wrk;
-		}
 		this.pages_count = 0;
-
-		let gRefList = [];
-		const refMapTable = ( ref_list ) => {
-			let comb_map = Object.create(null),
-			      hasMap = false,
-			    ref_comb = gRefList.concat(ref_list);
-
-			for (let { reid } of ref_comb) {
-				if((hasMap = reid in table))
-					comb_map[reid] = table[reid].msg;
-			}
-			gRefList = hasMap ? addRefLinks(comb_map, ref_comb) : ref_comb;
-		}
 
 		window.addEventListener('popstate', e => {
 			const { page, cid } = parseLORUrl(location.href);
 			const _jmpTo = () => {
 				if (cid)
-					document.getElementById(`comment-${LOR.cid = cid}`).scrollIntoView();
+					document.getElementById(`comment-${LOR.cid = cid}`).scrollIntoView({ block: 'start', behavior: 'smooth' });
 				else if (e.state && e.state.lorYoffset)
-					window.scrollTo(window.pageXOffset, e.state.lorYoffset);
+					window.scrollTo(0, e.state.lorYoffset);
 			};
 			if (LOR.page !== page) {
 				this.gotoPage(page).then(_jmpTo);
@@ -560,70 +534,73 @@ class TopicNavigation {
 			this[id] = nav;
 		}
 		Object.defineProperties(this, {
-			pcont: { value: document.createElement('div') },
-			queue: { value: queue },
-			stack: { value: stack },
-			table: { value: table },
-
-			get: { value: cid => table[cid] },
-			has: { value: cid => cid in table },
-			ref: { value: refMapTable },
-			add: { value: addToStack }
+			pload: { value: _setup('div', { class: 'page-loader' }) },
+			queue: { value: Object.create(null) }
 		});
 	}
 
 	preloadPage(uri = '', pass = 0x00) {
 
-		let  quid = uri || '/page0',
-		   opaque = quid.startsWith('?cid='),
-		 do_merge = quid in this.queue,
+		let { path, page } = LOR;
+
+		const url = location.origin + path + uri,
+		     quid = uri || '/page0',
+		   opaque = quid.startsWith('?cid=') && Object.keys(this.queue).length !== 0,
 		   promis = this.queue[quid];
 
-		const url = location.origin + LOR.path + uri;
-		const cur_page = LOR.page;
 		const rq_params = {
 			credentials: 'same-origin',
 			cache: 'no-cache'
 		};
 		const onFinally = res => {
 
-			let fin,num = parseLORUrl(res.url).page;
-			if (res.ok) {
-				fin = res.text().then(getCommentsContent).then(
-				({ msg_list, nav_count }) => {
-					const wrk = (do_merge
-						? this.merge(msg_list, num, quid)
-						: this.add(msg_list, num, quid)
-					);
-					if (nav_count && nav_count - 2 !== this.pages_count)
-						this.resetNav(nav_count - 2);
+			const ok  = res.ok ? res.text().then(getPageContent) : Promise.reject(res.status +' '+ res.statusText);
+			const num = parseLORUrl(res.url).page;
 
-					if (pass & 0x01)
-						wrk.then(({ ref_list }) => this.ref(ref_list));
-					return wrk;
-				});
-			} else {
-				fin = Promise.reject(res.status +' '+ res.statusText);
-				if (!do_merge)
-					delete this.queue[quid];
+			const doRef = Boolean(pass & 0x1), reNav = Boolean(pass & 0x2),
+			      doUpd = Boolean(pass & 0x4), isNew = Boolean(pass & 0x8);
+
+			const doDe = () => {
+				/* rm queue by prev id and by page num */
+				delete this.queue[quid];
+				delete this.queue['/page'+ num];
 			}
-			if (do_merge)
-				this.queue[quid] = null;
-			return fin;
+			const doFin = ({ pg_comms, msg_list, nav_count, top_msg, t_info, events }) => {
+				let pcont = document.getElementById('pcont_'+ num);
+				if (pcont) {
+					mergeComments(pcont, msg_list, isNew);
+				} else {
+					const comms = document.getElementById('comments');
+					pg_comms.id = 'pcont_'+ num;
+					pg_comms.className = 'page-content hidden';
+					pg_comms.style = '';
+					comms.append(pg_comms);
+				}
+				const ref = workComments(msg_list); doDe();
+				      ref.page_num = num;
+				if (doUpd)
+					updTopicContent(top_msg, t_info, events);
+				if (reNav && nav_count !== this.pages_count)
+					this.resetNav(nav_count);
+				if (doRef)
+					genRefMap(ref.ref_list);
+				return ref;
+			}
+			return ok.catch(doDe), ok.then(doFin);
 		}
 		const onTry = res => {
 
-			delete this.queue[quid],
-			/* rm queue by prev id and set new id by page num
-			 */ quid = '/page'+ parseLORUrl(res.url).page,
-			do_merge = quid in this.queue;
+			let pageN = '/page'+ parseLORUrl(res.url).page,
+			   promis = this.queue[pageN];
 
-			if (this.queue[quid]) {
-				return (this.queue[quid]);
+			if (promis) {
+				return promis;
 			} else if (res.ok) {
-				return (this.queue[quid] = fetch(res.url, rq_params).then(onFinally));
-			} else
+				return (this.queue[pageN] = fetch(res.url, rq_params).then(onFinally));
+			} else {
+				delete this.queue[quid];
 				return Promise.reject(res.status +' '+ res.statusText);
+			}
 		}
 		return promis || ( this.queue[quid] = fetch(
 				url, (opaque ? Object.assign({ method: 'HEAD' }, rq_params) : rq_params)
@@ -631,44 +608,8 @@ class TopicNavigation {
 		);
 	}
 
-	merge(msg_list, num) {
-
-		const new_list = [], euids = [], new_stack = [];
-
-		for(const msg of msg_list) {
-			const nid = Number(msg.id.substring('comment-'.length)),
-			      com = this.table[nid];
-
-			if (com) {
-				com.page = num;
-				updCommentContent(com.msg, msg);
-			} else {
-				new_stack.push(
-					(this.table[nid] = { msg, page: num, cid: nid })
-				);
-				new_list.push(msg);
-			}
-			euids.push(nid);
-		}
-		const wrk = workComments( new_list, num );
-		const sid = euids[0],
-			  eid = euids[euids.length - 1],
-		 del_list = this.stack.filter(
-			c => ((c.cid < sid && c.page > num) ||
-			      (c.cid > sid && c.cid  < eid  && !euids.includes(c.cid)))
-		);
-		for (const com of del_list) {
-			com.page = -1; // deleted
-			com.msg.classList.add('deleted');
-		}
-		this.stack.push( ...new_stack );
-		this.stack.sort((a,b) => a.cid - b.cid);
-		this.queue[`/page${num}`] = null;
-		return wrk;
-	}
-
 	gotoPage(num) {
-		const { nav_t, nav_b, pcont } = this;
+		const { nav_t, nav_b } = this;
 		const { page } = LOR;
 
 		const tmpid =  page +'_'+ num,
@@ -694,26 +635,19 @@ class TopicNavigation {
 		if (USER_SETTINGS['Scroll Top View']) {
 			nav_t.parentNode.scrollIntoView({ block: 'start' });
 		}
-		pcont.id = 'pcont_'+ tmpid;
+		const pcont = document.getElementById('pcont_'+ page);
+		this.__swpid = tmpid, pcont.classList.add('hidden');
 		return new Promise(resolve => {
 			if (this.swapContent( num, reAnim, resolve )) {
-				this.preloadPage('/page'+ num, 1).then(() => {
-					if (tmpid === pcont.id.substring('pcont_'.length)) {
-						pcont.id = 'pcont_'+ num;
+				this.preloadPage('/page'+ num, 0x1).then(() => {
+					if (this.__swpid === tmpid) {
+						this.__swpid = '';
 						this.swapContent( num, reAnim, resolve );
 					}
 				});
-			} else
-				pcont.id = 'pcont_'+ num;
+			} else if (this.__swpid === tmpid)
+				this.__swpid = '';
 		});
-	}
-
-	getPageComments(num) {
-		return this.stack.reduce((list, comm) => {
-			if (comm.page === num)
-				list.push(comm.msg);
-			return list;
-		}, []);
 	}
 
 	resetNav(nav_count = 1) {
@@ -752,34 +686,37 @@ class TopicNavigation {
 		return page;
 	}
 
-	goToCommentPage(cid, alt = `topic-${LOR.topic}`, newState = true) {
+	goToCommentPage(cid = '', alt = `topic-${LOR.topic}`) {
 
-		const { path, lastmod, page: prev } = LOR
-		const href = lorifyUrl(path, prev, lastmod),
-		     state = history.state || {},
-		      comm = document.getElementById(cid ? `comment-${LOR.cid = cid}` : alt);
-
+		const { path, lastmod, page: prev, cid: pid = '' } = LOR;
+		const id = cid ? `comment-${cid}` : alt,
+		    comm = document.getElementById(id),
+		newState = cid !== pid;
+		
+		const state = history.state || {};
 		state.lorYoffset = window.pageYOffset;
-		history.replaceState(state, null, href);
+		history.replaceState(state, null, lorifyUrl(path, prev, lastmod, pid));
 
 		return new Promise(resolve => {
-			const _jmpMsg = (comm, href) => {
-				comm.scrollIntoView({ block: 'start', behavior: 'smooth' });
-				if (newState)
+			const _jmpMsg = (msg, page) => {
+				msg.scrollIntoView({ block: 'start', behavior: 'smooth' });
+				if (newState) {
+					const href = lorifyUrl(path, page, lastmod, (LOR.cid = cid));
 					history.pushState({ lorYoffset: 0, prev }, null, href);
-				resolve(comm);
-			}
-			const _jmpPage = () => {
-				const { msg, page } = this.get(cid);
-				this.gotoPage(page).then(() => _jmpMsg(msg, lorifyUrl(path, page, lastmod, cid)));
+				}
+				resolve(msg);
 			}
 			if (comm) {
-				_jmpMsg(comm, href + (cid ? `#comment-${cid}`: ''));
-			} else if (this.has(cid)) {
-				_jmpPage();
+				let num = cid ? Number(comm.parentNode.id.substr('pcont_'.length)) : prev;
+				if (num === prev)
+					_jmpMsg(comm, prev);
+				else
+					this.gotoPage(num).then(() => _jmpMsg(comm, num));
 			} else if (cid) {
 				this.swapContent();
-				this.preloadPage('?cid='+ cid, 1).then(_jmpPage);
+				this.preloadPage('?cid='+ cid, 0x1).then(({ page_num }) => {
+					this.gotoPage(page_num).then(pcont => _jmpMsg(pcont.children[id], page_num));
+				});
 			}
 		});
 	}
@@ -872,34 +809,28 @@ class TopicNavigation {
 
 	swapContent(num, reAnim = false, resolve = () => void 0) {
 
-		const { pcont } = this;
-		const msg_list = Number.isInteger(num) && this.getPageComments(num),
-		      is_empty = !msg_list || !msg_list.length;
-
-		pcont.className = 'hidaft page-'+ (is_empty ? 'loader' : 'content hidden');
-
-		if (is_empty)
+		const aName = 'slide-'+ (reAnim ? 'left': 'right');
+		const pcont = document.getElementById('pcont_'+ num);
+		if ( !pcont ) {
+			this.nav_t.after(this.pload);
 			return true;
-		while (pcont.nextSibling)
-			   pcont.parentNode.removeChild(pcont.nextSibling);
-		while (pcont.children[0])
-			   pcont.removeChild(pcont.children[0]);
-			   pcont.append( ...msg_list);
+		}
+		this.pload.remove();
+		pcont.classList.remove('hidden');
 
 		if (USER_SETTINGS['CSS3 Animation']) {
-
 			const termHandler = () => {
 				pcont.removeEventListener('animationend', termHandler, true);
-				pcont.classList.remove('slide-'+ (reAnim ? 'left': 'right'));
-				resolve();
+				pcont.classList.remove(aName);
+				resolve(pcont);
 			}
 			pcont.addEventListener('animationend', termHandler, true);
-			pcont.className = 'page-content slide-'+ (reAnim ? 'left': 'right');
+			pcont.classList.add(aName);
 		} else {
-			pcont.className = 'page-content';
-			resolve();
+			resolve(pcont);
 		}
 		correctBlockCode(USER_SETTINGS['Code Block Short Size'], pcont);
+		return false;
 	}
 
 	setNavBoubble(num, cn) {
@@ -1216,13 +1147,13 @@ const onDOMReady = () => {
 
 	const comments = document.getElementById('comments'),
 	      msg_list = comments.querySelectorAll('.msg[id^="comment-"]'),
-	      messages = comments.parentNode;
-	const navPages = messages.querySelectorAll('#comments ~ .nav > .page-number'),
+	      messages = comments.parentNode,
+	      navPages = messages.querySelectorAll('#comments ~ .nav > .page-number'),
 	      pg_count = navPages.length ? navPages.length - 2 : 1,
 	      infotext = (realtime.nextElementSibling || realtime).textContent;
 
-	const { nav_t, nav_b, pcont } = (Navigation = new TopicNavigation);
-	pcont.id = 'pcont_'+ Navigation.resetNav(pg_count);
+	const { nav_t, nav_b } = (Navigation = new TopicNavigation);
+	const pcont = _setup('div', { id: 'pcont_'+ Navigation.resetNav(pg_count), class: 'page-content' });
 
 	let lastPageIdx = pg_count - 1;
 	if (lastPageIdx) {
@@ -1243,19 +1174,21 @@ const onDOMReady = () => {
 
 	let promisList = [];
 	if (msg_list.length) {
-		promisList.push( Navigation.add(msg_list, page) );
+		promisList.push(new Promise(_r => _r( workComments(msg_list) )));
 	}
-
-	Navigation.goToCommentPage(cid, location.hash.substring(1), false);
+	for (let next; (next = pcont.nextElementSibling);) {
+		pcont.append(next);
+	}
 
 	if (/\/thread\/|.jsp/.test(location.pathname))
 		return;
 	if (!/Тема (?:удалена|перемещена в архив)/.test(infotext)) {
 		if (page !== lastPageIdx) {
 			const lastp = Navigation.preloadPage('/page'+ lastPageIdx);
-			lastp.then(({ comm_map }) => {
-				const ids = Object.keys(comm_map);
-				RealtimeHub.watch(topic, ids[ids.length - 1]);
+			lastp.then(({ ref_map }) => {
+				const last = Object.keys(ref_map).reduce(
+					(a,b) => Number(a) > Number(b) ? a : b, 0);
+				RealtimeHub.watch(topic, last);
 			});
 			promisList.push( lastp );
 		} else {
@@ -1275,15 +1208,14 @@ const onDOMReady = () => {
 		for (let i = page - 1; g < PL_COUNT && i >= 0; i--, g++) {
 			promisList.push(Navigation.preloadPage('/page'+ i));
 		}
-		Promise.all(promisList).then(arr => {
-			if (!arr.length)
-				return;
-			const g_ref = [];
+		Promise.all(promisList).then(refs => {
+			const g_list = [], g_map = {};
 
-			for(let { ref_list } of arr)
-				g_ref.push(...ref_list);
-			if (g_ref.length)
-				Navigation.ref(g_ref);
+			for (const { ref_list, ref_map } of refs) {
+				g_list.push(...ref_list),
+				Object.assign(g_map, ref_map);
+			}
+			gRefList = g_list.length ? addRefLinks(g_list, g_map) : g_list;
 		});
 	});
 
@@ -1466,11 +1398,6 @@ window.addEventListener('setMemories', ({ detail: [m_tag, memories] }) => {
             _setup(document.getElementById('tagIgnore'      ), { m_tag, onclick: toMemories });
    }
 });
-
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', onDOMReady);
-} else
-	onDOMReady();
 
 function locKeyHandler(e) {
 
@@ -1717,7 +1644,7 @@ const onWSData = (cids) => {
 		for (; g < count; g++) {
 			const msg = comm_map[ cids[g] ];
 			if ( !msg ) {
-				Navigation.preloadPage('/page'+ (page_num + 1)).then(recuThen);
+				Navigation.preloadPage('/page'+ (page_num + 1), 0xF).then(recuThen);
 				break;
 			}
 			msg.classList.add('newadded');
@@ -1742,107 +1669,142 @@ const onWSData = (cids) => {
 	}
 }
 
-const workComments = (comm_list, page_num, mouse = mousePreviewHandler) => new Promise(resolve => {
+const mergeComments = (pcont, msg_list, isNew = false) => {
 
-	const { path } = LOR;
-	let comm_map = Object.create(null),
+	for(const msg of msg_list) {
+		const old = document.getElementById(msg.id);
+
+		if (old) {
+			updCommentContent(old, msg);
+		} else {
+			if (isNew)
+				msg.classList.add('newadded');
+			pcont.append(msg);
+		}
+	}
+}
+
+const workComments = (msg_list, mouse = mousePreviewHandler) => {
+
+	let ref_map  = Object.create(null),
 	    ref_list = [];
 
-	for(const msg of comm_list) {
-		const djm = msg.previousElementSibling;
+	for(const msg of msg_list) {
 		const cid = msg.id.substring('comment-'.length);
-		let reply = msg.querySelector(`.title > a[href^="${ path }?cid="]`);
+		let reply = msg.querySelector(`.title > a[href*="?cid="]:not(.link-pref)`);
 		if (reply) {
 			// Extract reply comment ID from the 'search' string
 			let reid = reply.search.substring('?cid='.length);
 			let user = msg.querySelector('a[itemprop="creator"]');
+			let text = reply.nextSibling.textContent,
+			     off = text.indexOf('от ') + 3;
 			// Create new response-map for this comment
 			ref_list.push({ cid, name: (user ? user.innerText : 'anon'), reid });
 			// Write special attributes
-			_setup(reply, { class: 'link-pref' }, mouse);
+			_setup(reply, { class: 'link-pref', text: text.substr(off).trim() }, mouse);
+			reply.nextSibling.textContent = text.substr(0, off);
 		}
-		if (djm && djm.className === 'datejump')
-			msg.setAttribute('datejump', djm.innerText);
-
-		handleReplyLinks(
-			(comm_map[cid] = msg), cid, mouse
-		);
-		ContentFinder.check(msg);
+		let refmap = msg.querySelector('.ref-map');
+		if(!refmap) {
+			refmap = document.createElement('span');
+			handleReplyLinks(msg, cid, refmap);
+			ContentFinder.check(msg);
+		}
+		ref_map[cid] = _setup(refmap, { class: 'ref-map' }, mouse);
 	}
-	if (comm_list.length > 1 && ref_list.length)
-		ref_list = addRefLinks(comm_map, ref_list, mouse);
-	resolve({ comm_map, ref_list, page_num });
-});
+	if (msg_list.length > 1 && ref_list.length)
+		ref_list = addRefLinks(ref_list, ref_map);
+	return { ref_list, ref_map };
+}
 
- const addRefLinks = (comm_map, ref_list, mouse = mousePreviewHandler) => {
+const genRefMap = (ref_list) => {
+	let ref_map = Object.create(null),
+		 hasMap = false;
+
+	ref_list = ref_list.concat(gRefList);
+
+	for(let { reid } of ref_list) {
+		let msg = document.getElementById(`comment-${reid}`),
+			ref = msg && msg.querySelector('.ref-map');
+		if (ref)
+			ref_map[reid] = ref, hasMap = true;
+	}
+	gRefList = hasMap ? addRefLinks(ref_list, ref_map) : ref_list;
+}
+
+const addRefLinks = (ref_list, ref_map) => {
 
 	const { path, TopicStarter } = LOR;
 	const unused = [];
 
-	for(let i = 0; i < ref_list.length; i++) {
-		let {reid, name, cid} = ref_list[i];
-		if(!(reid in comm_map)) {
-			unused.push(ref_list[i]);
+	for(const ref of ref_list) {
+		let { reid, name, cid } = ref, map = ref_map[reid];
+		if ( !map ) {
+			unused.push(ref);
 			continue;
 		}
-		let comment   = comm_map[reid],
-		    res_block = comment.querySelector('.response-block');
-		if(!res_block) {
-			res_block = _setup('span', { class: 'response-block' }, mouse);
-			const lt  = _setup('a'   , { class: 'link-thread', text: '\nОтветы', href: path +'/thread/'+ reid }),
-			      li  = document.createElement('li'),
-			      ls  = comment.querySelector('.link-self');
-			if ( !ls  ) {
-				(comment.querySelector('.reply > ul') || comment.lastElementChild.lastElementChild.appendChild(
-					_setup('ul', { class: 'reply' })
-				)).append(li);
-			} else
-				ls.parentNode.before(li);
-			li.append(lt, res_block);
-		}
-		let a = _setup('a', {
-			class: 'link-pref' + (name === TopicStarter ? ' ts' : ''),
-			href: path +'?cid='+ cid,
+		let lnk = _setup('a', {
+			class: `link-pref${name === TopicStarter ? ' ts' : ''}`,
+			href: `${path}?cid=${cid}`,
 			text: name
 		});
-		res_block.append(a);
+		map.append( lnk );
+		map.parentNode.classList.remove('hidden');
 	}
 	return unused;
 }
 
-const getCommentsContent = (html) => new Promise(resolve => {
+const getPageContent = (html) => {
 	// Create new DOM tree
 	const newdoc = new DOMParser().parseFromString(html, 'text/html'),
-	       comms = newdoc.getElementById('comments'),
-	       evets = newdoc.getElementById('main_events_count');
-	// resolve promis with comment nodes
-	resolve({
-		nav_count: comms.querySelectorAll('.nav > .page-number').length,
-		msg_list : comms.querySelectorAll('.msg[id^="comment-"]')
-	});
-	const topic = document.getElementById('topic-'+ LOR.topic),
-	      newtp = newdoc.getElementById('topic-'+ LOR.topic),
-	      newfv = newtp.querySelector('.fav-buttons'),
-	      fav   = topic.querySelector('.fav-buttons');
-	// update favorites and memories counter
-	fav.children[  'favs_count'  ].textContent = newfv.children[  'favs_count'  ].textContent;
-	fav.children['memories_count'].textContent = newfv.children['memories_count'].textContent;
-	// stop watch if topic deleted
-	let tinfo = newdoc.body.querySelector('.messages > .infoblock');
-	if (tinfo && tinfo.textContent.includes('Тема удалена')) {
-		let msgs = document.body.querySelector('.messages'),
-			info = msgs.querySelector('#comments ~ .infoblock');
-		if (info)
-			msgs.replaceChild(tinfo, info);
-		else
-			msgs.insertBefore(ninfo, msgs.lastElementChild);
-		RealtimeHub.terminate();
+	      events = newdoc.getElementById('main_events_count'),
+	     top_msg = newdoc.getElementById('topic-'+ LOR.topic),
+	    pg_comms = newdoc.getElementById('comments'),
+	      t_info = newdoc.body.querySelector('.messages > .infoblock');
+
+	let msg_list = [], del_list = [], nav_count = 1;
+	// filter comments elements
+	for (const ch of pg_comms.children) {
+		switch (ch.classList[0]) {
+		case 'msg': msg_list.push(ch);
+		case 'datejump': break;
+		case 'nav': nav_count = ch.children.length - 2;
+		default: del_list.push(ch);
+		}
 	}
-	if (evets)
-		App.setNotes( Number(evets.textContent.match(/\d+/)) );
+	for (const ch of del_list)
+		pg_comms.removeChild(ch);
+	// resolve promis with comment nodes
+	return {
+		pg_comms, msg_list, nav_count, top_msg,
+		t_info: t_info ? String(t_info.innerText) : '',
+		events: events ? Number(events.textContent.match(/\d+/)) : -1
+	};
+};
+
+const updTopicContent = (new_top, t_info = '', events = -1) => {
+	// check topic changes
+	const old_top = document.getElementById('topic-'+ LOR.topic),
+	        newfv = new_top.querySelector('.fav-buttons'),
+	        oldfv = old_top.querySelector('.fav-buttons'),
+	         msgs = old_top.parentNode;
+	// update favorites and memories counter
+	oldfv.children.favs_count.textContent = newfv.children.favs_count.textContent;
+	oldfv.children.memories_count.textContent = newfv.children.memories_count.textContent;
+	// update info line
+	if (t_info) {
+		let info = msgs.querySelector('#comments ~ .infoblock') ||
+		           msgs.appendChild( _setup('div', { class: 'infoblock' }) );
+		info.textContent = t_info;
+		// stop watch if topic deleted
+		if (t_info.includes('Тема удалена'))
+			RealtimeHub.terminate();
+	}
+	if (events !== -1)
+		App.setNotes(events);
 	// update topic body if modifed
-	updCommentContent(topic, newtp, 1);
-});
+	updCommentContent(old_top, new_top, 1);
+}
 
 const updCommentContent = (old_msg, new_msg, si = 0) => {
 
@@ -2106,14 +2068,12 @@ const showReplyThread = (uri, tid, cid) => {
 	const thread = _setup('div', { class: 'reply-thread', id });
 
 	getDataResponse(uri, html => {
-		const comms = getCommentsContent(html);
+		const { msg_list } = getPageContent(html);
 
-		comms.then(({ msg_list }) => {
-			workComments(msg_list, -2, null);
-			msgcol.className = 'messages show-in';
-			msgcol.append(...msg_list);
-			ThrMap[tid] = thread;
-		});
+		workComments(msg_list, null);
+		msgcol.className = 'messages show-in';
+		msgcol.append(...msg_list);
+		ThrMap[tid] = thread;
 	});
 	addThreadHandler( thread, msgcol );
 	ContentNode.appendChild(thread).append(msgcol);
@@ -2294,7 +2254,7 @@ const showPreview = (anc) => {
 		preview = _setup('article', attrs, events);
 		preview.textContent = 'Загрузка...';
 		// Get an HTML containing the comment
-		Navigation.preloadPage(anc.search, 1).then(({ comm_map }) => {
+		Navigation.preloadPage(anc.search, 0x1).then(({ comm_map }) => {
 			preview.style.visibility = 'hidden';
 			preview.textContent = '';
 			for (const ch of comm_map[cid].children)
@@ -3063,45 +3023,52 @@ function onReactionClick(e) {
 	e.stopPropagation(), e.preventDefault();
 }
 
-function handleReplyLinks(msg, cid, mouse = mousePreviewHandler) {
+function handleReplyLinks(msg, cid, refmap = '') {
 
 	const { path, topic } = LOR;
 
+	let self_p = null, no_ref = true;
+
 	for(const a of msg.querySelectorAll('.reply a')) {
 
-		const { pathname, search } = a;
-		switch (pathname) {
-		case '/comment-message.jsp':
-		case '/add_comment.jsp':
+		const { pathname, search, parentNode: parent } = a;
+
+		if (pathname.includes('comment')) {
 			const rep = a.cloneNode();
 			const qut = a.cloneNode();
-		
+
 			rep.className = 'link-reply', rep.textContent = 'Ответить';
 			qut.className = 'link-quote', qut.textContent = 'с цитатой';
 			  a.replaceWith(rep, '\n.\n', qut);
-			break;
-		case '/reactions':
-			a.parentNode.classList.add('reactions-li');
+		} else
+		if (pathname === '/reactions') {
+			parent.className = 'reactions-li';
 			a.textContent = '';
-			break;
-		case '/resolve.jsp':
-		case '/edit.jsp':
-			break;
-		default:
-			if (pathname.startsWith(path)) {
-				let reid = search.substring('?cid='.length);
-				if (topic === cid || reid === cid) {
-					a.className = 'link-self';
-					a.textContent = '';
-				} else {
-					if (reid)
-						a.setAttribute('href', `${pathname}/thread/${cid}#comment-${reid}`);
-					a.className = 'link-thread';
-					a.textContent = '\nОтветы';
-					a.after( _setup('span', { class: 'response-block' }, mouse) );
-				}
+		} else
+		if (pathname.startsWith(path)) {
+			let reid = search.substring('?cid='.length);
+			if (topic === cid || reid === cid) {
+				a.className = 'link-self', self_p = parent;
+				a.textContent = '';
+			} else {
+				if (reid)
+					a.setAttribute('href', `${pathname}/thread/${cid}#comment-${reid}`);
+				a.className = 'link-thread', no_ref = false;
+				a.textContent = '\nОтветы';
+				a.after( refmap );
 			}
 		}
+	}
+	if (no_ref && refmap) {
+		const a = _setup('a' , { class: 'link-thread', text: '\nОтветы', href: `${path}/thread/${cid}#comments` }),
+		     li = _setup('li', { class: 'hidden' });
+		if ( !self_p ) {
+			(msg.querySelector('.reply > ul') || msg.lastElementChild.lastElementChild.appendChild(
+				_setup('ul', { class: 'reply' })
+			)).append(li);
+		} else
+			self_p.before(li);
+		li.append(a, refmap);
 	}
 }
 
@@ -3264,6 +3231,18 @@ function domToMarkdown(childNodes, deep = 0) {
 	}
 	return text;
 }
+
+if (document.readyState === 'loading') {
+	const _scrollTo = () => {
+		let alt = location.hash.substring(1);
+		if (alt && Navigation)
+			Navigation.goToCommentPage(LOR.cid, alt);
+		window.removeEventListener('load', _scrollTo);
+	};
+	document.addEventListener('DOMContentLoaded', onDOMReady);
+	window.addEventListener('load', _scrollTo);
+} else
+	onDOMReady();
 
 function WebExt() {
 
