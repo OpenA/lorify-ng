@@ -225,23 +225,6 @@ lory_css.textContent = `
 		animation-duration: .4s;
 		position: relative;
 	}
-	.msg[datejump]:before {
-		content: attr(datejump);
-		position: absolute;
-		text-align: center;
-		margin-bottom: 10px;
-		display: block;
-		bottom: 100%;
-		left: 0; right: 0;
-	}
-	.msg[datejump] {
-		position: relative;
-		margin-top: 3em;
-	}
-	.datejump + .msg[datejump]:before,
-	        .preview[datejump]:before { content: ''; }
-	.datejump + .msg[datejump],
-			.preview[datejump] { margin-top: 0; }
 	.preview {
 		animation-duration: .3s;
 		position: absolute;
@@ -571,13 +554,14 @@ class TopicNavigation {
 					mergeComments(pcont, msg_list, isNew);
 				} else {
 					const comms = document.getElementById('comments');
-					pg_comms.id = 'pcont_'+ num;
-					pg_comms.className = 'page-content hidden';
-					pg_comms.style = '';
-					comms.append(pg_comms);
+					pcont = _setup(pg_comms, {
+						id: 'pcont_'+ num, class: 'page-content hidden', style: undefined
+					});
+					comms.append(pcont);
 				}
 				const ref = workComments(msg_list); doDe();
-				      ref.page_num = num;
+				ref.page_num = num,
+				ref.pcont = pcont;
 				if (doUpd)
 					updTopicContent(top_msg, t_info, events);
 				if (reNav && nav_count !== this.pages_count)
@@ -2197,10 +2181,12 @@ const mousePreviewHandler = !TOUCH_DEVICE && {
 	mouseover: e => {
 		const anc = e.target;
 		if (anc.classList[0] === 'link-pref') {
-			Timer.delete(anc.search.substring('?cid='.length));
+			// Get comment's ID from search attribute
+			const cid = anc.search.substring('?cid='.length);
+			Timer.delete(cid);
 			Timer.set('Open Preview', () => {
 				Drops = 2;
-				showPreview(anc);
+				showPreview(anc, cid);
 			});
 			e.preventDefault();
 		}
@@ -2213,59 +2199,66 @@ const mousePreviewHandler = !TOUCH_DEVICE && {
 	}
 };
 
-const showPreview = (anc) => {
-
-	// Get comment's ID from search attribute
-	const cid   = anc.search.substring('?cid='.length);
-	const bunds = anc.getBoundingClientRect();
-
-	let isNew = false, preview;
-
-	const attrs = {
-		id: 'preview-'+ cid,
-		class: 'msg preview',
-		style: 'border: 1px solid grey;'
+const cloneMsgCilds = (msg) => {
+	let childs = [], li = 0;
+	for (const c of msg.children) {
+		li = childs.push(c.cloneNode(true)) - 1;
 	}
-	const events = !TOUCH_DEVICE ? Object.assign({
-		// remove all preview's
-		mouseleave: () => { Timer.set('Close Preview', clearPreviews) },
-		mouseenter: () => { Timer.set('Close Preview', () => clearPreviews(preview));
-			// remove all preview's after this one
-			Timer.delete(cid);
-		}
-	}, mousePreviewHandler) : null;
-	// Let's reduce an amount of GET requests
-	// by searching a cache of comments first
-	if (Navigation.has(cid)) {
-		if (!(preview = document.getElementById(attrs.id))) {
+	let msg_bd = childs[li].querySelector('.msg_body'),
+	     emoji = msg_bd.querySelector('.reactions-form'),
+	     reply = msg_bd.querySelector('.form-container');
+	if (reply)
+		reply.remove();
+	if (emoji)
+		emoji.onsubmit = emoji.onclick = e => { e.stopPropagation(), e.preventDefault(); };
+	msg_bd.classList.add('no-reply');
+	return childs;
+}
+
+const showPreview = (anc, cid) => {
+
+	const b = anc.getBoundingClientRect(),
+	     x0 = Math.floor(b.left + (b.right - b.left) / 2),
+	     y1 = Math.floor(b.bottom + 10), x1 = x0,
+	     y0 = Math.floor(b.top - 10);
+
+	let preview = document.getElementById('preview-'+ cid);
+	// check existing preview by ID
+	if (!preview) {
+		 preview = _setup('article', {
+			id: 'preview-'+ cid,
+			class: 'msg preview',
+			style: 'border: 1px solid grey;'
+		}, !TOUCH_DEVICE ? Object.assign({
+			// remove all preview's
+			mouseleave: () => { Timer.set('Close Preview', clearPreviews) },
+			mouseenter: () => { Timer.set('Close Preview', () => clearPreviews(preview));
+				// remove all preview's after this one
+				Timer.delete(cid);
+			}
+		}, mousePreviewHandler) : null);
+		// get comment from page or request from server
+		let msg = document.getElementById('comment-'+ cid);
+		if (msg) {
 			// Without the 'clone' call we'll just move the original comment
-			const msg = Navigation.get(cid).msg;
-			  preview = _setup(msg.cloneNode((isNew = true)), attrs, events);
-			let mbody = preview.querySelector('.msg_body')
-			      rfm = mbody.querySelector('.reactions-form');
-			    mbody.classList.add('no-reply');
-			if (msg.contains(CommentForm))
-			    mbody.removeChild(mbody.lastElementChild);
-			if (rfm)
-			    rfm.onsubmit = rfm.onclick = e => { e.stopPropagation(), e.preventDefault(); };
+			preview.append(...cloneMsgCilds(msg));
+		} else {
+			// Add Loading Process stub
+			preview.textContent = 'Загрузка...';
+			// Get an HTML containing the comment
+			Navigation.preloadPage('?cid='+ cid, 0x1).then(({ pcont }) => {
+				let childs = cloneMsgCilds(pcont.children['comment-'+ cid]);
+				preview.style.visibility = 'hidden';
+				preview.textContent = '';
+				preview.append(...childs);
+				popupPreview(
+					preview, x0, x1, y0, y1
+				);
+			}).catch(err => { // => Error
+				preview.textContent = err;
+				preview.classList.add('msg-error');
+			});
 		}
-	} else {
-		// Add Loading Process stub
-		preview = _setup('article', attrs, events);
-		preview.textContent = 'Загрузка...';
-		// Get an HTML containing the comment
-		Navigation.preloadPage(anc.search, 0x1).then(({ comm_map }) => {
-			preview.style.visibility = 'hidden';
-			preview.textContent = '';
-			for (const ch of comm_map[cid].children)
-				preview.append(ch.cloneNode(true));
-			popupPreview(
-				preview, bunds, true
-			);
-		}).catch(msg => { // => Error
-			preview.textContent = msg;
-			preview.classList.add('msg-error');
-		});
 	}
 	if (USER_SETTINGS['CSS3 Animation'])
 		preview.classList.add('show-in');
@@ -2275,33 +2268,36 @@ const showPreview = (anc) => {
 		// remove this preview
 		Timer.set(cid, () => preview.remove(), USER_SETTINGS['Delay Close Preview']);
 	};
-	popupPreview( preview, bunds, isNew );
+	popupPreview( preview, x0, x1, y0, y1 );
 }
 
-const popupPreview = (preview, bunds, isNew) => {
+const popupPreview = (preview, x0 = 0, x1 = 0, y0 = 0, y1 = 0) => {
 
-	const { left, top, bottom, width } = bunds;
+	const { pageXOffset, pageYOffset, innerWidth, innerHeight } = window,
+	      { style } = preview;
 
-	const parent   = document.getElementById('comments');
-	const visibleW = window.innerWidth  / 2;
-	const visibleH = window.innerHeight * 0.75;
-	const offsetX  = window.pageXOffset + left + width / 2;
-	const offsetY  = window.pageYOffset + bottom + 10;
+	const comms = document.getElementById('comments');
+	const isReY = innerHeight - y1 < 50,
+	     sRight = innerWidth  - x1;
 
-	if (isNew) {
-		preview.style.maxWidth = '900px';
-		preview.style.left = ( left < visibleW ? offsetX : offsetX - visibleW ) +'px';
-		preview.style.top  = ( top  < visibleH ? offsetY : 0 ) +'px';
+	style.visibility = 'hidden',
+	style.maxWidth = null, style.left = style.top = 0;
+	comms.append(preview);
+
+	let w = preview.offsetWidth, left = x0, maxW = 0;
+	if (left > sRight) {
+		if (left >= w)
+			left -= w;
+		else
+		 	left = 0, maxW = x0;
+	} else if (sRight < w) {
+		maxW = sRight;
 	}
-	preview.style.visibility = 'hidden', parent.append(preview);
-
-	let { width: comW, height: comH } = preview.getBoundingClientRect();
-
-	preview.style.left = Math.max(
-		offsetX - (left < visibleW ? 0 : comW), 5) + 'px';
-	preview.style.top = window.pageYOffset + (
-		top < visibleH ? bottom + 10 : top - comH - 10) +'px';
-	preview.style.visibility = 'visible';
+	style.maxWidth = maxW ? `${maxW}px` : null;
+	style.left = `${pageXOffset + left}px`;
+	style.top  = `${pageYOffset + (
+		isReY ? y0 - preview.offsetHeight : y1)}px`;
+	style.visibility = 'visible';
 }
 
 function correctBlockCode (max_h, parent) {
