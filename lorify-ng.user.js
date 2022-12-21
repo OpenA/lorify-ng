@@ -439,8 +439,8 @@ lory_css.textContent = `
 		padding: 4px 1em;
 		list-style: none;
 	}
-	.lory-time {
-		font: 14px fontello;
+	.title > .lory-time, .sign > .lory-time {
+		font-size: smaller;
 	}
 	.title > .lory-time {
 		background-color: #0000001c;
@@ -988,9 +988,9 @@ const ContentFinder = {
 			const today = new Date,
 			       diff = today - date;
 			if (date >= today.setHours(0,0,0)) {
-				let h = Math.floor(diff / 36e5),
-					m = Math.floor(diff /  6e4) % 60;
-				time_c = (h ? `${h}ч.` : '') + (m ? `${m}мин.` : '');
+				let m = Math.floor(diff /  6e4) %  60,
+					h = Math.floor(diff / 36e5) + (30 < m);
+				time_c = h ? `${h}ч.` : `${m}мин.`;
 				full_d = simple ? '' : '\nназад';
 				break;
 			} else
@@ -1013,7 +1013,7 @@ const ContentFinder = {
 			if (simple) {
 				time_c += short_d, short_d = '';
 			} else {
-				offs_t = '\n'+ gmt.replace('+', '＋');
+				offs_t = '\n'+ gmt;
 				full_d = `\n${wday.charAt(0).toUpperCase() + wday.substr(1) } ${caln}`;
 			}
 		}
@@ -1691,7 +1691,7 @@ const workComments = (msg_list, mouse = mousePreviewHandler) => {
 
 	for(const msg of msg_list) {
 		const cid = msg.id.substring('comment-'.length);
-		let reply = msg.querySelector(`.title > a[href*="?cid="]:not(.link-pref)`);
+		let reply = msg.querySelector('.title > a[href*="?cid="]:not(.link-pref)');
 		if (reply) {
 			// Extract reply comment ID from the 'search' string
 			let reid = reply.search.substring('?cid='.length);
