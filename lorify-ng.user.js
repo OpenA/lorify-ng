@@ -540,8 +540,8 @@ class TopicNavigation {
 			const ok  = res.ok ? res.text().then(getPageContent) : Promise.reject(res.status +' '+ res.statusText);
 			const num = parseLORUrl(res.url).page;
 
-			const doRef = Boolean(pass & 0x1), reNav = Boolean(pass & 0x2),
-			      doUpd = Boolean(pass & 0x4), isNew = Boolean(pass & 0x8);
+			const doRef = Boolean(pass & 0x1), doUpd = Boolean(pass & 0x2),
+			      isNew = Boolean(pass & 0x4), reNav = Boolean(pass & 0x8);
 
 			const doDe = () => {
 				/* rm queue by prev id and by page num */
@@ -551,7 +551,7 @@ class TopicNavigation {
 			const doFin = ({ pg_comms, msg_list, nav_count, top_msg, t_info, events }) => {
 				let pcont = document.getElementById('pcont_'+ num);
 				if (pcont) {
-					mergeComments(pcont, msg_list, isNew);
+					msg_list = mergeComments(pcont, msg_list, isNew);
 				} else {
 					const comms = document.getElementById('comments');
 					pcont = _setup(pg_comms, {
@@ -562,8 +562,13 @@ class TopicNavigation {
 				const ref = workComments(msg_list); doDe();
 				ref.page_num = num,
 				ref.pcont = pcont;
-				if (doUpd)
-					updTopicContent(top_msg, t_info, events);
+				if (doUpd) {
+					if (events !== -1)
+						App.setNotes(events);
+					updTopicContent(top_msg, t_info);
+				}
+				if (isNew)
+					this.setNavBoubble(num, msg_list.length);
 				if (reNav && nav_count !== this.pages_count)
 					this.resetNav(nav_count);
 				if (doRef)
@@ -623,7 +628,7 @@ class TopicNavigation {
 		this.__swpid = tmpid, pcont.classList.add('hidden');
 		return new Promise(resolve => {
 			if (this.swapContent( num, reAnim, resolve )) {
-				this.preloadPage('/page'+ num, 0x1).then(() => {
+				this.preloadPage('/page'+ num, 0x3).then(() => {
 					if (this.__swpid === tmpid) {
 						this.__swpid = '';
 						this.swapContent( num, reAnim, resolve );
@@ -676,10 +681,10 @@ class TopicNavigation {
 		const id = cid ? `comment-${cid}` : alt,
 		    comm = document.getElementById(id),
 		newState = cid !== pid;
-		
+
 		const state = history.state || {};
 		state.lorYoffset = window.pageYOffset;
-		history.replaceState(state, null, lorifyUrl(path, prev, lastmod, pid));
+		history.replaceState(state, null, lorifyUrl(path, prev, lastmod));
 
 		return new Promise(resolve => {
 			const _jmpMsg = (msg, page) => {
@@ -698,8 +703,8 @@ class TopicNavigation {
 					this.gotoPage(num).then(() => _jmpMsg(comm, num));
 			} else if (cid) {
 				this.swapContent();
-				this.preloadPage('?cid='+ cid, 0x1).then(({ page_num }) => {
-					this.gotoPage(page_num).then(pcont => _jmpMsg(pcont.children[id], page_num));
+				this.preloadPage('?cid='+ cid, 0x3).then(({ pcont, page_num }) => {
+					this.gotoPage(page_num).then(() => _jmpMsg(pcont.children[id], page_num));
 				});
 			}
 		});
@@ -1204,16 +1209,16 @@ const onDOMReady = () => {
 	});
 
 	window.addEventListener('dblclick', () => {
-		const newadded = document.getElementsByClassName('newadded'),
+		const newadded = document.querySelectorAll('.newadded'),
 		      ncount   = newadded.length;
 		if ( !ncount )
 			return;
-		for (let i = ncount - 1; i >= 0; i--)
+		for (let i = 0; i < ncount; i++)
 			newadded[i].classList.remove('newadded');
-
-		Navigation.setNavBoubble(LOR.page, 0);
+		for (let i = 0; i < Navigation.pages_count; i++)
+			Navigation.setNavBoubble(i, 0);
 		Favicon.draw(
-			(Favicon.index -= ncount)
+			(Favicon.index = 0)
 		);
 	});
 };
@@ -1617,43 +1622,39 @@ function lorcodeMarkup(open, close) {
 
 const onWSData = (cids) => {
 
-	const realtime  = document.getElementById('realtime');
-	const   search  = '?cid='+ cids[0];
-	const { pcont } = Navigation;
+	const rtime  = document.getElementById('realtime');
+	const search = '?cid='+ cids[0];
+	const hasCom = document.getElementById('comment-'+ cids[0]);
 
 	let g = 0, count = cids.length, g_ref = [];
 
-	const recuThen = ({ comm_map, ref_list, page_num }) => {
-		const new_list = [];
+	const recuThen = ({ pcont, ref_list, page_num }) => {
 		for (; g < count; g++) {
-			const msg = comm_map[ cids[g] ];
-			if ( !msg ) {
-				Navigation.preloadPage('/page'+ (page_num + 1), 0xF).then(recuThen);
+			if (!(`comment-${cids[g]}` in pcont.children)) {
+				Navigation.preloadPage('/page'+ (page_num + 1), 0x4).then(recuThen);
 				break;
 			}
-			msg.classList.add('newadded');
-			new_list.push(msg);
 		}
-		if (pcont.id === `pcont_${page_num}`)
-			pcont.parentNode.append( ...new_list );
-		Favicon.draw((Favicon.index += new_list.length));
-		Navigation.setNavBoubble(page_num, new_list.length);
+		Favicon.draw((Favicon.index = g));
 		g_ref.push(...ref_list);
-		if (g === count)
-			Navigation.ref(g_ref);
+		if (g === count) {
+			genRefMap(g_ref);
+		}
 	};
-	realtime.children[0].textContent = `Добавлено ${count} новых.\n`;
-	realtime.children[1].search = search;
+	rtime.children[0].textContent = `Добавлено ${count} новых.\n`;
+	rtime.children[1].search = search;
 
 	if (!USER_SETTINGS['Realtime Loader']) {
-		realtime.style.display = null;
+		rtime.style.display = null;
 	} else {
-		realtime.style.display = 'none';
-		Navigation.preloadPage(search).then(recuThen);
+		rtime.style.display = 'none';
+		Navigation.preloadPage(search, 0x6).then(recuThen);
 	}
 }
 
 const mergeComments = (pcont, msg_list, isNew = false) => {
+
+	const new_list = [];
 
 	for(const msg of msg_list) {
 		const old = document.getElementById(msg.id);
@@ -1663,9 +1664,11 @@ const mergeComments = (pcont, msg_list, isNew = false) => {
 		} else {
 			if (isNew)
 				msg.classList.add('newadded');
+			new_list.push(msg);
 			pcont.append(msg);
 		}
 	}
+	return new_list;
 }
 
 const workComments = (msg_list, mouse = mousePreviewHandler) => {
@@ -1766,7 +1769,7 @@ const getPageContent = (html) => {
 	};
 };
 
-const updTopicContent = (new_top, t_info = '', events = -1) => {
+const updTopicContent = (new_top, t_info = '') => {
 	// check topic changes
 	const old_top = document.getElementById('topic-'+ LOR.topic),
 	        newfv = new_top.querySelector('.fav-buttons'),
@@ -1784,8 +1787,6 @@ const updTopicContent = (new_top, t_info = '', events = -1) => {
 		if (t_info.includes('Тема удалена'))
 			RealtimeHub.terminate();
 	}
-	if (events !== -1)
-		App.setNotes(events);
 	// update topic body if modifed
 	updCommentContent(old_top, new_top, 1);
 }
@@ -2246,7 +2247,7 @@ const showPreview = (anc, cid) => {
 			// Add Loading Process stub
 			preview.textContent = 'Загрузка...';
 			// Get an HTML containing the comment
-			Navigation.preloadPage('?cid='+ cid, 0x1).then(({ pcont }) => {
+			Navigation.preloadPage('?cid='+ cid, 0x3).then(({ pcont }) => {
 				let childs = cloneMsgCilds(pcont.children['comment-'+ cid]);
 				preview.style.visibility = 'hidden';
 				preview.textContent = '';
@@ -2903,13 +2904,13 @@ const toggleForm = (underc, tid, cid, quote) => {
 
 	let toshow = (parent.style.display === 'none');
 	if (quote) {
-		let sel = window.getSelection(), frag;
-		if (sel.rangeCount > 0 && underc.contains(sel.anchorNode)) {
-			frag = sel.getRangeAt(0).cloneContents();
+		let sel = window.getSelection(), msg_bd;
+		if(!sel.isCollapsed && underc.contains(sel.anchorNode)) {
+			msg_bd = sel.getRangeAt(0).cloneContents();
 		} else
-			frag = underc.querySelector('[itemprop="articleBody"]') || underc;
+			msg_bd = underc.querySelector('[itemprop="articleBody"]') || underc;
 		convMsgBody(
-			frag
+			msg_bd
 		);
 		if (parent.parentNode === underc && !toshow)
 			return;
@@ -3075,21 +3076,17 @@ function convMsgBody(msg) {
 	if (LORCODE_MODE) { // lorcode, line-break
 		let nobl = msg.querySelector('div.code,pre,ul,ol,table');
 		      qt = !nobl || nobl.parentNode.className === 'reply';
-		    text = domToLORCODE(msg.childNodes, qt).trim();
+		    text = domToLORCODE(msg, qt).trim();
 		if (LORCODE_MODE === 2)
 			br = '\n', reg = /(?:[\n]+){2,}/g
 	} else
-		text = domToMarkdown(msg.childNodes).trim(); // markdown
+		text = domToMarkdown(msg).trim(); // markdown
 	if (qt)
 		text = '>'+ text.replace(reg, br).replace(/\n/g, '\n>');
 	else
 		text = '[quote]'+ text.replace(reg, br) +'[/quote]';
 	
 	injectText(text, true);
-}
-
-function getRawText(el) {
-	return el.textContent.replace(/^[\n\s\t]+\n|\n[\n\s\t]+$/g, '');
 }
 
 function listToLORCODE(listNodes, type) {
@@ -3100,62 +3097,62 @@ function listToLORCODE(listNodes, type) {
 		switch (li.tagName) {
 			case 'UL':
 			case 'OL': text += listToLORCODE(li.children, li.type); break;
-			case 'LI': text += '[*]'+ domToLORCODE(li.childNodes);
+			case 'LI': text += '[*]'+ domToLORCODE(li);
 		}
 	}
 	return `[list${ type ? '='+ type : '' }]\n${ text }[/list]\n`;
 }
 
-function domToLORCODE(childNodes, nobl) {
+function domToLORCODE({childNodes}, nobl) {
 	
 	var text = '';
 	
-	for (let el of childNodes) {
-		switch (el.tagName) {
-			case 'B': case 'STRONG': text += `[b]${ domToLORCODE(el.childNodes, nobl) }[/b]`; break;
-			case 'S': case 'DEL'   : text += `[s]${ domToLORCODE(el.childNodes, nobl) }[/s]`; break;
-			case 'I': case 'EM'    : text += `[i]${ domToLORCODE(el.childNodes, nobl) }[/i]`; break;
-			case 'H1': case 'H2': case 'H3': case 'H4': case 'H5': case 'H6':
-				text += `[strong]${ getRawText(el) }[br][/strong]\n`;
-				break;
-			case 'A':
-				let url = decodeURIComponent(el.href);
-				let txt = getRawText(el);
-				text += `[url${ txt !== url ? '='+ url : '' }]${ txt }[/url]`;
-				break;
-			case 'SPAN':
-				if (el.classList[0] === 'code')
-					text += `[inline]${ getRawText(el) }[/inline]`;
-				else if (el.children.length && el.children[0].localName === 'img')
-					text += `[user]${ el.children[1].innerText }[/user]`;
-				break;
-			case 'DIV':
-				if (el.classList[0] === 'code') {
-					let lng = el.lastElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
-					text += `[code${ lng ? '='+ lng : '' }]\n${ el.lastElementChild.innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
-				} else if (/^cut[0-9]+$/.test(el.id)) {
-					text += '\n'+ domToLORCODE(el.childNodes, nobl); //`[cut]\n${ domToLORCODE(el.childNodes, nobl) }[/cut]\n`;
-				}
-				break;
-			case 'UL': case 'OL':
-				text += listToLORCODE(el.children, el.type);
-				break;
-			case 'U':
-				text += `[${ el.localName }]${ domToLORCODE(el.childNodes, nobl) }[/${ el.localName }]`;
-				break;
-			case 'BLOCKQUOTE':
-				let qtex = domToLORCODE(el.childNodes, nobl);
-				let pass = nobl || (text && /\n|^/.test(text.slice(-1)));
-				text += pass ? `>${ qtex.replace(/\n/g, '\n>').replace(/(?:[>]+(?:\n|$)){1,}/gm, '')}` : `[quote]${ qtex.trim() }[/quote]`;
-				break;
-			case 'PRE':
-			case 'P':
-				text += domToLORCODE(el.childNodes, nobl) + ((el.nextElementSibling || '').tagName == 'P' ? '\n' : '');
-			case 'BR':
+	for(const el of childNodes) {
+		const tag = el.nodeName,
+		      chs = el.children,
+		      str = el.textContent.trim();
+
+		switch (tag) {
+		case 'B': case 'STRONG': text += `[b]${ domToLORCODE(el, nobl) }[/b]`; break;
+		case 'S': case 'DEL'   : text += `[s]${ domToLORCODE(el, nobl) }[/s]`; break;
+		case 'I': case 'EM'    : text += `[i]${ domToLORCODE(el, nobl) }[/i]`; break;
+		case 'U': /* underline */text += `[u]${ domToLORCODE(el, nobl) }[/u]`; break;
+		case 'A':
+			let url = decodeURIComponent(el.href);
+			text += `[url${ str !== url ? '='+ url : '' }]${ str }[/url]`;
+			break;
+		case 'SPAN':
+			if (el.classList[0] === 'code')
+				text += `[inline]${ str }[/inline]`;
+			else if (chs.length && chs[0].localName === 'img')
+				text += `[user]${ str }[/user]`;
+			break;
+		case 'DIV':
+			if (el.classList[0] === 'code') {
+				let lng = chs[chs.length-1].className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
+				text += `[code${ lng ? '='+ lng : '' }]\n${ chs[chs.length-1].innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
+			} else if (/^cut/.test(el.id)) {
+				text += '\n'+ domToLORCODE(el, nobl); //`[cut]\n${ domToLORCODE(el, nobl) }[/cut]\n`;
+			}
+			break;
+		case 'UL': case 'OL':
+			text += listToLORCODE(chs, el.type);
+			break;
+		case 'BLOCKQUOTE':
+			let qtex = domToLORCODE(el, nobl);
+			let pass = nobl || (text && /\n|^/.test(text.slice(-1)));
+			text += pass ? `>${ qtex.replace(/\n/g, '\n>').replace(/(?:[>]+(?:\n|$)){1,}/gm, '')}` : `[quote]${ qtex.trim() }[/quote]`;
+			break;
+		case 'PRE':
+		case 'P':
+			text += domToLORCODE(el, nobl);
+			if (el.nextElementSibling && el.nextElementSibling.tagName == 'P')
 				text += '\n';
-				break;
-			default:
-				text += getRawText(el);
+		case 'BR':
+			text += '\n';
+			break;
+		default:
+			text += /^H\d*$/.test(tag) ? `[strong]${ str }[br][/strong]\n` : str;
 		}
 	}
 	return text;
@@ -3172,57 +3169,59 @@ function listToMarkdown(listNodes, order = false, deep = 0) {
 		switch (li.tagName) {
 			case 'UL': text += listToMarkdown(li.children,false, deep); break;
 			case 'OL': text += listToMarkdown(li.children, true, deep); break;
-			case 'LI': text += ln.replace('%d', i) + domToMarkdown(li.childNodes, deep) +'\n';
+			case 'LI': text += ln.replace('%d', i) + domToMarkdown(li, deep) +'\n';
 		}
 	}
 	return `${ text }\n\n`;
 }
 
-function domToMarkdown(childNodes, deep = 0) {
+function domToMarkdown({childNodes}, deep = 0) {
 	
 	var text = '';
 	
-	for (let el of childNodes) {
-		switch (el.tagName) {
-			case 'B': case 'STRONG': text += `**${ domToMarkdown(el.childNodes) }**`; break;
-			case 'S': case 'DEL'   : text += `~~${ domToMarkdown(el.childNodes) }~~`; break;
-			case 'I': case 'EM'    : text +=  `*${ domToMarkdown(el.childNodes) }*` ; break;
-			case 'H1': case 'H2': case 'H3': case 'H4': case 'H5': case 'H6':
-				text += '#'.repeat(el.tagName.substring(1)) +` ${ getRawText(el) }\n\n`;
-				break;
-			case 'A':
-				let url = decodeURIComponent(el.href);
-				let txt = getRawText(el);
-				text += txt !== url ? `[${ txt }](${ url })` : url;
-				break;
-			case 'SPAN':
-				if (el.classList[0] === 'code')
-					text += `\`${ getRawText(el) }\``;
-				else if (el.children.length && el.children[0].localName === 'img')
-					text += '@'+ el.children[1].innerText;
-				break;
-			case 'DIV':
-				if (el.classList[0] === 'code') {
-					let lng = el.lastElementChild.className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
-					text += '```'+ lng +'\n'+ el.lastElementChild.innerText.replace(/[\n+]$|$/, '\n```\n');
-				} else if (/^cut[0-9]+$/.test(el.id)) {
-					text += domToMarkdown(el.childNodes); //`>>>\n${ domToMarkdown(el.childNodes) }\n>>>\n`;
-				}
-				break;
-			case 'BLOCKQUOTE':
-				text += '>'+ domToMarkdown(el.childNodes)
-					.replace(/\n/g, '\n>')
-					.replace(/([>]+(?:\n|$)){2,}/gm, '$1') +'\n';
-				break;
-			case 'UL': text += listToMarkdown(el.children,false, deep); break;
-			case 'OL': text += listToMarkdown(el.children, true, deep); break;
-			case 'PRE': case 'P':
-				text += domToMarkdown(el.childNodes);
-			case 'BR':
-				text += '\n\n';
-				break;
-			default:
-				text += getRawText(el);
+	for(const el of childNodes) {
+		const tag = el.nodeName,
+		      chs = el.children,
+		      str = el.textContent.trim();
+
+		switch (tag) {
+		case 'B': case 'STRONG': text += `**${ domToMarkdown(el) }**`; break;
+		case 'S': case 'DEL'   : text += `~~${ domToMarkdown(el) }~~`; break;
+		case 'I': case 'EM'    : text +=  `*${ domToMarkdown(el) }*` ; break;
+		case 'A':
+			let url = decodeURIComponent(el.href);
+			text += str !== url ? `[${ str }](${ url })` : url;
+			break;
+		case 'SPAN':
+			if (el.classList[0] === 'code')
+				text += `\`${ str }\``;
+			else if (chs.length && chs[0].localName === 'img')
+				text += '@'+ str;
+			break;
+		case 'DIV':
+			if (el.classList[0] === 'code') {
+				let lng = chs[chs.length-1].className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
+				text += '```'+ lng +'\n'+ chs[chs.length-1].innerText.replace(/[\n+]$|$/, '\n```\n');
+			} else if (/^cut$/.test(el.id)) {
+				text += domToMarkdown(el); //`>>>\n${ domToMarkdown(el) }\n>>>\n`;
+			}
+			break;
+		case 'BLOCKQUOTE':
+			text += '>'+ domToMarkdown(el)
+				.replace(/\n/g, '\n>')
+				.replace(/([>]+(?:\n|$)){2,}/gm, '$1') +'\n';
+			break;
+		case 'UL': text += listToMarkdown(chs,false, deep); break;
+		case 'OL': text += listToMarkdown(chs, true, deep); break;
+		case 'PRE': case 'P':
+			text += domToMarkdown(el);
+		case 'BR':
+			text += '\n\n';
+			break;
+		default:
+			text += (
+				tag.charAt(0) === 'H' ? '#'.repeat(Number(tag.substr(1))) +` ${ str }\n\n` : str
+			);
 		}
 	}
 	return text;
