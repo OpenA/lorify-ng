@@ -601,7 +601,7 @@ class TopicNavigation {
 		const { nav_t, nav_b } = this;
 		const { page } = LOR;
 
-		const tmpid =  page +'_'+ num,
+		const tmpid = (page << 8) | num,
 		     reAnim = (LOR.page = num) > page;
 
 		for (var i = 0; i < nav_b.children.length; i++) {
@@ -630,12 +630,12 @@ class TopicNavigation {
 			if (this.swapContent( num, reAnim, resolve )) {
 				this.preloadPage('/page'+ num, 0x3).then(() => {
 					if (this.__swpid === tmpid) {
-						this.__swpid = '';
+						this.__swpid = 0;
 						this.swapContent( num, reAnim, resolve );
 					}
 				});
 			} else if (this.__swpid === tmpid)
-				this.__swpid = '';
+				this.__swpid = 0;
 		});
 	}
 
@@ -2946,8 +2946,8 @@ const preferReactions = (form) => {
 	if (!show) {
 		 show = form.insertBefore(
 			_setup('span', { class: 'apply-reactions' }), user);
-		for (const r of Array.from(form.elements.reaction))
-			(r.value.endsWith('true') ? hide : show).append(r);
+		for (const r of form.querySelectorAll('.reaction-count'))
+			(Number(r.innerText) > 0 ? show : hide).append(r.parentNode);
 	}
 	return [show, hide];
 }
@@ -3419,76 +3419,76 @@ ready = new Promise(resolve => {
 	const defaults = Object.assign({}, USER_SETTINGS);
 
 	loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
-		<div class="tab-row">
-			<span class="tab-cell">Автоподгрузка комментариев:</span>
-			<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Укорачивать блоки кода свыше:</span>
-			<span class="tab-cell" chr="px"><input type="number" id="Code Block Short Size" min="0" step="1"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Стиль подсветки кода:</span>
-			<span class="tab-cell"><select id="Code Highlight Style"></select></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Задержка появления превью:</span>
-			<span class="tab-cell" chr="мс"><input type="number" id="Delay Open Preview" min="50" step="25"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Задержка исчезания превью:</span>
-			<span class="tab-cell" chr="мс"><input type="number" id="Delay Close Preview" min="50" step="25"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Предзагружаемых страниц:</span>
-			<span class="tab-cell" chr="ст"><input type="number" id="Preloaded Pages Count" min="1" step="1"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Оповещения на рабочий стол:</span>
-			<span class="tab-cell"><input type="checkbox" id="Desktop Notification"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Просмотр картинок:</span>
-			<span class="tab-cell">
-				<select id="Picture Viewer">
-					<option>Откл.</option>
-					<option>Только для превью</option>
-					<option>Для превью и ссылок</option>
-				</select>
-			</span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Задержка перед отправкой:</span>
-			<span class="tab-cell step-line">
-				<input type="range" min="0" max="9" step="1" id="Upload Post Delay">
-				<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
-			</span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">Перемещать в начало страницы:</span>
-			<span class="tab-cell"><input type="checkbox" id="Scroll Top View"></span>
-		</div>
-		<div class="tab-row">
-			<span class="tab-cell">CSS анимация:</span>
-			<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
-				<button type="button" id="reset-setts" title="вернуть настройки по умолчанию">сброс</button>
-			</span>
-		</div>`}, {
-			animationend: () => {
-				loryform.classList.remove('save-msg');
-			},
-			change: ({ target }) => {
-				if (!target.hasAttribute('input-hold'))
-					onValueChange(target);
-			},
-			input : ({ target }) => {
-				target.setAttribute('input-hold','');
-				Timer.set('Settings on Changed', () => {
-					target.removeAttribute('input-hold');
-					onValueChange(target);
-				}, 750)
-			}
-		});
+	<div class="tab-row">
+		<span class="tab-cell">Автоподгрузка комментариев:</span>
+		<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Укорачивать блоки кода свыше:</span>
+		<span class="tab-cell" chr="px"><input type="number" id="Code Block Short Size" min="0" step="1"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Стиль подсветки кода:</span>
+		<span class="tab-cell"><select id="Code Highlight Style"></select></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Задержка появления превью:</span>
+		<span class="tab-cell" chr="мс"><input type="number" id="Delay Open Preview" min="50" step="25"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Задержка исчезания превью:</span>
+		<span class="tab-cell" chr="мс"><input type="number" id="Delay Close Preview" min="50" step="25"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Предзагружаемых страниц:</span>
+		<span class="tab-cell" chr="ст"><input type="number" id="Preloaded Pages Count" min="1" step="1"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Оповещения на рабочий стол:</span>
+		<span class="tab-cell"><input type="checkbox" id="Desktop Notification"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Просмотр картинок:</span>
+		<span class="tab-cell">
+			<select id="Picture Viewer">
+				<option>Откл.</option>
+				<option>Только для превью</option>
+				<option>Для превью и ссылок</option>
+			</select>
+		</span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Задержка перед отправкой:</span>
+		<span class="tab-cell step-line">
+			<input type="range" min="0" max="9" step="1" id="Upload Post Delay">
+			<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
+		</span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">Перемещать в начало страницы:</span>
+		<span class="tab-cell"><input type="checkbox" id="Scroll Top View"></span>
+	</div>
+	<div class="tab-row">
+		<span class="tab-cell">CSS анимация:</span>
+		<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
+			<button type="button" id="reset-setts" title="вернуть настройки по умолчанию">сброс</button>
+		</span>
+	</div>`}, {
+		animationend: () => {
+			loryform.classList.remove('save-msg');
+		},
+		change: ({ target }) => {
+			if (!target.hasAttribute('input-hold'))
+				onValueChange(target);
+		},
+		input : ({ target }) => {
+			target.setAttribute('input-hold','');
+			Timer.set('Settings on Changed', () => {
+				target.removeAttribute('input-hold');
+				onValueChange(target);
+			}, 750)
+		}
+	});
 
 	setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
 
