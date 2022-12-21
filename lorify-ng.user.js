@@ -1643,6 +1643,7 @@ const onWSData = (cids) => {
 	};
 	rtime.children[0].textContent = `Добавлено ${count} новых.\n`;
 	rtime.children[1].search = search;
+	RealtimeHub.to_send = cids[count-1];
 
 	if (!USER_SETTINGS['Realtime Loader']) {
 		rtime.style.display = null;
