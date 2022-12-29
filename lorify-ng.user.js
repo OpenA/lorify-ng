@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.2
+// @version     3.3.3
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -508,17 +508,18 @@ class TopicNavigation {
 				_jmpTo();
 		});
 
-		for (const id of ['nav_t', 'nav_b']) {
-			let nav = _setup('div', { id, class: 'nav' });
-				nav.append(
-					_setup('a', { class: 'page-number prev', href: 'javascript:void(0)', text: '←' }),
-					_setup('a', { class: 'page-number next', href: 'javascript:void(0)', text: '→' })
-				);
-			this[id] = nav;
-		}
+		let nav_t = document.createElement('div');
+		    nav_t.append(
+				_setup('a', { class: 'page-number prev', href: 'javascript:void(0)', text: '←' }),
+				_setup('a', { class: 'page-number next', href: 'javascript:void(0)', text: '→' })
+			);
+		let nav_b = nav_t.cloneNode(true);
+
 		Object.defineProperties(this, {
-			pload: { value: _setup('div', { class: 'page-loader' }) },
-			queue: { value: Object.create(null) }
+			nav_t: { value: _setup(nav_t, { class: 'nav', id: 'nav_t' }), enumerable: true },
+			nav_b: { value: _setup(nav_b, { class: 'nav', id: 'nav_b' }), enumerable: true },
+			pload: { value: _setup('div', { class: 'page-loader' }), enumerable: false },
+			queue: { value: Object.create(null), enumerable: false }
 		});
 	}
 
@@ -675,23 +676,23 @@ class TopicNavigation {
 		return page;
 	}
 
-	goToCommentPage(cid = '', alt = `topic-${LOR.topic}`) {
+	goToCommentPage(cid = '', alt = `topic-${LOR.topic}`, clearid = false) {
 
 		const { path, lastmod, page: prev, cid: pid = '' } = LOR;
-		const id = cid ? `comment-${cid}` : alt,
+		const id = cid ? `comment-${LOR.cid = cid}` : alt,
 		    comm = document.getElementById(id),
 		newState = cid !== pid;
 
 		const state = history.state || {};
 		state.lorYoffset = window.pageYOffset;
-		history.replaceState(state, null, lorifyUrl(path, prev, lastmod));
+		history.replaceState(state, null, lorifyUrl(path, prev, lastmod, clearid ? '' : pid));
 
 		return new Promise(resolve => {
 			const _jmpMsg = (msg, page) => {
 				msg.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				if (newState) {
-					const href = lorifyUrl(path, page, lastmod, (LOR.cid = cid));
-					history.pushState({ lorYoffset: 0, prev }, null, href);
+					const href = lorifyUrl(path, page, lastmod, cid);
+					history.pushState({ lorYoffset: 0, prev, pid }, null, href);
 				}
 				resolve(msg);
 			}
@@ -723,12 +724,13 @@ class TopicNavigation {
 		case 'page-number':
 			if (!aClass.contains('broken')) {
 				let { path, page, lastmod } = LOR,  prev = page;
+				const state = history.state || {};
 				switch (aClass[1]) {
 					case 'prev': page--; break;
 					case 'next': page++; break;
 					default    : page = Number(el.id.substring(5));
 				}
-				if (history.state && history.state.prev === page) {
+				if (state.prev === page && !state.pid) {
 					history.back();
 				} else {
 					this.gotoPage(page);
@@ -1649,7 +1651,7 @@ const onWSData = (cids) => {
 		rtime.style.display = null;
 	} else {
 		rtime.style.display = 'none';
-		Navigation.preloadPage(search, 0x6).then(recuThen);
+		Navigation.preloadPage(search, 0xE).then(recuThen);
 	}
 }
 
@@ -2924,10 +2926,8 @@ const toggleForm = (underc, tid, cid, quote) => {
 		replyto.value = cid;
 		topic.value   = tid;
 		underc.append(parent);
-		CommentForm.dispatchEvent( new CustomEvent('doAction', { detail: 'open' }) );
-	} else {
-		CommentForm.dispatchEvent( new CustomEvent('doAction', { detail: 'close' }) );
 	}
+	CommentForm.dispatchEvent( new CustomEvent('doAction', { detail: toshow ? 'open' : 'close' }) );
 }
 
 const preferReactions = (form) => {
@@ -3073,7 +3073,7 @@ function handleReplyLinks(msg, cid, refmap = '') {
 function convMsgBody(msg) {
 
 	let text = '', qt = true, br = '\n\n', reg = /(?:[\n]+){3,}/g;
-	
+
 	if (LORCODE_MODE) { // lorcode, line-break
 		let nobl = msg.querySelector('div.code,pre,ul,ol,table');
 		      qt = !nobl || nobl.parentNode.className === 'reply';
@@ -3091,9 +3091,9 @@ function convMsgBody(msg) {
 }
 
 function listToLORCODE(listNodes, type) {
-	
+
 	var text = '';
-	
+
 	for (let li of listNodes) {
 		switch (li.tagName) {
 			case 'UL':
@@ -3105,12 +3105,13 @@ function listToLORCODE(listNodes, type) {
 }
 
 function domToLORCODE({childNodes}, nobl) {
-	
+
 	var text = '';
-	
+
 	for(const el of childNodes) {
 		const tag = el.nodeName,
 		      chs = el.children,
+		      len = chs.length,
 		      str = el.textContent.trim();
 
 		switch (tag) {
@@ -3125,16 +3126,15 @@ function domToLORCODE({childNodes}, nobl) {
 		case 'SPAN':
 			if (el.classList[0] === 'code')
 				text += `[inline]${ str }[/inline]`;
-			else if (chs.length && chs[0].localName === 'img')
+			else if (len && chs[0].tagName === 'IMG')
 				text += `[user]${ str }[/user]`;
 			break;
 		case 'DIV':
 			if (el.classList[0] === 'code') {
-				let lng = chs[chs.length-1].className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
-				text += `[code${ lng ? '='+ lng : '' }]\n${ chs[chs.length-1].innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
-			} else if (/^cut/.test(el.id)) {
+				let lng = chs[len-1].className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
+				text += `[code${ lng ? '='+ lng : '' }]\n${ chs[len-1].innerText.replace(/[\n+]$|$/, '') }[/code]\n`;
+			} else if (/^cut/.test(el.id))
 				text += '\n'+ domToLORCODE(el, nobl); //`[cut]\n${ domToLORCODE(el, nobl) }[/cut]\n`;
-			}
 			break;
 		case 'UL': case 'OL':
 			text += listToLORCODE(chs, el.type);
@@ -3144,8 +3144,7 @@ function domToLORCODE({childNodes}, nobl) {
 			let pass = nobl || (text && /\n|^/.test(text.slice(-1)));
 			text += pass ? `>${ qtex.replace(/\n/g, '\n>').replace(/(?:[>]+(?:\n|$)){1,}/gm, '')}` : `[quote]${ qtex.trim() }[/quote]`;
 			break;
-		case 'PRE':
-		case 'P':
+		case 'PRE': case 'P':
 			text += domToLORCODE(el, nobl);
 			if (el.nextElementSibling && el.nextElementSibling.tagName == 'P')
 				text += '\n';
@@ -3160,11 +3159,11 @@ function domToLORCODE({childNodes}, nobl) {
 }
 
 function listToMarkdown(listNodes, order = false, deep = 0) {
-	
+
 	var text = '', ln = ' '.repeat(deep) + (order ? '%d. ' : '* ');
 
 	deep += 3;
-	
+
 	for (let i = 0; i < listNodes.length;) {
 		let li = listNodes[i++];
 		switch (li.tagName) {
@@ -3177,12 +3176,13 @@ function listToMarkdown(listNodes, order = false, deep = 0) {
 }
 
 function domToMarkdown({childNodes}, deep = 0) {
-	
+
 	var text = '';
-	
+
 	for(const el of childNodes) {
 		const tag = el.nodeName,
 		      chs = el.children,
+		      len = chs.length,
 		      str = el.textContent.trim();
 
 		switch (tag) {
@@ -3196,16 +3196,15 @@ function domToMarkdown({childNodes}, deep = 0) {
 		case 'SPAN':
 			if (el.classList[0] === 'code')
 				text += `\`${ str }\``;
-			else if (chs.length && chs[0].localName === 'img')
+			else if (len && chs[0].tagName === 'IMG')
 				text += '@'+ str;
 			break;
 		case 'DIV':
 			if (el.classList[0] === 'code') {
-				let lng = chs[chs.length-1].className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
-				text += '```'+ lng +'\n'+ chs[chs.length-1].innerText.replace(/[\n+]$|$/, '\n```\n');
-			} else if (/^cut$/.test(el.id)) {
+				let lng = chs[len-1].className.replace(/^.+\-(?:highlight|(.+))$/, '$1');
+				text += '```'+ lng +'\n'+ chs[len-1].innerText.replace(/[\n+]$|$/, '\n```\n');
+			} else if (/^cut/.test(el.id))
 				text += domToMarkdown(el); //`>>>\n${ domToMarkdown(el) }\n>>>\n`;
-			}
 			break;
 		case 'BLOCKQUOTE':
 			text += '>'+ domToMarkdown(el)
@@ -3232,7 +3231,7 @@ if (document.readyState === 'loading') {
 	const _scrollTo = () => {
 		let alt = location.hash.substring(1);
 		if (alt && Navigation)
-			Navigation.goToCommentPage(LOR.cid, alt);
+			Navigation.goToCommentPage(LOR.cid, alt, true);
 		window.removeEventListener('load', _scrollTo);
 	};
 	document.addEventListener('DOMContentLoaded', onDOMReady);
