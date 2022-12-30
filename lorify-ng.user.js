@@ -953,7 +953,7 @@ const ContentFinder = {
 			block.classList.add('cutted');
 			block.prepend( shrink_line );
 		}
-		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply, .sign) a[href*="?cid="], a[class^="event-unread"]')) {
+		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply):not(.sign) a[href*="?cid="], a[class^="event-unread"]')) {
 			a.className = `link-navs${ a.className ? ' '+ a.className : ''}`;
 		}
 		for (const a of comment.querySelectorAll(IMAGE_LINKS)) {
@@ -970,7 +970,7 @@ const ContentFinder = {
 			day: 'numeric', month: '2-digit', year: 'numeric',
 			hour: '2-digit', minute: '2-digit', second: '2-digit'
 		}, formaZ = {
-			weekday: 'short', timeZoneName:'shortOffset'
+			weekday: 'short', timeZoneName:'short'
 		}, lang = 'it';
 
 		switch(fmt) {
@@ -1055,6 +1055,7 @@ const onDOMReady = () => {
 				e.preventDefault();
 			}
 		});
+		handleRegForm(document.forms.regform);
 	} else
 		RealtimeHub.init();
 
@@ -2396,8 +2397,44 @@ const sendFormData = (uri, formData, json = false, signal = null) => (
 	)
 );
 
-function handleResetForm(form) {
-	const btn = form.lastElementChild;
+const handleRegForm = form => {
+	const cel = form.elements.hide_loginbutton;
+	const snd = form.querySelector('button:not([type="button"]), [type="submit"]');
+
+	const btnClear = (ok = true) => {
+		let emsg = form.querySelector('.msg-error');
+		if (emsg) {
+			emsg.hidden = ok;
+		} else if (!ok) {
+			form.prepend(
+				_setup('label', { class: 'msg-error', text: 'Неверное имя или пароль.' })
+			);
+		}
+		snd.disabled = false, cel.onclick = null;
+	};
+
+	form.onsubmit = e => { e.preventDefault();
+		if (snd.disabled)
+			return;
+		snd.disabled = true;
+
+		const uri  = form.action.substr(form.action.lastIndexOf('/'));
+		let signal = null;
+		if (window.AbortController) {
+			const control = new AbortController;
+				  signal  = control.signal;
+			cel.onclick = () => (control.abort(), btnClear(true));
+		}
+		sendFormData(uri, new FormData(form), true, signal).then(data => {
+			btnClear(data.loggedIn);
+			if (data.loggedIn)
+				location.reload();
+		});
+	};
+};
+
+const handleResetForm = form => {
+	const btn = form.querySelector('button:not([type="button"]), [type="submit"]');
 	btn.className = 'btn btn-danger', btn.id = 'do_reset';
 	form.onsubmit = e => { e.preventDefault();
 		if (btn.disabled)
@@ -2406,6 +2443,7 @@ function handleResetForm(form) {
 		btn.className = 'btn btn-primary', btn.textContent = '...';
 		sendFormData('/notifications-reset', new FormData(form)).then(() => {
 			btn.className = 'btn btn-danger', btn.textContent = 'Сбросить';
+			btn.disabled = false;
 			App.setNotes(0);
 		});
 	}
@@ -3391,7 +3429,6 @@ function UserScript() {
 					if (old_rf) {
 						old_rf.elements.topId.value = new_rf.elements.topId.value;
 						old_rf.parentNode.hidden = isNf;
-						old_rf.lastElementChild.disabled = false;
 					} else {
 						const bd = isNf ? lorylist : document.getElementById('bd');
 						handleResetForm(new_rf);
