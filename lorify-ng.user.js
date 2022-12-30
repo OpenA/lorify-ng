@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.4
+// @version     3.3.5
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -3650,7 +3650,7 @@ ready = new Promise(resolve => {
 			content: counter(stepIdx);
 			font: italic 10px Arial;
 		}
-		#loginGreating { margin-right: 60px!important; }
+		#loginGreating, #topProfile { margin-right: 60px!important; }
 		#reset-setts, .info-line:before { position: absolute; right: 0; }
 		.info-line:before {
 			-webkit-animation: 2s ease-in 2 alternate showIn;
