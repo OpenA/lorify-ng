@@ -3469,12 +3469,12 @@ ready = new Promise(resolve => {
 		<span class="tab-cell"><select id="Code Highlight Style"></select></span>
 	</div>
 	<div class="tab-row">
-		<span class="tab-cell">Задержка появления превью:</span>
-		<span class="tab-cell" chr="мс"><input type="number" id="Delay Open Preview" min="50" step="25"></span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Задержка исчезания превью:</span>
-		<span class="tab-cell" chr="мс"><input type="number" id="Delay Close Preview" min="50" step="25"></span>
+		<span class="tab-cell">Задержка появления / исчезновения превью:</span>
+		<span class="tab-cell" chr="мс">
+			<input type="number" id="Delay Open Preview" min="50" step="25">
+			/
+			<input type="number" id="Delay Close Preview" min="50" step="25">
+		</span>
 	</div>
 	<div class="tab-row">
 		<span class="tab-cell">Предзагружаемых страниц:</span>
@@ -3625,10 +3625,7 @@ ready = new Promise(resolve => {
 			vertical-align: middle;
 		}
 		.tab-cell select { width: 160px; }
-		.tab-cell input[type="number"] {
-			max-width: 50%;
-			min-width: 50%;
-		}
+		.tab-cell input[type="number"] { width: 60px; }
 		.tab-cell[chr]:after {
 			content: attr(chr) ".";
 			font: italic 14px serif;
