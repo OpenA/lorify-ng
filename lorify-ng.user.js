@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.5
+// @version     3.3.6
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -1210,20 +1210,7 @@ const onDOMReady = () => {
 			gRefList = g_list.length ? addRefLinks(g_list, g_map) : g_list;
 		});
 	});
-
-	window.addEventListener('dblclick', () => {
-		const newadded = document.querySelectorAll('.newadded'),
-		      ncount   = newadded.length;
-		if ( !ncount )
-			return;
-		for (let i = 0; i < ncount; i++)
-			newadded[i].classList.remove('newadded');
-		for (let i = 0; i < Navigation.pages_count; i++)
-			Navigation.setNavBoubble(i, 0);
-		Favicon.draw(
-			(Favicon.index = 0)
-		);
-	});
+	window.addEventListener('dblclick', resetNavBoubbles);
 };
 
 window.addEventListener('keydown', e => {
@@ -1237,6 +1224,8 @@ window.addEventListener('keydown', e => {
 		);
 		if (a)
 			location.href = a.href;
+	} else if (key === 'Escape') {
+		resetNavBoubbles(true);
 	}
 });
 
@@ -1632,17 +1621,18 @@ const onWSData = (cids) => {
 	let g = 0, count = cids.length, g_ref = [];
 
 	const recuThen = ({ pcont, ref_list, page_num }) => {
-		for (; g < count; g++) {
+		for (var next = null; g < count; g++) {
 			if (!(`comment-${cids[g]}` in pcont.children)) {
-				Navigation.preloadPage('/page'+ (page_num + 1), 0x4).then(recuThen);
+				next = Navigation.preloadPage('/page'+ (page_num + 1), 0x4);
 				break;
 			}
 		}
-		Favicon.draw((Favicon.index = g));
+		Favicon.draw((Favicon.index += g));
 		g_ref.push(...ref_list);
-		if (g === count) {
+		if (g === count)
 			genRefMap(g_ref);
-		}
+		if (next)
+			next.then(recuThen);
 	};
 	rtime.children[0].textContent = `Добавлено ${count} новых.\n`;
 	rtime.children[1].search = search;
@@ -2385,31 +2375,53 @@ function getDataResponse(uri, resolve, reject = () => void 0) {
 	xhr.send(null);
 }
 
-const sendFormData = (uri, formData, json = false, signal = null) => (
+const sendFormData = (uri, formData, fl = 0, signal = null) => (
 	fetch(location.origin + uri, { signal,
 		credentials : 'same-origin',
 		method      : 'POST',
 		body        : formData,
 		headers     : { 'Accept': 'application/json' }
-	}).then(
-		json ? res => (res.ok ? res.json() : Promise.resolve({ errors: [res.statusText], url: res.url }))
-		     : res => (res.ok ? Promise.resolve(res) : Promise.reject(res.status +' '+ res.statusText))
-	)
+	}).then(res => {
+		if (res.ok) {
+			return (fl === 0x1 ? res.json() :
+			        fl === 0x2 ? res.text() : Promise.resolve(res.url));
+		} else {
+			const err = res.status +' '+ res.statusText;
+			return (fl ? Promise.resolve({ errors: [err], url: res.url }) :
+			             Promise.reject(err));
+		}
+	})
 );
+
+const resetNavBoubbles = (all = false) => {
+	const page = LOR.page,
+		newcom = document.querySelectorAll(`${
+		   all ? '#pcont_'+ page : '.page-content'} > .newadded`);
+	let ncnt = newcom.length;
+	if(!ncnt)
+		return;
+	for (let i = ncnt - 1; i >= 0; i--)
+		newcom[i].classList.remove('newadded');
+	if (all) {
+		for (let p = 0; p < Navigation.pages_count; p++)
+			Navigation.setNavBoubble(p, 0);
+		ncnt = 0;
+	} else {
+		ncnt = Favicon.index - ncnt;
+		Navigation.setNavBoubble(page, 0);
+	}
+	Favicon.draw( (Favicon.index = ncnt) );
+};
 
 const handleRegForm = form => {
 	const cel = form.elements.hide_loginbutton;
 	const snd = form.querySelector('button:not([type="button"]), [type="submit"]');
 
-	const btnClear = (ok = true) => {
-		let emsg = form.querySelector('.msg-error');
-		if (emsg) {
-			emsg.hidden = ok;
-		} else if (!ok) {
-			form.prepend(
-				_setup('label', { class: 'msg-error', text: 'Неверное имя или пароль.' })
-			);
-		}
+	const btnClear = (ok = true, str = '') => {
+		const emsg = form.querySelector('.msg-error') || form.insertBefore(
+			_setup('label', { class: 'msg-error' }), form.firstElementChild
+		);
+		emsg.hidden = ok, emsg.textContent = str;
 		snd.disabled = false, cel.onclick = null;
 	};
 
@@ -2423,11 +2435,13 @@ const handleRegForm = form => {
 		if (window.AbortController) {
 			const control = new AbortController;
 				  signal  = control.signal;
-			cel.onclick = () => (control.abort(), btnClear(true));
+			cel.onclick = () => (control.abort(), btnClear(true, ''));
 		}
-		sendFormData(uri, new FormData(form), true, signal).then(data => {
-			btnClear(data.loggedIn);
-			if (data.loggedIn)
+		sendFormData(uri, new FormData(form), 1, signal).then(({
+			errors = ['Неверное имя или пароль.'], loggedIn = false
+		}) => {
+			btnClear(loggedIn, errors.join('\n'));
+			if (loggedIn)
 				location.reload();
 		});
 	};
@@ -2481,8 +2495,7 @@ function handleCommentForm(form) {
 	}
 
 	NODE_PREVIEW.append(
-		_setup('pre', { class: 'error' }),
-		document.createElement('h2'),
+		_setup('span', { class: 'error' }),
 		_setup('span', { class: 'msg_body' })
 	);
 
@@ -2513,38 +2526,44 @@ function handleCommentForm(form) {
 		_setup(submit_btn, { type: 'button', name: void 0, id: submit_btn.name, 'do-upload': '' });
 	}
 
+	const render_preview = html => {
+
+		const doc = new DOMParser().parseFromString(html, 'text/html'),
+		      msg = NODE_PREVIEW.children[1];
+		      msg.textContent = '';
+
+		let preview = doc.getElementById('topic-0');
+		if (preview) {
+			msg.className = 'messages';
+			msg.append(preview);
+		} else
+			msg.append.apply(msg, Array.from(doc.body.children));
+		ContentFinder.check( msg );
+	}
+
 	const refresh_preview = () => {
 
-		const formData = new FormData( form );
-		
-		formData.append('preview', '');
+		const data = new FormData( form ),
+		      ajax = !!form.elements.topic,
+		      uri  = ajax ? '/add_comment_ajax' : URI_ACTION;
 
-		if (form.elements['topic']) {
-			sendFormData('/add_comment_ajax', formData, true).then(
-				({ errors, preview }) => {
-					NODE_PREVIEW.children[0].textContent = errors.join('\n');
-					NODE_PREVIEW.children[1].textContent = preview['title'] || '';
-					NODE_PREVIEW.children[2].innerHTML   = preview['processedMessage'];
-					ContentFinder.check( NODE_PREVIEW.children[2] );
-				}
-			);
-		} else {
-			sendFormData(URI_ACTION, formData).then(
-				res => res.text().then(html => {
-					const doc = new DOMParser().parseFromString(html, 'text/html'),
-					      msg = doc.querySelector('.messages');
-					NODE_PREVIEW.replaceChild(msg, NODE_PREVIEW.children[2]);
-					ContentFinder.check( msg );
-				})
-			);
-		}
+		data.append('preview', '');
+
+		sendFormData(uri, data, (ajax ? 1 : 2)).then(o => {
+			const { errors = [], preview = o } = o;
+			if (preview)
+				render_preview(preview);
+			NODE_PREVIEW.children[0].textContent = errors.join('\n');
+		}).catch(err => {
+			NODE_PREVIEW.children[0].textContent = err;
+		});
 	}
 
 	const submit_process = (sbtn, y) => {
 		const btns = FACT_PANNEL.querySelectorAll('.btn[do-upload]');
 		if (!sbtn) sbtn = btns[0];
-		form.elements[ 'cancel'].className = `btn btn-${ y ? 'danger' : 'default' }`;
-		form.elements['preview'].disabled  = sbtn.disabled = y;
+		form.elements.cancel.className = `btn btn-${ y ? 'danger' : 'default' }`;
+		form.elements.preview.disabled = sbtn.disabled = y;
 		sbtn.classList[y ? 'add' : 'remove']('process');
 		for (const primary of btns) {
 			primary.disabled = y;
@@ -2556,7 +2575,6 @@ function handleCommentForm(form) {
 		NODE_PREVIEW.removeAttribute('opened');
 		NODE_PREVIEW.children[0].textContent = TITLE_AREA.value = '';
 		NODE_PREVIEW.children[1].textContent = TEXT_AREA.value = '';
-		NODE_PREVIEW.children[2].textContent = '';
 		TEXT_AREA.oninput = null;
 	}
 
@@ -2621,7 +2639,7 @@ function handleCommentForm(form) {
 				if (param)
 					formData.append(param, '');
 
-				sendFormData(URI_ACTION, formData, false, signal).then(({ url }) => {
+				sendFormData(URI_ACTION, formData, 0, signal).then(url => {
 					if (!USER_SETTINGS['Realtime Loader'] || parseLORUrl(url).topic != LOR.topic) {
 						window.onbeforeunload = null;
 						location.href         = url + (
@@ -2633,9 +2651,9 @@ function handleCommentForm(form) {
 					submit_process(btn, false);
 					doAction.do_abort = null;
 					doAction.do_close();
-				}).catch(e => {
+				}).catch(err => {
 					doAction.do_abort = null;
-					form.appendChild( NODE_PREVIEW ).children[0].textContent = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n\n(${ e.status ? e.status +' '+ e.statusText : e })`;
+					form.appendChild( NODE_PREVIEW ).children[0].textContent = `Не удалось выполнить запрос, попробуйте повторить еще раз.\n\n(${ err })`;
 					submit_process(btn, false);
 				});
 			}
@@ -2922,7 +2940,7 @@ function toMemories(e) {
 		uri = '/memories.jsp';
 		cntr = this.parentNode.children[(watch ? 'memories' : 'favs') +'_count'];
 	}
-	sendFormData(uri, f_data, true).then(data => {
+	sendFormData(uri, f_data, 1).then(data => {
 		this.disabled = false;
 		if (Number.isInteger(data)) {
 			var id = '0', count = data, errors = false;
@@ -3005,7 +3023,7 @@ function onReactionClick(e) {
 		const { value, form } = btn;
 		if (value && form) {
 			const data = new FormData(form); data.append('reaction', value);
-			const p = sendFormData('/reactions/ajax', data, true),
+			const p = sendFormData('/reactions/ajax', data, 1),
 			      i = value.indexOf('-') + 1,
 			      f = value.substr(i) !== 'true';
 
@@ -3038,19 +3056,16 @@ function onReactionClick(e) {
 		break;
 	case 'reaction-show-list':
 		let rlist = parent.querySelector('.reactions-list') || parent.insertBefore(
-			_setup('span', { class: 'reactions-list msg reaction hidden' }), btn
+			_setup('pre', { class: 'reactions-list msg hidden', style: 'border: 1px solid darkslategrey;' }), btn
 		);
 		if (!rlist.classList.toggle('hidden')) {
-			let parts = [], users = {};
-			for (let { value, title } of parent.querySelectorAll('.reaction[title*="\\" "]')) {
+			let parts = [];
+			for (let { value, title } of parent.querySelectorAll('.reaction[title*=":"]')) {
 				value = value.substr(0,value.indexOf('-'));
-				title = title.substr(title.indexOf('" ')+2).trim().split(/\s+/);
-				for (let usr of title)
-					users[usr] = (users[usr] || '') + value;
+				title = title.substr(title.indexOf(':')).trim();
+				parts.push(value + title);
 			}
-			for (let usr in users)
-				parts.push(usr + users[usr]);
-			rlist.textContent = parts.join('\n|\n');
+			rlist.textContent = parts.join('\n');
 		}
 		break;
 	default:
@@ -3069,7 +3084,7 @@ function handleReplyLinks(msg, cid, refmap = '') {
 
 		const { pathname, search, parentNode: parent } = a;
 
-		if (pathname === '/add_comment.jsp') {
+		if (/\/.*comment.*\.jsp/.test(pathname)) {
 			const rep = a.cloneNode();
 			const qut = a.cloneNode();
 
@@ -3149,7 +3164,7 @@ function domToLORCODE({childNodes}, nobl) {
 	for(const el of childNodes) {
 		const tag = el.nodeName,
 		      chs = el.children,
-		      len = chs.length,
+		      len = chs && chs.length,
 		      str = el.textContent.trim();
 
 		switch (tag) {
@@ -3220,7 +3235,7 @@ function domToMarkdown({childNodes}, deep = 0) {
 	for(const el of childNodes) {
 		const tag = el.nodeName,
 		      chs = el.children,
-		      len = chs.length,
+		      len = chs && chs.length,
 		      str = el.textContent.trim();
 
 		switch (tag) {
