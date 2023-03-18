@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.6
+// @version     3.3.7
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -3084,7 +3084,7 @@ function handleReplyLinks(msg, cid, refmap = '') {
 
 		const { pathname, search, parentNode: parent } = a;
 
-		if (/\/.*comment.*\.jsp/.test(pathname)) {
+		if (pathname === '/comment-message.jsp' || pathname === '/add_comment.jsp') {
 			const rep = a.cloneNode();
 			const qut = a.cloneNode();
 
