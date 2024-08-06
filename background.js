@@ -55,7 +55,7 @@ chrome.runtime.onConnect.addListener(port => {
 		port.postMessage({ action: 'need-codestyles', data: null });
 });
 
-const setBadge = 'setBadgeText' in chrome.browserAction ? (
+const setBadge = chrome.browserAction && chrome.browserAction.setBadgeText ? (
 	badge => {
 		if ('setBadgeTextColor' in badge) {
 			badge.setBadgeTextColor({ color: '#ffffff' });
@@ -109,7 +109,7 @@ function openTab(uri = '', action = '') {
 	if (schi === -1)
 	    schi = uri.length;
 
-	const lor = uri.startsWith('lor:') ? 5 : 0,
+	const lor = uri.startsWith('lor:/') ? 5 : 0,
 	     path = uri.substring(lor, schi),
 	     orig = lor ? '://www.linux.org.ru'+ path : chrome.runtime.getURL('/settings.html'),
 	     href = lor ? 'https' + orig + uri.substring(schi) : orig + uri;

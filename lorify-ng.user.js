@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.7
+// @version     3.3.8
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -789,7 +789,7 @@ class TopicNavigation {
 		case 'medium-image': alter = false;
 		case   'link-image':
 			if (USER_SETTINGS['Picture Viewer'] > alter) {
-				CentralPicture.expose((alter ? el : parent).href);
+				CentralPicture.expose(alter ? el.href : el.srcset);
 				break;
 			}
 		default:
@@ -2019,9 +2019,11 @@ class CentralPicture {
 			this.scale = s}) rotate(${
 			this.angle = a}deg)`;
 	}
-	expose(src) {
+	expose(src = '') {
+		const is_sset = /\s\d+w$/.test(src);
 		this._Img.style.visibility = 'hidden';
-		this._Img.src = src;
+		this._Img.src    = is_sset ? '' : src;
+		this._Img.srcset = is_sset ? src : '';
 
 		window.addEventListener(RESIZE_FUNCT, this, false);
 		ContentNode.append( this._Box );
@@ -2194,29 +2196,35 @@ const mousePreviewHandler = !TOUCH_DEVICE && {
 	}
 };
 
-const cloneMsgCilds = (msg) => {
-	let childs = [], li = 0;
-	for (const c of msg.children) {
-		li = childs.push(c.cloneNode(true)) - 1;
-	}
-	let msg_bd = childs[li].querySelector('.msg_body'),
-	     emoji = msg_bd.querySelector('.reactions-form'),
-	     reply = msg_bd.querySelector('.form-container');
-	if (reply)
-		reply.remove();
-	if (emoji)
-		emoji.onsubmit = emoji.onclick = e => { e.stopPropagation(), e.preventDefault(); };
-	msg_bd.classList.add('no-reply');
-	return childs;
+const stubHandler = e => {
+	e.stopPropagation(), e.preventDefault();
+};
+
+const cloneMsgBody = (dst, msg) => {
+	do {
+		let mx, dx, cc;
+		for (const c of msg.children) {
+			let name = c.classList[0];
+			if (name === 'form-container')
+				continue;
+			if (name === 'msg-container' || name === 'msg_body') {
+				dx = cc = (mx = c).cloneNode();
+				dx.classList.add('no-reply');
+			} else {
+				cc = c.cloneNode(true);
+				if (name === 'reactions')
+					cc.children[0].onsubmit = cc.children[0].onclick = stubHandler;
+			}
+			dst.append(cc);
+		}
+		msg = mx;
+		dst = dx;
+	} while (msg);
 }
 
 const showPreview = (anc, cid) => {
 
-	const b = anc.getBoundingClientRect(),
-	     x0 = Math.floor(b.left + (b.right - b.left) / 2),
-	     y1 = Math.floor(b.bottom + 10), x1 = x0,
-	     y0 = Math.floor(b.top - 10);
-
+	const pos = anc.getBoundingClientRect();
 	let preview = document.getElementById('preview-'+ cid);
 	// check existing preview by ID
 	if (!preview) {
@@ -2236,19 +2244,16 @@ const showPreview = (anc, cid) => {
 		let msg = document.getElementById('comment-'+ cid);
 		if (msg) {
 			// Without the 'clone' call we'll just move the original comment
-			preview.append(...cloneMsgCilds(msg));
+			cloneMsgBody(preview, msg);
 		} else {
 			// Add Loading Process stub
 			preview.textContent = 'Загрузка...';
 			// Get an HTML containing the comment
 			Navigation.preloadPage('?cid='+ cid, 0x3).then(({ pcont }) => {
-				let childs = cloneMsgCilds(pcont.children['comment-'+ cid]);
 				preview.style.visibility = 'hidden';
 				preview.textContent = '';
-				preview.append(...childs);
-				popupPreview(
-					preview, x0, x1, y0, y1
-				);
+				cloneMsgBody(preview, pcont.children['comment-'+ cid]);
+				popupPreview(preview, pos);
 			}).catch(err => { // => Error
 				preview.textContent = err;
 				preview.classList.add('msg-error');
@@ -2263,35 +2268,30 @@ const showPreview = (anc, cid) => {
 		// remove this preview
 		Timer.set(cid, () => preview.remove(), USER_SETTINGS['Delay Close Preview']);
 	};
-	popupPreview( preview, x0, x1, y0, y1 );
+	popupPreview( preview, pos );
 }
 
-const popupPreview = (preview, x0 = 0, x1 = 0, y0 = 0, y1 = 0) => {
+const popupPreview = (preview, { left, right, top, bottom }) => {
 
-	const { pageXOffset, pageYOffset, innerWidth, innerHeight } = window,
-	      { style } = preview;
+	const { scrollX:sX,scrollY:sY, innerWidth:iW,innerHeight:iH } = window;
 
 	const comms = document.getElementById('comments');
-	const isReY = innerHeight - y1 < 50,
-	     sRight = innerWidth  - x1;
+	const style = preview.style,
+	      sLeft = left + (right - left),
+	     sRight = iW - left,
+	      sBotm = iH - bottom;
 
 	style.visibility = 'hidden',
-	style.maxWidth = null, style.left = style.top = 0;
-	comms.append(preview);
-
-	let w = preview.offsetWidth, left = x0, maxW = 0;
-	if (left > sRight) {
-		if (left >= w)
-			left -= w;
-		else
-		 	left = 0, maxW = x0;
-	} else if (sRight < w) {
-		maxW = sRight;
-	}
-	style.maxWidth = maxW ? `${maxW}px` : null;
-	style.left = `${pageXOffset + left}px`;
-	style.top  = `${pageYOffset + (
-		isReY ? y0 - preview.offsetHeight : y1)}px`;
+	style.maxWidth = `${iW * .64}px`,
+	style.left = `${sX + (sLeft > sRight ? 0 : left)}px`;
+	style.top  = `${sY + bottom + 6}px`;
+	// add preview in to screen and checks his rendered w/h
+	let { offsetWidth:w, offsetHeight:h } = comms.appendChild(preview);
+	// correct left/top position
+	if (sLeft > sRight && sLeft > w)
+		style.left = `${sX + (sLeft - w)}px`;
+	if (sBotm < top && sBotm < h)
+		style.top  = `${sY + (top - h - 4)}px`;
 	style.visibility = 'visible';
 }
 
@@ -2896,16 +2896,17 @@ function getCaretCoordinates() {
 	})(arguments[0], arguments[1]);
 }
 
-const mem_title = {
-	favorite : ['Удалить из избранного' , 'Добавить в избранное'],
-	ignore   : ['Перестать игнорировать', 'Добавить в игнор'    ],
-	memories : ['Прекратить следить'    , 'Следить за темой'    ]
-}
+const lor_token = document.cookie.match(/(?:CSRF_TOKEN="?|$)([^;"]*)/)[1];
+const mem_title = Object.freeze({
+	favorite : ['Убрать из избранного' , 'Добавить в избранное'],
+	ignore   : ['Cнять игнор'          , 'Добавить в игнор'    ],
+	memories : ['Не следить'           , 'Следить за темой'    ]
+});
 function toMemories(e) {
 
 	e.preventDefault();
 
-	if (this.disabled)
+	if (this.disabled || !lor_token)
 		return;
 	// приостановка действий по клику на кнопку до окончания текущего запроса
 	this.disabled = true;
@@ -2913,7 +2914,7 @@ function toMemories(e) {
 	const m_tag  = this.getAttribute('m_tag');
 	const f_data = new FormData;
 
-	f_data.append('csrf', CommentForm.elements.csrf.value);
+	f_data.append('csrf', lor_token);
 
 	let watch = false, uri = '', name = 'favorite', cntr = null;
 	let to_del = Number(this.classList.contains('selected'));
@@ -3427,17 +3428,16 @@ function UserScript() {
 			lorylist.append(
 				_setup('label', { class: 'note-clear lory-btn', for: 'do_reset', text: 'Очистить уведомления' })
 			);
-		} else
-		if ('notify-list' in lorylist.children) {
-			const list = lorylist.children['notify-list'];
-			if ((empty = list.rows.length !== max))
+		} else {
+			let list = lorylist.children.notifications;
+			if (list && (empty = list.children.length !== max))
 				list.remove();
 		}
 		if (max > 0 && empty) {
 			getDataResponse('/notifications', html => {
 				const doc = new DOMParser().parseFromString(html, 'text/html'),
-					  tab = _setup(doc.querySelector('.message-table'), { id: 'notify-list' });
-				let new_rf = doc.forms.reset_form;
+					  tab = doc.querySelector('.notifications'),
+					new_rf= doc.forms.reset_form;
 				if (new_rf) {
 					const isNf = location.pathname !== '/notifications';
 					let old_rf = document.forms.reset_form;
@@ -3451,14 +3451,16 @@ function UserScript() {
 					}
 				}
 				for (let i = 0; i < max; i++) {
-					/*  ....  */ tab.rows[i].children[1].className = 'note-target';
-					const anc  = tab.rows[i].children[1].querySelector('a');
-					const time = tab.rows[i].children[2].querySelector('time');
-					anc.className = 'link-navs',anc.target = '_blank';
+					const anc = tab.children[i],
+					     time = anc.children[3].firstElementChild.lastElementChild;
+					anc.className = 'link-navs '+ anc.className.replace('notifications-', 'notify-');
+					anc.target = '_blank';
 					ContentFinder.localizeTime(time, 'interval');
 				}
-				while (tab.rows[max])
-					   tab.rows[max].remove();
+				tab.id = 'notifications';
+				tab.className = 'notify-list';
+				while (tab.children[max])
+					   tab.children[max].remove();
 				lorylist.append(tab);
 			});
 		}
@@ -3470,7 +3472,7 @@ ready = new Promise(resolve => {
 	notes = Number(localStorage.getItem('l0rNG-notes'));
 	const defaults = Object.assign({}, USER_SETTINGS);
 
-	loryform = _setup('form', { id: 'loryform', class: 'info-line', html: `
+	loryform = _setup('form', { id: 'loryform', class: 'tab-gt', html: `
 	<div class="tab-row">
 		<span class="tab-cell">Автоподгрузка комментариев:</span>
 		<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
@@ -3581,7 +3583,6 @@ ready = new Promise(resolve => {
 			margin: 2px;
 		}
 		#loryform {
-			display: table;
 			min-width: 360px;
 			right: 5px;
 			top: 5px;
@@ -3593,7 +3594,11 @@ ready = new Promise(resolve => {
 			box-shadow: -1px 2px 8px rgba(0,0,0,.3);
 			position: fixed;
 		}
-		.tab-row, .lorify-notes-panel {
+		#loryform .tab-cell {
+			padding: 4px 2px;
+			max-width: 180px;
+		}
+		#loryform .tab-row, .lorify-notes-panel {
 			font-size: 85%;
 			color: #666;
 		}
@@ -3607,7 +3612,7 @@ ready = new Promise(resolve => {
 			padding: 6px 8px;
 		}
 		.lorify-notes-panel > .lory-btn:hover,
-		.lorify-notes-panel tr:hover {
+		.notify-item:hover {
 			background: #e1e1e1;
 		}
 		.note-clear {
@@ -3617,8 +3622,15 @@ ready = new Promise(resolve => {
 			color: #299a7b;
 			text-decoration: underline dashed;
 		}
-		.note-target {
-			font-size: 12px;
+		.notify-item:before {
+			content:"";
+			position: absolute;
+			left: 0; right: 0;
+			top: 0; bottom: 0;
+			display: block;
+		}
+		.notify-item > * {
+			padding: 5px 0 0 12px;
 			max-width: 360px;
 		}
 		#lorynotify, .note-target .tag {
@@ -3632,15 +3644,11 @@ ready = new Promise(resolve => {
 		.lorify-settings-panel:hover #loriko-body, #loryform ~ * #loriko-body { fill: #949494; }
 		.lorify-settings-panel:hover #loriko-belly, #loryform ~ * #loriko-belly { fill: white; }
 		.lory-btn { cursor: pointer; }
-		.tab-row  { display: table-row; }
-		.tab-cell { display: table-cell;
-			position: relative;
-			padding: 4px 2px;
-			max-width: 180px;
-			vertical-align: middle;
-		}
-		.tab-cell select { width: 160px; }
-		.tab-cell input[type="number"] { width: 60px; }
+		.tab-gt  , .notify-list    { display: table; }
+		.tab-row , .notify-item    { display: table-row;  position: relative; }
+		.tab-cell, .notify-item >* { display: table-cell; vertical-align: middle; }
+		#loryform select { width: 160px; }
+		#loryform input[type="number"] { width: 60px; }
 		.tab-cell[chr]:after {
 			content: attr(chr) ".";
 			font: italic 14px serif;
@@ -3666,8 +3674,8 @@ ready = new Promise(resolve => {
 			font: italic 10px Arial;
 		}
 		#loginGreating, #topProfile { margin-right: 60px!important; }
-		#reset-setts, .info-line:before { position: absolute; right: 0; }
-		.info-line:before {
+		#reset-setts, #loryform:before { position: absolute; right: 0; }
+		#loryform:before {
 			-webkit-animation: 2s ease-in 2 alternate showIn;
 			animation: 2s ease-in 2 alternate showIn;
 			color: #d25555;

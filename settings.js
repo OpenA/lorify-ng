@@ -56,12 +56,6 @@ note_lst.addEventListener('click', e => {
 			});
 		}
 		break;
-	default:
-		while( el !== note_lst && el.classList[0] !== 'note-item' )
-		       el  = el.parentNode;
-		if(    el.hasAttribute('comment-link') ) {
-			applyAnim('l0rNG-open-tab', el.getAttribute('comment-link'));
-		}
 	}
 });
 
@@ -151,9 +145,9 @@ function setValues(items) {
 function pullNotes(html) {
 
 	const doc = new DOMParser().parseFromString(html, 'text/html'),
-	      trs = doc.querySelectorAll('.message-table tr'),
+	    items = Array.from(doc.querySelector('.notifications').children),
 	     list = note_lst.lastElementChild,
-	    limit = cnt_new > trs.length ? trs.length : cnt_new;
+	    limit = cnt_new > items.length ? items.length : cnt_new;
 
 	const new_rf = doc.forms.reset_form;
 	const old_rf = document.forms.reset_form;
@@ -167,40 +161,62 @@ function pullNotes(html) {
 	}
 
 	for (let i = 0; i < limit; i++) {
+		const item = items[i],
+		     title = item.children[1],
+		      icon = item.children[0], type = icon.firstElementChild.firstElementChild,
+		    detail = item.children[2], tags = detail.firstElementChild.firstElementChild,
+		      info = item.children[3], time = info.firstElementChild.lastElementChild;
 
-		const CALL_TYPE = trs[i].children[0].firstElementChild;
-		const LINK_ELEM = trs[i].children[1].querySelector('a');
-		const TAG_ELEMS = trs[i].children[1].querySelectorAll('.tag');
-		const TIME_ELEM = trs[i].children[2].querySelector('time');
-		const USER_NAME = trs[i].children[2].lastChild;
+		let who = time.previousSibling,
+			tip = '', chr = 'cек', usr,
+			num = detail.innerText;
+  
+		if (tags && tags.className === 'reactions') {
+			usr = time.parentNode.insertBefore(tags, time);
+			usr.append(who);
+		} else {
+			if (!time.previousElementSibling){
+				usr = time.parentNode.insertBefore(document.createElement('span'), time);
+				usr.append(who);
+			} else 
+				usr = time.previousElementSibling;
+			if (tags && tags.className === 'tag')
+				usr.append(...detail.firstElementChild.children);
+		}
+		item.className  = 'note-item';
+		info.className  = 'note-item-info';
+		title.className = 'note-item-topic';
+		usr.className   = 'note-item-user';
+		time.className  = 'note-item-time';
 
-		const item = document.createElement('div' ); item.className = 'note-item';
-		const tags = document.createElement('div' ); tags.className = 'note-item-tags';
-		const info = document.createElement('div' ); info.className = 'note-item-info';
-		const op_c = document.createElement('div' ); op_c.className = 'note-item-topic';
-		const user = document.createElement('span'); user.className = 'note-item-user';
-		const time = document.createElement('span'); time.className = 'note-item-time';
+		let sec = Math.floor((Date.now() - new Date( time.dateTime )) / 1000);
+		if (sec >= 86400) chr = 'дн' , sec = Math.floor(sec / 86400); else
+		if (sec >= 3600 ) chr = 'ч'  , sec = Math.floor(sec / 3600); else
+		if (sec >= 60   ) chr = 'мин', sec = Math.floor(sec /  60) % 60;
 
-		let secn = Math.floor((Date.now() - new Date( TIME_ELEM.dateTime )) * 0.001), chr;
-			secn < 60   ? (chr = 'cек', secn %= 60)  :
-			secn < 3600 ? (chr = 'мин', secn = Math.floor(secn / 60) % 60) :
-			secn < 86400? (chr = 'ч'  , secn = Math.floor(secn / 3600)) :
-			              (chr = 'дн' , secn = Math.floor(secn / 86400));
+		if (type) {
+			tip = type.title;
+			if (tip.endsWith('удалено')) {
+				tip = 'Удалено';
+				who.textContent = num;
+				usr.classList.add('modmes');
+			} else if (type.classList.contains('icon-user-color'))
+				tip = 'Приглашён';
+		} else if (num > 0) {
+			tip = 'Новое';
+			who.textContent = `${num}💬\n`;
+		}
+		time.textContent = sec,
+		time.setAttribute('data-chr', chr);
+		time.parentNode.setAttribute('data-tip', tip);
 
-		time.setAttribute( 'chr', chr )  , time.textContent = secn;
-		item.setAttribute( 'comment-link', 'lor:/'+ LINK_ELEM.pathname + LINK_ELEM.search );
-		info.setAttribute( 'answer'      , CALL_TYPE && (
-			CALL_TYPE.classList.contains('icon-user-color' ) ? 'пригл.' :
-			CALL_TYPE.classList.contains('icon-reply-color') ? 'ответ'  :
-			CALL_TYPE.title === /*    */ 'Сообщение удалено' ? 'удалено': '') || 'новый'
-		);
-		if (/^[\s\n]*\d+[\s\n]*$/.test(USER_NAME.textContent))
-			USER_NAME.insertData(1, '💬 ');
-		tags.append( ...TAG_ELEMS );
-		op_c.append( LINK_ELEM.lastChild );
-		item.append( tags, info, op_c );
-		info.append( user, time );
-		user.append( USER_NAME );
-		list.append( item );
+		icon.remove(), detail.remove();
+		item.append(info, title);
+		list.append(item);
+		item.onclick = e => {
+			e.preventDefault()
+			e.stopPropagation();
+			applyAnim('l0rNG-open-tab', 'lor:/'+ item.getAttribute('href'));
+ 		}
 	}
 }
