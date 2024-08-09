@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.8
+// @version     3.3.9
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -3451,10 +3451,21 @@ function UserScript() {
 					}
 				}
 				for (let i = 0; i < max; i++) {
-					const anc = tab.children[i],
-					     time = anc.children[3].firstElementChild.lastElementChild;
+					const anc = tab.children[i], [,info,warn,user] = anc.children,
+					     tags = warn.firstElementChild,
+					     time = user.firstElementChild.lastElementChild,
+					     ftag = tags && tags.firstElementChild;
 					anc.className = 'link-navs '+ anc.className.replace('notifications-', 'notify-');
 					anc.target = '_blank';
+					if (!ftag) {
+						 if(warn.innerText.trim())
+							user.className = 'notifications-mod-warn',
+							user.replaceChild(tags, user.firstElementChild);
+					} else if (ftag.className === 'reactions') {
+						info.firstElementChild.appendChild(ftag).style.display = 'block';
+					} else if (ftag.className === 'tag')
+						info.appendChild(tags).className = 'notify-tags';
+						user.appendChild(time).className = 'notify-time';
 					ContentFinder.localizeTime(time, 'interval');
 				}
 				tab.id = 'notifications';
@@ -3563,8 +3574,8 @@ ready = new Promise(resolve => {
 	<div id="lorytoggle" class="lory-btn"></div>
 	<style>
 		#lorynotify {
-			top: -5px;
-			left: -3px;
+			top: -5px; left: -3px;
+			color: white;
 			font: bold 16px "Open Sans";
 			background-color: #3e85a8;
 			border-radius: 5px;
@@ -3605,8 +3616,8 @@ ready = new Promise(resolve => {
 		.lorify-notes-panel {
 			top: 5px;
 			right: 34px;
-			overflow-x: hidden;
-			overflow-y: auto;
+			overflow: hidden auto;
+			max-height: 100%;
 		}
 		.lorify-notes-panel > * {
 			padding: 6px 8px;
@@ -3633,8 +3644,23 @@ ready = new Promise(resolve => {
 			padding: 5px 0 0 12px;
 			max-width: 360px;
 		}
-		#lorynotify, .note-target .tag {
+		.notify-item > .notifications-who-when   { color: #03b71f; font-weight: bold; }
+		.notify-item > .notifications-mod-warn p { color: #f00; }
+		.notify-item > .notifications-who-when s { color: #6b747d; }
+		.notify-item,  #notifications a:visited  { color: #31aea8; }
+		.notify-time, .notify-tags {
+			position: absolute;
+			margin: 0; bottom: 0;
+		}
+		.notify-item .reaction { font: bold 14px caption; padding: 1px 5px; }
+		.notify-time           { font: bold 14px monospace; background-color: #aa512e; }
+		.notify-tags .tag      { font: bold 12px monospace; background-color: slategray; }
+		.notify-tags .tag,
+		.notify-time {
 			color: white;
+			white-space: nowrap;
+			border-radius: 3px 3px 0 0;
+			padding: 1px 3px;
 		}
 		.lorify-settings-panel {
 			position: fixed;
