@@ -123,22 +123,30 @@ function updNotifications(count = 0) {
 
 function onValueChange(input) {
 	const changes = {};
-	let { name, type, value, min, max } = input;
-	if (min && Number(value) < Number(min)) input.value = value = min; else
-	if (max && Number(value) > Number(max)) input.value = value = max;
-	changes[name] = (
-		type === 'select-one' ? input.selectedIndex :
-		type === 'checkbox'   ? input.checked : Number(value)
-	);
+	let { name:k, type, min, max } = input;
+
+	switch (type) {
+	case 'checkbox'  : changes[k] = input.checked; break;
+	case 'select-one': changes[k] = input.selectedIndex; break;
+	default          : changes[k] = Number(input.value);
+		// check range
+		if (min && (min = Number(min)) > changes[k]) input.value = changes[k] = min; else
+		if (max && (max = Number(max)) < changes[k]) input.value = changes[k] = max;
+	}
 	applyAnim('l0rNG-setts-change', changes, true);
 }
 
 function setValues(items) {
-	for (const name in items) {
-		 const i_el = loryform.elements[name], type = i_el.type,
-		      param = type === 'select-one' ? 'selectedIndex' :
-			          type === 'checkbox' ? 'checked' : 'value';
-		i_el[param] = type ? items[name] : Number(items[name]);
+	for (const key in items) {
+		const el = loryform.elements[key],
+		     val = items[key];
+		if (!el)
+			continue;
+		switch (el.type) {
+		case 'checkbox'  : el.checked = val; break;
+		case 'select-one': el.selectedIndex = val; break;
+		default          : el.value = el.type ? val : Number(val);
+		}
 	}
 }
 

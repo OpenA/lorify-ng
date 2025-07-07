@@ -15,19 +15,18 @@
 				vertical-align: middle;
 			}
 			.tab-cell select { width: 160px; }
-			.tab-cell input[type="number"] { width: 60px; }
-			.tab-row > .tab-cell:first-child{
-				font: bold 14px Arial;
+			.tab-cell input[type="number"] { width: 56px; }
+			.tab-row > .tab-cell:first-child {
+				font: bold 14px sans-serif;
 			}
-			.con-flex > * { margin: 0 auto 0 0; }
-			.con-flex {
-				width: 100%;
-				display: flex;
+			.tab-gr3d {
+				display: grid;
+				grid-template-columns: 1fr 1fr 1fr;
 				text-align: center;
 			}
 			*[txblk]:before {
 				content: attr(txblk);
-				display: block;
+				cursor: pointer;
 				font: italic 12px serif;
 			}
 			.note-item-topic, .tab-row > .tab-cell:first-child {
@@ -187,9 +186,13 @@
 				</span>
 			</div>
 			<div class="tab-row">
-				<span class="tab-cell">Стиль подсветки кода:</span>
+				<span class="tab-cell">Разметка сообщений:</span>
 				<span class="tab-cell">
-					<select name="Code Highlight Style"></select>
+					<select name="Markup Mode">
+						<option>Markdown</option>
+						<option>LORCODE</option>
+						<option>Line-Break</option>
+					</select>
 				</span>
 			</div>
 			<div class="tab-row">
@@ -208,18 +211,13 @@
 			</div>
 			<div class="tab-row">
 				<span class="tab-cell">Оповещения на рабочий стол:</span>
-				<span class="tab-cell">
-					<div class="con-flex">
-					<label txblk="Откл.">
-						<input type="radio" name="Desktop Notification" value="0">
-					</label>
-					<label txblk="LOR">
-						<input type="radio" name="Desktop Notification" value="1">
-					</label>
-					<label txblk="Mobile">
-						<input type="radio" name="Desktop Notification" value="2">
-					</label>
-					</div>
+				<span class="tab-gr3d">
+					<label for="notes_off" txblk="Откл."></label>
+					<label for="notes_lor" txblk="LOR"></label>
+					<label for="notes_mob" txblk="Mobile"></label>
+					<input id="notes_off" name="Desktop Notification" type="radio" value="0">
+					<input id="notes_lor" name="Desktop Notification" type="radio" value="1">
+					<input id="notes_mob" name="Desktop Notification" type="radio" value="2">
 				</span>
 			</div>
 			<div class="tab-row">

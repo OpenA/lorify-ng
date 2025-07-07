@@ -7,6 +7,7 @@ const defaults = Object.freeze({ // default settings
 	'Desktop Notification' : 1,
 	'Preloaded Pages Count': 1,
 	'Picture Viewer'       : 2,
+	'Markup Mode'          : 0,
 	'Scroll Top View'      : true,
 	'Upload Post Delay'    : 3,
 	'Code Block Short Size': 15,
@@ -51,8 +52,6 @@ chrome.runtime.onConnect.addListener(port => {
 	});
 	openPorts.add(port);
 	loadStore.then(() => port.postMessage({ action: 'connection-resolve', data: settings }));
-	if (!codestyles)
-		port.postMessage({ action: 'need-codestyles', data: null });
 });
 
 const setBadge = chrome.browserAction && chrome.browserAction.setBadgeText ? (
@@ -161,10 +160,6 @@ function messageHandler({ action, data }, port) {
 				when: Date.now() + 1e3
 			});
 			break;
-		case 'l0rNG-codestyles':
-			if(!codestyles)
-				codestyles = data;
-			break;
 		case 'l0rNG-open-tab':
 			openTab(data, 'scroll-to-comment');
 			break;
@@ -175,8 +170,6 @@ function messageHandler({ action, data }, port) {
 			}
 			break;
 		case 'l0rNG-extra-sets':
-			if (codestyles)
-				port.postMessage({ action: 'code-styles-list', data: codestyles });
 			if (notes)
 				port.postMessage({ action: 'notes-count-update', data: notes });
 	}

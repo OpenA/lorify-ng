@@ -15,6 +15,7 @@
 const USER_SETTINGS = {
 	'Realtime Loader'      : true,
 	'CSS3 Animation'       : true,
+	'Markup Mode'          : 0,
 	'Delay Open Preview'   : 50,
 	'Delay Close Preview'  : 800,
 	'Desktop Notification' : true,
@@ -26,23 +27,24 @@ const USER_SETTINGS = {
 	'Code Highlight Style' : 0
 }
 
-let ContentNode, Navigation, CommentForm, gRefList;
-let LORCODE_MODE = 0, Drops = 1, ThrMap = {};
+let ContentNode, Navigation, CommentForm, gRefList, ThrMap = {};
 
 const LOR           = parseLORUrl(location.href);
 const TOUCH_DEVICE  = 'ontouchstart' in window;
 const RESIZE_FUNCT  = 'onorientationchange' in window ? 'orientationchange' : 'resize';
 
 const Timer = {
+	// timer drop delays
+	drops: 1,
 	// clear timer by name
-	delete: function(...names) {
+	delete(...names) {
 		for (const name of names) {
 			clearTimeout(this[name]);
 			delete this[name];
 		}
 	},
 	// set/replace timer by name
-	set: function(name, func, t = 50) {
+	set(name, func, t = 50) {
 		if (name in this)
 			clearTimeout(this[name]);
 		this[name] = setTimeout(func, USER_SETTINGS['Delay '+ name] || t);
@@ -769,7 +771,7 @@ class TopicNavigation {
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length);
 			Timer.delete('Close Preview', 'Open Preview', cid);
-			Drops = 1, clearPreviews();
+			Timer.drops = 1, clearPreviews();
 			this.goToCommentPage(cid);
 			break;
 		case 'link-thread':
@@ -1389,6 +1391,8 @@ function locKeyHandler(e) {
 	      end = target.selectionEnd,
 	     char = val.charAt(start - 1);
 
+	let LORCODE_MODE = USER_SETTINGS['Markup Mode'] !== 0;
+
 	let isValidMark = false, isNColl = start !== end,
 	    isBackspace = false, isEnter = false;
 
@@ -1515,7 +1519,7 @@ function winKeyHandler(e) {
 		if (key === '>')
 			injectText('>'+ text.replace(/\n/gm, '\n>'), true);
 		else
-			injectText(LORCODE_MODE ? '[user]'+ text +'[/user]' : key + text);
+			injectText(USER_SETTINGS['Markup Mode'] > 0 ? '[user]'+ text +'[/user]' : key + text);
 		e.preventDefault();
 	}
 }
@@ -1834,7 +1838,7 @@ const updCommentContent = (old_msg, new_msg, si = 0) => {
 
 const clearPreviews = preview => {
 	const pstack = document.getElementsByClassName('preview');
-	let c = pstack.length - Drops;
+	let c = pstack.length - Timer.drops;
 	while ( pstack[c] !== preview)
 	        pstack[c--].remove();
 }
@@ -2182,7 +2186,7 @@ const mousePreviewHandler = !TOUCH_DEVICE && {
 			const cid = anc.search.substring('?cid='.length);
 			Timer.delete(cid);
 			Timer.set('Open Preview', () => {
-				Drops = 2;
+				Timer.drops = 2;
 				showPreview(anc, cid);
 			});
 			e.preventDefault();
@@ -2190,7 +2194,7 @@ const mousePreviewHandler = !TOUCH_DEVICE && {
 	},
 	mouseout: e => {
 		if (e.target.classList[0] === 'link-pref') {
-			Drops = 1;
+			Timer.drops = 1;
 			Timer.delete('Open Preview');
 		}
 	}
@@ -2502,8 +2506,9 @@ function handleCommentForm(form) {
 	MARKUP_PANEL.addEventListener('click', e => {
 		e.preventDefault();
 		if (e.target.type === 'button') {
-			const tag = e.target.getAttribute(LORCODE_MODE ? 'lorcode' : 'markdown')
-			if (!LORCODE_MODE && tag) {
+			let mkdwn = USER_SETTINGS['Markup Mode'] === 0;
+			let tag = e.target.getAttribute(mkdwn ? 'markdown' : 'lorcode');
+			if (mkdwn && tag) {
 				if (tag === '>' || tag === '* ')
 					lorcodeMarkup.call(TEXT_AREA, tag, `\n${ tag }`);
 				else
@@ -2513,7 +2518,7 @@ function handleCommentForm(form) {
 			}
 		}
 	});
-	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL).previousSibling.remove();
+	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL);
 
 	if (!form.elements['cancel']) {
 		form.elements['preview'].after(
@@ -2716,26 +2721,15 @@ function handleCommentForm(form) {
 			: void 0
 	);
 
-	const mode_change = ({ target: { value } }) => {
-		LORCODE_MODE = /markdown/i.test(value) ? 0 : /lorcode/i.test(value) ? 1 : 2;
-		MARKUP_PANEL.className = LORCODE_MODE ? 'lorcode' : 'markdown';
-	};
-	
-	let mode = form.elements['mode'] || form.querySelector('select[disabled]');
-	if (mode) {
-		mode.addEventListener('change', mode_change);
-		mode_change({ target: mode });
-	} else {
-		let tags = [], lcm = false;
-		form.firstElementChild.before((
-			mode = _setup('select', { style: 'display: block;', html: '<option>LORCODE</option><option>Markdown</option>' }, { change: mode_change })
-		));
-		for (const b of MARKUP_PANEL.children)
-			tags.push(b.getAttribute('lorcode'));
-		lcm = new RegExp(`\\[\\/?(?:${tags.join('|')})(?:=[^\\]]*)?\\]`).test(TEXT_AREA.value);
-		mode.selectedIndex = LORCODE_MODE = Number(lcm);
-		MARKUP_PANEL.className = LORCODE_MODE ? 'lorcode' : 'markdown';
+	const mode_change = i => {
+		MARKUP_PANEL.previousSibling.textContent = `Разметка ${i ? 'LORCODE' : 'Markdown'}`
+		MARKUP_PANEL.className = i ? 'lorcode' : 'markdown';
 	}
+	Object.defineProperty(Dynamic_Style, 'Markup Mode', {
+		set: mode_change
+	});
+	mode_change(USER_SETTINGS['Markup Mode']);
+
 	if ('tags' in form.elements) {
 		handleTagsInput(form.elements['tags']);
 	}
@@ -3128,6 +3122,7 @@ function convMsgBody(msg) {
 
 	let text = '', qt = true, br = '\n\n', reg = /(?:[\n]+){3,}/g;
 
+	let LORCODE_MODE = USER_SETTINGS['Markup Mode'];
 	if (LORCODE_MODE) { // lorcode, line-break
 		let nobl = msg.querySelector('div.code,pre,ul,ol,table');
 		      qt = !nobl || nobl.parentNode.className === 'reply';
@@ -3338,6 +3333,7 @@ function WebExt() {
 	return {
 		checkNow : () => sendMessage( 'l0rNG-notes-chk' ),
 		openUrl  : al => sendMessage( 'l0rNG-open-tab', 'lor:/'+ al ),
+		updStore : sc => sendMessage( 'l0rNG-setts-change', sc),
 		setNotes : nc => sendMessage( 'l0rNG-notes-set', nc),
 		init     : () => opened
 	}
@@ -3350,6 +3346,7 @@ function UserScript() {
 	const self = {
 		checkNow: () => void 0,
 		openUrl : () => true,
+		updStore: () => localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS)),
 		setNotes: () => void 0,
 		init    : () => {
 			document.body.append(lorypanel);
@@ -3395,29 +3392,32 @@ function UserScript() {
 	}; /*  */ self.setNotes = setNotes;
 
 	const setValues = items => {
-		for (const name in Object.assign(USER_SETTINGS, items)) {
-			 const type  = loryform.elements[name].type,
-			       param = type === 'checkbox' ? 'checked' : type === 'select-one' ? 'selectedIndex' : 'value';
-			Dynamic_Style[name] = loryform.elements[name][ param ] = USER_SETTINGS[name];
+		for (const key in items) {
+			const el = loryform.elements[key],
+			     val = items[key];
+			Dynamic_Style[key] = USER_SETTINGS[key] = val;
+			if (el)
+			if (el.type === 'checkbox'  ) el.checked = val; else
+			if (el.type === 'select-one') el.selectedIndex = val; else
+			                              el.value = val;
 		}
 	}
-
-	const saveParams = changes => {
-		loryform.classList.add('save-msg');
-		localStorage.setItem('lorify-ng', JSON.stringify(changes));
-	}
-
+/**
+ * @param {HTMLInputElement|HTMLSelectElement} el 
+ */
 	const onValueChange = input => {
-		switch (input.type) {
-			case 'checkbox':
-				USER_SETTINGS[input.id] = input.checked;
-				break;
-			default:
-				const min = Number (input.min || 0);
-				const val = input.type === 'select-one' ? input.selectedIndex : Number (input.value);
-				Dynamic_Style[input.id] = USER_SETTINGS[input.id] = val >= min ? val : (input.value = min);
+		let { min, max, value:val, id:key } = input;
+		switch (el.type) {
+		case 'checkbox'  : val = input.checked; break;
+		case 'select-one': val = input.selectedIndex; break;
+		default          : val = parseInt(val);
+			// check range
+			if (min && (min = parseInt(min)) > val) input.value = val = min; else
+			if (max && (max = parseInt(max)) < val) input.value = val = max;
 		}
-		saveParams(USER_SETTINGS);
+		Dynamic_Style[key] = USER_SETTINGS[key] = val;
+		loryform.classList.add('save-msg');
+		self.updStore();
 	}
 
 	const getNotesList = (max) => {
@@ -3493,8 +3493,14 @@ ready = new Promise(resolve => {
 		<span class="tab-cell" chr="px"><input type="number" id="Code Block Short Size" min="0" step="1"></span>
 	</div>
 	<div class="tab-row">
-		<span class="tab-cell">Стиль подсветки кода:</span>
-		<span class="tab-cell"><select id="Code Highlight Style"></select></span>
+		<span class="tab-cell">Разметка сообщений:</span>
+		<span class="tab-cell">
+			<select id="Markup Mode">
+				<option>Markdown</option>
+				<option>LORCODE</option>
+				<option>Line-Break</option>
+			</select>
+		</span>
 	</div>
 	<div class="tab-row">
 		<span class="tab-cell">Задержка появления / исчезновения превью:</span>
@@ -3557,11 +3563,11 @@ ready = new Promise(resolve => {
 
 	setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
 
-	getHLJSStyle('names').then(names => {
-		const input = loryform.elements['Code Highlight Style'];
-		input.append.apply(input, names.map(text => _setup('option', { text })));
-		input.selectedIndex = USER_SETTINGS['Code Highlight Style'];
-	});
+	//getHLJSStyle('names').then(names => {
+	//	const input = loryform.elements['Code Highlight Style'];
+	//	input.append.apply(input, names.map(text => _setup('option', { text })));
+	//	input.selectedIndex = USER_SETTINGS['Code Highlight Style'];
+	//});
 
 	lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
 	<svg id="loriko-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
@@ -3734,7 +3740,8 @@ ready = new Promise(resolve => {
 	});
 	loryform.querySelector('#reset-setts').addEventListener('click', () => {
 		setValues( defaults );
-		saveParams( defaults );
+		loryform.classList.add('save-msg');
+		self.updStore();
 	});
 	window.addEventListener('storage', ({ key, newValue }) => {
 		switch(key) {
