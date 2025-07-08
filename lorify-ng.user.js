@@ -51,9 +51,19 @@ const Timer = {
 	}
 }
 
-const lory_css = document.getElementById('loryCSS') || _setup('style', { id: 'loryCSS' });
-const code_css = document.getElementById('codeCSS') || _setup('style', { id: 'codeCSS' });
-const lory_js  = document.getElementById('loryJS') || _setup('script', { id: 'loryJS'  });
+// Fast create element with attributes
+const _cnode = (tag='div', attrs={}) => Object.assign(document.createElement(tag), attrs);
+const _svgel = (tag='svg', attrs={}) => {
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', tag);
+	for (const key in attrs)
+		svg.setAttribute(key, attrs[key]);
+	return svg;
+};
+
+const domParsr = new DOMParser();
+const lory_css = document.getElementById('loryCSS') || _cnode('style' , { id: 'loryCSS' });
+const code_css = document.getElementById('codeCSS') || _cnode('style' , { id: 'codeCSS' });
+const lory_js  = document.getElementById('loryJS' ) || _cnode('script', { id: 'loryJS'  });
 
 const Dynamic_Style = (() => {
 
@@ -143,11 +153,16 @@ lory_js.textContent = `
 	var initNextPrevKeys,  initStarPopovers,  fixTimezone;
 	    initNextPrevKeys = initStarPopovers = fixTimezone = _Void;
 
-	var tag_memories_form_setup,  topic_memories_form_setup;
-	    tag_memories_form_setup = topic_memories_form_setup = (a,b,c,d) => {
-			window.dispatchEvent(
-				new CustomEvent('setMemories', { bubbles: true, detail: [a,b,c,d] }) );
-		};
+	const tag_memories_form_setup = (t,c) => {
+		let a = document.getElementById('tagFavAdd'); a.setAttribute('data-mtag', t); a.setAttribute('data-csrf', c);
+		let b = document.getElementById('tagIgnore'); b.setAttribute('data-mtag', t); b.setAttribute('data-csrf', c);
+	};
+	const topic_memories_form_setup = (t,m,n,c) => {
+		let el = document.getElementById(m ? 'memories_button' : 'favs_button');
+		if (t) el.classList.add('selected');
+		el.setAttribute('data-mtag', t);
+		el.setAttribute('data-csrf', c);
+	};
 
 	const $script = function(src, name = '_') {
 		const { _resol, _loads } = $script;
@@ -510,19 +525,15 @@ class TopicNavigation {
 				_jmpTo();
 		});
 
-		let nav_t = document.createElement('div');
-		    nav_t.append(
-				_setup('a', { class: 'page-number prev', href: 'javascript:void(0)', text: '←' }),
-				_setup('a', { class: 'page-number next', href: 'javascript:void(0)', text: '→' })
-			);
-		let nav_b = nav_t.cloneNode(true);
+		this.queue = {};
+		this.pload = _cnode('div', { className: 'page-loader' })
+		this.nav_t = _cnode('div', { className: 'nav', id: 'nav_t' });
+		this.nav_b = _cnode('div', { className: 'nav', id: 'nav_b' });
+		const prev = _cnode('a'  , { className: 'page-number prev', href: 'javascript:;', textContent: '←' });
+		const next = _cnode('a'  , { className: 'page-number next', href: 'javascript:;', textContent: '→' });
 
-		Object.defineProperties(this, {
-			nav_t: { value: _setup(nav_t, { class: 'nav', id: 'nav_t' }), enumerable: true },
-			nav_b: { value: _setup(nav_b, { class: 'nav', id: 'nav_b' }), enumerable: true },
-			pload: { value: _setup('div', { class: 'page-loader' }), enumerable: false },
-			queue: { value: Object.create(null), enumerable: false }
-		});
+		this.nav_t.append( prev, next );
+		this.nav_b.append( prev.cloneNode(true), next.cloneNode(true) );
 	}
 
 	preloadPage(uri = '', pass = 0x00) {
@@ -557,10 +568,10 @@ class TopicNavigation {
 					msg_list = mergeComments(pcont, msg_list, isNew);
 				} else {
 					const comms = document.getElementById('comments');
-					pcont = _setup(pg_comms, {
-						id: 'pcont_'+ num, class: 'page-content hidden', style: undefined
-					});
-					comms.append(pcont);
+					pg_comms.className = 'page-content hidden';
+					pg_comms.id = 'pcont_'+ num;
+					pg_comms.removeAttribute('style');
+					comms.append((pcont = pg_comms));
 				}
 				const ref = workComments(msg_list); doDe();
 				ref.page_num = num,
@@ -658,8 +669,8 @@ class TopicNavigation {
 				page = pidx;
 		} else if (pages_count < nav_count) {
 			for (let i = pages_count; i < nav_count; i++) {
-				nextT.before(_setup('a', { id: `navt_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
-				nextB.before(_setup('a', { id: `navb_${ i }`, class: 'page-number', href: `${ path }/page${ i }#comments`, text: `${ i + 1 }` }));
+				nextT.before(_cnode('a', { id: `navt_${ i }`, className: 'page-number', href: `${ path }/page${ i }#comments`, textContent: `${ i + 1 }` }));
+				nextB.before(_cnode('a', { id: `navb_${ i }`, className: 'page-number', href: `${ path }/page${ i }#comments`, textContent: `${ i + 1 }` }));
 			}
 		}
 		nav_b.hidden = nav_t.hidden = 1 >= (
@@ -908,7 +919,7 @@ const Favicon = {
 		ctx.strokeText(label, fntPos + 1, fntPos + 1);
 		ctx.fillText(label, fntPos, fntPos);
 
-		_setup(icon, { type: 'image/png', rel: 'icon', href: canvas.toDataURL() });
+		icon.type = 'image/png', icon.rel = 'icon', icon.href= canvas.toDataURL();
 	}
 }
 
@@ -937,13 +948,13 @@ const ContentFinder = {
 		for (const code of comment.querySelectorAll('pre > code')) {
 
 			const highlight     = CodeHiglight.apply(code);
-			const shrink_line   = _setup('div', { class: 'shrink-line' });
+			const shrink_line   = _cnode('div', { className: 'shrink-line' });
 			const offset_height = code.offsetHeight;
 			const parent_pre    = code.parentNode;
 
 			let block = parent_pre.parentNode;
 			if (block.classList[0] === 'msg_body') {
-				block = block.insertBefore(_setup('div', { class: 'icode' }), parent_pre);
+				block = block.insertBefore(_cnode('div', { className: 'icode' }), parent_pre);
 				block.append(parent_pre);
 			} else
 			if (block.classList[0] !== 'code')
@@ -1012,9 +1023,9 @@ const ContentFinder = {
 		}
 		el.textContent = time_c;
 		if (full_d)
-			el.append( _setup('span', { class: 'mobile-hide', text: full_d }) );
+			el.append( _cnode('span', { className: 'mobile-hide', textContent: full_d }) );
 		if (short_d)
-			el.append( _setup('span', { class: 'mobile-show', text: short_d }) );
+			el.append( _cnode('span', { className: 'mobile-show', textContent: short_d }) );
 		el.setAttribute('data-format', offs_t);
 		el.classList.add('lory-time');
 	}
@@ -1030,12 +1041,12 @@ const onDOMReady = () => {
 
 	if (!(ContentNode = document.getElementById('lorify_cont'))) {
 		body.appendChild(
-			ContentNode = _setup('div', { id: 'lorify_cont' })
+			ContentNode = _cnode('div', { id: 'lorify_cont' })
 		).appendChild( // add scroll top button
-			_setup('div', { class: 'scroll-nav' })
+			_cnode('div', { className: 'scroll-nav' })
 		).append(
-			_setup('div', { class: 'scroll-btn scroll-up' }),
-			_setup('div', { class: 'scroll-btn scroll-down' })
+			_cnode('div', { className: 'scroll-btn scroll-up' }),
+			_cnode('div', { className: 'scroll-btn scroll-down' })
 		);
 	}
 
@@ -1044,8 +1055,7 @@ const onDOMReady = () => {
 		if (notes)
 			App.setNotes( notes );
 	}
-	for (const fav of body.querySelectorAll('.fav-buttons > a'))
-		fav.href = 'javascript:void(0)';
+	setFavBtns(body.querySelectorAll('.fav-buttons > a'));
 
 	if ('regform' in document.forms) {
 		const user = document.getElementById('loginGreating');
@@ -1067,10 +1077,10 @@ const onDOMReady = () => {
 
 		let bd_rep = body.querySelector('h2 > a[name="rep"], #navPath');
 		if (bd_rep) {
-			bd_rep.append('\n(', _setup('a', {
-				text : 'с цитатой',
+			bd_rep.append('\n(', _cnode('a', {
+				textContent: 'с цитатой',
 				style: 'color: indianred!important;',
-				href : 'javascript:void(0)'
+				href : 'javascript:;'
 			},{
 				click: () => {
 					const [ topid, repid ] = parseReplyUrl(location.search);
@@ -1085,12 +1095,12 @@ const onDOMReady = () => {
 	}
 
 	const realtime = document.getElementById('realtime') || ContentNode.insertBefore(
-	   _setup('div', { id: 'realtime', style: 'display: none;' }), ContentNode.firstElementChild
+		_cnode('div', { id: 'realtime', style: 'display: none;' }), ContentNode.firstElementChild
 	);
 	if(!realtime.childNodes.length) {
 		realtime.append(
 		   document.createElement('span'),
-		  _setup('a', { text: 'Обновить.', class: 'link-rthub', href: path || location.pathname })
+		  _cnode('a', { textContent: 'Обновить.', className: 'link-rthub', href: path || location.pathname })
 		);
 	}
 
@@ -1147,7 +1157,7 @@ const onDOMReady = () => {
 	      infotext = (realtime.nextElementSibling || realtime).textContent;
 
 	const { nav_t, nav_b } = (Navigation = new TopicNavigation);
-	const pcont = _setup('div', { id: 'pcont_'+ Navigation.resetNav(pg_count), class: 'page-content' });
+	const pcont = _cnode('div', { id: 'pcont_'+ Navigation.resetNav(pg_count), className: 'page-content' });
 
 	let lastPageIdx = pg_count - 1;
 	if (lastPageIdx) {
@@ -1246,7 +1256,7 @@ const RealtimeHub = {
 
 		window.addEventListener('message', this);
 		document.getElementById(id) || document.head.appendChild(
-			_setup('script', { id, text: 'const startRealtimeWS = '+
+			_cnode('script', { id, textContent: 'const startRealtimeWS = '+
 				this.start.toString().replace('RealtimeHub.start', 'startRealtimeWS')  +'; startRealtimeWS();'
 			})
 		);
@@ -1373,14 +1383,18 @@ const injectText = (str, nl = false) => {
 	txtArea.selectionStart = txtArea.selectionEnd = 0;
 };
 
-window.addEventListener('setMemories', ({ detail: [m_tag, memories] }) => {
-   switch (Number(memories)) {
-   case 1 : _setup(document.getElementById('memories_button'), { m_tag, onclick: toMemories, title: mem_title['memories'][Number(!m_tag)], class: m_tag ? 'selected' : ''}); break;
-   case 0 : _setup(document.getElementById('favs_button'    ), { m_tag, onclick: toMemories, title: mem_title['favorite'][Number(!m_tag)], class: m_tag ? 'selected' : ''}); break;
-   default: _setup(document.getElementById('tagFavAdd'      ), { m_tag, onclick: toMemories });
-            _setup(document.getElementById('tagIgnore'      ), { m_tag, onclick: toMemories });
-   }
-});
+const setFavBtns = favs => {
+	for (const fav of favs) {
+		let k = Number(!fav.classList.contains('selected'));
+		switch (fav.id) {
+		case 'tagFavAdd':
+		case 'favs_button'    : fav.title = mem_title.favorite[k]; fav.addEventListener('click', toMemories); break;
+		case 'memories_button': fav.title = mem_title.memories[k]; fav.addEventListener('click', toMemories); break;
+		case 'tagIgnore'      : fav.title = mem_title.ignore  [k]; fav.addEventListener('click', toMemories); break;
+		}
+		fav.href = 'javascript:;';
+	}
+}
 
 function locKeyHandler(e) {
 
@@ -1669,7 +1683,7 @@ const mergeComments = (pcont, msg_list, isNew = false) => {
 	return new_list;
 }
 
-const workComments = (msg_list, mouse = mousePreviewHandler) => {
+const workComments = (msg_list, has_mouse = !TOUCH_DEVICE) => {
 
 	let ref_map  = Object.create(null),
 	    ref_list = [];
@@ -1686,16 +1700,21 @@ const workComments = (msg_list, mouse = mousePreviewHandler) => {
 			// Create new response-map for this comment
 			ref_list.push({ cid, name: (user ? user.innerText : 'anon'), reid });
 			// Write special attributes
-			_setup(reply, { class: 'link-pref', text: text.substr(off).trim() }, mouse);
-			reply.nextSibling.textContent = text.substr(0, off);
+			reply.className = 'link-pref';
+			reply.textContent = text.substring(off).trim();
+			reply.nextSibling.textContent = text.substring(0, off);
 		}
 		let refmap = msg.querySelector('.ref-map');
 		if(!refmap) {
-			refmap = document.createElement('span');
+			refmap = _cnode('span', { className: 'ref-map' });
 			handleReplyLinks(msg, cid, refmap);
 			ContentFinder.check(msg);
 		}
-		ref_map[cid] = _setup(refmap, { class: 'ref-map' }, mouse);
+		ref_map[cid] = refmap;
+		if (has_mouse) {
+			msg.addEventListener('mouseover', linksPreviewHandler);
+			msg.addEventListener('mouseout' , linksPreviewHandler);
+		}
 	}
 	if (msg_list.length > 1 && ref_list.length)
 		ref_list = addRefLinks(ref_list, ref_map);
@@ -1728,10 +1747,10 @@ const addRefLinks = (ref_list, ref_map) => {
 			unused.push(ref);
 			continue;
 		}
-		let lnk = _setup('a', {
-			class: `link-pref${name === TopicStarter ? ' ts' : ''}`,
+		let lnk = _cnode('a', {
+			className: `link-pref${name === TopicStarter ? ' ts' : ''}`,
 			href: `${path}?cid=${cid}`,
-			text: name
+			textContent: name
 		});
 		map.append( lnk );
 		map.parentNode.classList.remove('hidden');
@@ -1741,7 +1760,7 @@ const addRefLinks = (ref_list, ref_map) => {
 
 const getPageContent = (html) => {
 	// Create new DOM tree
-	const newdoc = new DOMParser().parseFromString(html, 'text/html'),
+	const newdoc = domParsr.parseFromString(html, 'text/html'),
 	      events = newdoc.getElementById('main_events_count'),
 	     top_msg = newdoc.getElementById('topic-'+ LOR.topic),
 	    pg_comms = newdoc.getElementById('comments'),
@@ -1779,7 +1798,7 @@ const updTopicContent = (new_top, t_info = '') => {
 	// update info line
 	if (t_info) {
 		let info = msgs.querySelector('#comments ~ .infoblock') ||
-		           msgs.appendChild( _setup('div', { class: 'infoblock' }) );
+		           msgs.appendChild( _cnode('div', { className: 'infoblock' }) );
 		info.textContent = t_info;
 		// stop watch if topic deleted
 		if (t_info.includes('Тема удалена'))
@@ -1857,20 +1876,17 @@ class CentralPicture {
 		this.posX = 0; this.angle = 0;
 		this.posY = 0; this.scale = 1;
 
-		const image = _setup('img', {
-			class: 'central-pic-img'
-		}, { load: this,
-			error: ({ target: { style } }) => {
-				style.visibility = 'visible';
-			}
-		});
+		const image  = _cnode('img', { className: 'central-pic-img' });
+		const overly = _cnode('div', { className: 'central-pic-overlay'});
+		const rotsvg = _svgel('svg', { 'class'  : 'central-pic-rotate', 'viewBox': '0 0 32 32' });
 
-		const overly = _setup('div', {
-			class : 'central-pic-overlay',
-			html  : `
-				<svg class="central-pic-rotate" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-					<path class="svg-circle-arrow" d="m31 20c-0.6 4.5-3.7 8.6-8 10.5-2 1.25-5 1.6-7.7 1.5l-1.7-0.15c-2.5-0.6-5-1.7-7-3.5-4.3-3.6-6-10-4-15 1.6-4.55 6-8.1 11-9 1.2-0.25 2.45-0.3 3.7-0.25l0.6-4.1h0.1c2.1 2.7 4.15 5.34 6.3 8-2.8 2-5.6 4.1-8.4 6 0.2-1.4 0.4-2.7 0.56-4.1-2.5-0.025-5.1 1.1-6.6 3.1-2.5 2.75-2.5 7.1-0.13 10 1.8 2.5 5.25 3.6 8.4 3 2.156-0.3 4.1-1.6 5.3-3.4 0.8-1 1.1-2.25 1.5-3.4 2 0.25 4 0.5 7 0.8l0.1-0.05z"/>
-				</svg>`
+		overly.append( rotsvg, image );
+		rotsvg.append(
+			_svgel('path', { 'class': 'svg-circle-arrow', 'd': 'M 31,20 C 28.9,28 22.8,32.2 15.3,32 12,31.8 8.6,30 6.6,28.3 c -4.3,-3.6 -6,-10 -4,-15 1.6,-4.55 6,-8 11,-8.9 C 14.8,4.1 16.2,4 17.4,4 L 18,0 24.5,8 16,14 16.5,10 c -2.5,0 -5,1 -6.5,3 -2.5,2.8 -2.4,7.1 0,10 1.8,2.5 5,3.6 8,3 4,-1 5.8,-3.4 7,-6.8 z' })
+		);
+		image.addEventListener('load', this);
+		image.addEventListener('error', e => {
+			e.target.style.visibility = 'visible';
 		});
 
 		const cleanUp = () => {
@@ -1984,10 +2000,8 @@ class CentralPicture {
 			});
 			overly.addEventListener('click', handler);
 		}
-		Object.defineProperties(this, {
-			_Box: { value: overly },
-			_Img: { value: overly.appendChild( image ) }
-		});
+		this._Img = image;
+		this._Box = overly;
 	}
 	handleEvent() {
 
@@ -2049,8 +2063,8 @@ const showReplyThread = (uri, tid, cid) => {
 	if (exis)
 		return ContentNode.append(exis);
 
-	const msgcol = _setup('div', { class: 'page-loader' });
-	const thread = _setup('div', { class: 'reply-thread', id });
+	const msgcol = _cnode('div', { className: 'page-loader' });
+	const thread = _cnode('div', { className: 'reply-thread', id });
 
 	getDataResponse(uri, html => {
 		const { msg_list } = getPageContent(html);
@@ -2069,7 +2083,7 @@ const addThreadHandler = (thread, msgcol) => {
 	const _start = TOUCH_DEVICE ? 'touchstart' : 'mouseover';
 	const _end   = TOUCH_DEVICE ? 'touchend'   : 'mouseout';
 
-	const fle = _setup('div', { class: 'msg fake-flee' });
+	const fle = _cnode('div', { className: 'msg fake-flee' });
 	msgcol.addEventListener('animationstart', (e) => {
 		if (e.animationName === 'showIn' && thread.scrollTopMax) {
 			thread.style.touchAction = null;
@@ -2177,26 +2191,46 @@ const addThreadHandler = (thread, msgcol) => {
 	});
 }
 
-const mousePreviewHandler = !TOUCH_DEVICE && {
+/**
+ * Close Comment Preview by moving pointer away
+ * @param {MouseEvent} e
+ */
+const closePreviewHandler = ({ type, target: preview }) => {
+	let cid = preview.id.substring('preview-'.length);
+	switch(type) { // remove all preview's
+	case 'mouseleave': Timer.set('Close Preview', clearPreviews); break;
+	case 'mouseenter': Timer.set('Close Preview', () => clearPreviews(preview));
+		// remove all preview's after this one
+		Timer.delete(cid);
+	}
+};
 
-	mouseover: e => {
-		const anc = e.target;
-		if (anc.classList[0] === 'link-pref') {
-			// Get comment's ID from search attribute
-			const cid = anc.search.substring('?cid='.length);
+/**
+ * Open/Close Comment Preview by over/out pointer on anchor 
+ * @param {MouseEvent} e 
+ */
+const linksPreviewHandler = e => {
+	const anc = e.target;
+	if (anc.classList[0] === 'link-pref') {
+		// Get comment's ID from search attribute
+		const cid = anc.search.substring('?cid='.length);
+		switch(e.type) {
+		case 'mouseout':
+			Timer.drops = 1;
+			Timer.delete('Open Preview');
+			Timer.set(cid, () => {
+				let preview = document.getElementById('preview-'+cid);
+				if (preview) preview.remove();
+			}, USER_SETTINGS['Delay Close Preview']);
+			break;
+		case 'mouseover':
 			Timer.delete(cid);
 			Timer.set('Open Preview', () => {
 				Timer.drops = 2;
 				showPreview(anc, cid);
 			});
-			e.preventDefault();
 		}
-	},
-	mouseout: e => {
-		if (e.target.classList[0] === 'link-pref') {
-			Timer.drops = 1;
-			Timer.delete('Open Preview');
-		}
+		e.preventDefault();
 	}
 };
 
@@ -2232,18 +2266,15 @@ const showPreview = (anc, cid) => {
 	let preview = document.getElementById('preview-'+ cid);
 	// check existing preview by ID
 	if (!preview) {
-		 preview = _setup('article', {
+		 preview = _cnode('article', {
 			id: 'preview-'+ cid,
-			class: 'msg preview',
+			className: 'msg preview',
 			style: 'border: 1px solid grey;'
-		}, !TOUCH_DEVICE ? Object.assign({
-			// remove all preview's
-			mouseleave: () => { Timer.set('Close Preview', clearPreviews) },
-			mouseenter: () => { Timer.set('Close Preview', () => clearPreviews(preview));
-				// remove all preview's after this one
-				Timer.delete(cid);
-			}
-		}, mousePreviewHandler) : null);
+		});
+		preview.addEventListener('mouseover' , linksPreviewHandler);
+		preview.addEventListener('mouseout'  , linksPreviewHandler);
+		preview.addEventListener('mouseenter', closePreviewHandler);
+		preview.addEventListener('mouseleave', closePreviewHandler);
 		// get comment from page or request from server
 		let msg = document.getElementById('comment-'+ cid);
 		if (msg) {
@@ -2268,10 +2299,6 @@ const showPreview = (anc, cid) => {
 		preview.classList.add('show-in');
 	else
 		preview.classList.remove('show-in');
-	anc.onmouseleave = () => {
-		// remove this preview
-		Timer.set(cid, () => preview.remove(), USER_SETTINGS['Delay Close Preview']);
-	};
 	popupPreview( preview, pos );
 }
 
@@ -2309,35 +2336,6 @@ function correctBlockCode (max_h, parent) {
 		else
 			s.classList.remove('hidden');
 	}
-}
-
-function _setup(el, attrs, events) {
-
-	if (!el)
-		return '';
-
-	switch (typeof el) {
-		case 'string':
-			el = document.createElement(el);
-		case 'object':
-			for (const key in attrs) {
-				attrs[key] === undefined ? el.removeAttribute(key) :
-				key === 'class'? el.className   = attrs[key] :
-				key === 'html' ? el.innerHTML   = attrs[key] :
-				key === 'text' ? el.textContent = attrs[key] :
-				key in el    && (el[key]        = attrs[key] ) == attrs[key]
-							 &&  el[key]       == attrs[key] || el.setAttribute(key, attrs[key]);
-			}
-			for (const name in events) {
-				if (!events[name])
-					continue;
-				if (Array.isArray(events[name]))
-					events[name].forEach(handler => el.addEventListener(name, handler, false));
-				else
-					el.addEventListener(name, events[name], false);
-			}
-	}
-	return el;
 }
 
 const lorifyUrl = (path, page, lastmod, cid) => (path +
@@ -2423,7 +2421,7 @@ const handleRegForm = form => {
 
 	const btnClear = (ok = true, str = '') => {
 		const emsg = form.querySelector('.msg-error') || form.insertBefore(
-			_setup('label', { class: 'msg-error' }), form.firstElementChild
+			_cnode('label', { className: 'msg-error' }), form.firstElementChild
 		);
 		emsg.hidden = ok, emsg.textContent = str;
 		snd.disabled = false, cel.onclick = null;
@@ -2467,14 +2465,17 @@ const handleResetForm = form => {
 	}
 }
 
+/**
+ * @param {HTMLFormElement} form
+*/
 function handleCommentForm(form) {
 
 	const URI_ACTION   = form.action.substring(form.action.lastIndexOf('/'));
 	const TEXT_AREA    = form.elements.msg;
 	const TITLE_AREA   = form.elements.title || { value: '' };
 	const FACT_PANNEL  = form.querySelector('.form-actions');
-	const NODE_PREVIEW = _setup('div', { id: 'commentPreview' });
-	const MARKUP_PANEL = _setup('div', { id: 'markup-panel', class: 'lorcode'});
+	const NODE_PREVIEW = _cnode('div', { id: 'commentPreview' });
+	const MARKUP_PANEL = _cnode('div', { id: 'markup-panel' });
 
 	for (let attrs of [
 		{ lorcode: 'b'  },
@@ -2493,14 +2494,16 @@ function handleCommentForm(form) {
 		{ lorcode: 'quote' , markdown: '>'  },
 		{ lorcode: 'url'   , markdown: 'http://'}
 	]) {
-		attrs.type  = 'button';
-		attrs.class = 'btn btn-default';
-		MARKUP_PANEL.append( _setup('button', attrs) )
+		const btn = _cnode('button', { type: 'button', className: 'btn btn-default' });
+		if ('markdown' in attrs)
+			btn.setAttribute('markdown', attrs.markdown);
+		btn.setAttribute('lorcode', attrs.lorcode);
+		MARKUP_PANEL.append(btn);
 	}
 
 	NODE_PREVIEW.append(
-		_setup('span', { class: 'error' }),
-		_setup('span', { class: 'msg_body' })
+		_cnode('span', { className: 'error' }),
+		_cnode('span', { className: 'msg_body' })
 	);
 
 	MARKUP_PANEL.addEventListener('click', e => {
@@ -2518,22 +2521,26 @@ function handleCommentForm(form) {
 			}
 		}
 	});
-	TEXT_AREA.parentNode.firstElementChild.appendChild(MARKUP_PANEL);
+	TEXT_AREA.parentNode.firstElementChild.append(MARKUP_PANEL);
 
-	if (!form.elements['cancel']) {
-		form.elements['preview'].after(
-			'\n', _setup('button', { type: 'button', class: 'btn btn-default', id: 'cancel', text: 'Отмена' })
-		)
-	} else
-		_setup(form.elements['cancel'], { type: 'button', name: void 0, id:  'cancel' });
+	let btn_cancel = form.elements.cancel;
+	if(!btn_cancel ) {
+		form.elements.preview.after(
+			'\n', (btn_cancel = document.createElement('button')) );
+	}
+	btn_cancel.className = 'btn btn-default';
+	btn_cancel.textContent = 'Отмена';
+	btn_cancel.type = 'button';
+	btn_cancel.name = 'cancel';
 
 	for (const submit_btn of FACT_PANNEL.querySelectorAll('[type="submit"]')) {
-		_setup(submit_btn, { type: 'button', name: void 0, id: submit_btn.name, 'do-upload': '' });
+		submit_btn.type = 'button';
+		submit_btn.setAttribute('do-upload','');
 	}
 
 	const render_preview = html => {
 
-		const doc = new DOMParser().parseFromString(html, 'text/html'),
+		const doc = domParsr.parseFromString(html, 'text/html'),
 		      msg = NODE_PREVIEW.children[1];
 		      msg.textContent = '';
 
@@ -2683,7 +2690,7 @@ function handleCommentForm(form) {
 
 		'do_cancel': () => {
 
-			if (form.elements['cancel'].classList.contains('btn-danger')) {
+			if (form.elements.cancel.classList.contains('btn-danger')) {
 				if (doAction.do_abort)
 					doAction.do_abort();
 			} else {
@@ -2698,7 +2705,7 @@ function handleCommentForm(form) {
 	TEXT_AREA.addEventListener('click', ({ target }) => target.classList.remove('select-break'));
 	FACT_PANNEL.addEventListener('click', e => {
 
-		const { type, id } = e.target;
+		const { type, name:id } = e.target;
 
 		if (type === 'button') {
 			if (`do_${id}` in doAction) {
@@ -2735,33 +2742,31 @@ function handleCommentForm(form) {
 	}
 }
 
-function handleTagsInput(TAGS_INPUT) {
+function handleTagsInput(tagInput) {
 
 	const isMainT = TOUCH_DEVICE ? e => e.touches.length === 1 : e => e.button === 0;
-	const tagList = _setup('div', { class: 'tag-list infoblock' }, {
-		click: e => e.preventDefault()
-	});
+	const tagList = _cnode('div', { className: 'tag-list infoblock' });
 
+	tagList.addEventListener('click', e => e.preventDefault());
 	tagList.addEventListener(TOUCH_DEVICE ? 'touchstart' : 'mousedown', e => {
 		if (isMainT(e) && e.target.classList[0] === 'tag') {
-			const val = TAGS_INPUT.value,
+			const val = tagInput.value,
 				  idx = val.lastIndexOf(',') + 1;
-			TAGS_INPUT.value = (idx ? val.substring(0, idx).trim() +' ' : '') + e.target.innerText +', ';
+			tagInput.value = (idx ? val.substring(0, idx).trim() +' ' : '') + e.target.innerText +', ';
 		}
 	});
 
 	let keywd = ' ';
-	let focus = false;
 
 	const handleList = () => {
 
-		const last = TAGS_INPUT.value.lastIndexOf(',') + 1,
-			  term = TAGS_INPUT.value.substring(last).trim();
-		
-		tagList.style.left = last ? getCaretCoordinates(TAGS_INPUT, last).left +'px' : '0';
+		const last = tagInput.value.lastIndexOf(',') + 1,
+			  term = tagInput.value.substring(last).trim();
+
+		tagList.style.left = last ? getCaretCoordinates(tagInput, last).left +'px' : '0';
 		
 		if (keywd === term) {
-			focus && TAGS_INPUT.after(tagList);
+			tagList.hidden = false;
 		}
 		else if (term) {
 			getDataResponse(`/tags?term=${(keywd = term)}`, response => {
@@ -2773,28 +2778,29 @@ function handleTagsInput(TAGS_INPUT) {
 					const item = tagList.children[i] || tagList.appendChild(
 						document.createElement('a')
 					);
-					_setup(item, { class: 'tag', href: '/tag/'+ text, text });
+					item.className = 'tag';
+					item.href = `/tag/${text}`;
+					item.textContent = text;
 				}
 				while (i < tagList.children.length) {
 					tagList.children[i++].className = 'hidden';
 				}
-				focus && TAGS_INPUT.after(tagList);
+				tagList.hidden = false;
 			});
 		}
 	}
-	_setup(TAGS_INPUT, { autocomplete: 'off' }, {
-		'focus': () => {
-			focus = true;
-			handleList();
-		},
-		'input': () => {
-			tagList.remove();
-			Timer.set('Search Tags', handleList, 800);
-		},
-		'blur' : () => {
-			focus = false;
-			tagList.remove();
-		}
+	tagInput.autocomplete = 'off';
+	tagInput.addEventListener('focus', () => {
+		tagList.hidden = true;
+		tagInput.after(tagList);
+		handleList();
+	});
+	tagInput.addEventListener('input', () => {
+		tagList.hidden = true;
+		Timer.set('Search Tags', handleList, 800);
+	});
+	tagInput.addEventListener('blur', () => {
+		tagList.remove();
 	});
 }
 
@@ -2890,7 +2896,6 @@ function getCaretCoordinates() {
 	})(arguments[0], arguments[1]);
 }
 
-const lor_token = document.cookie.match(/(?:CSRF_TOKEN="?|$)([^;"]*)/)[1];
 const mem_title = Object.freeze({
 	favorite : ['Убрать из избранного' , 'Добавить в избранное'],
 	ignore   : ['Cнять игнор'          , 'Добавить в игнор'    ],
@@ -2900,22 +2905,23 @@ function toMemories(e) {
 
 	e.preventDefault();
 
-	if (this.disabled || !lor_token)
+	if (this.disabled)
 		return;
 	// приостановка действий по клику на кнопку до окончания текущего запроса
 	this.disabled = true;
 
-	const m_tag  = this.getAttribute('m_tag');
+	const token  = this.getAttribute('data-csrf');
+	const m_tag  = this.getAttribute('data-mtag');
 	const f_data = new FormData;
 
-	f_data.append('csrf', lor_token);
+	f_data.append('csrf', token);
 
 	let watch = false, uri = '', name = 'favorite', cntr = null;
 	let to_del = Number(this.classList.contains('selected'));
 
 	switch (this.id) {
 	case 'tagIgnore': name = 'ignore';
-	case 'tagFavAdd': 
+	case 'tagFavAdd':
 		f_data.append(to_del ? 'del' : 'add', '');
 		f_data.append('tagName', m_tag);
 		uri = `/user-filter/${name}-tag`;
@@ -2944,10 +2950,11 @@ function toMemories(e) {
 		if (errors)
 			throw errors.join(', ');
 		if (id)
-			this.setAttribute('m_tag', id);
+			this.setAttribute('data-mtag', id);
 		cntr.textContent = count;
 		this.title = mem_title[name][to_del];
-		this.classList[ to_del ? 'remove' : 'add' ]('selected');
+		if (to_del) this.classList.remove('selected');
+		else        this.classList.add   ('selected');
 	});
 }
 
@@ -2987,17 +2994,17 @@ const preferReactions = (form) => {
 	let show = form.querySelector('.apply-reactions');
 
 	if (!user)
-	     user = _setup('span', { class: 'reaction reaction-show-list', text: '?' });
+	     user = _cnode('span', { className: 'reaction reaction-show-list', textContent: '?' });
 	if (!hide) {
 		form.append(
-			 user,  _setup('span', { class: 'reaction reaction-show', text: '\u00BB' }),
-			(hide = _setup('span', { class: 'zero-reactions-show' }))
+			 user,  _cnode('span', { className: 'reaction reaction-show', textContent: '\u00BB' }),
+			(hide = _cnode('span', { className: 'zero-reactions-show' }))
 		);
 		form.parentNode.classList.remove('zero-reactions-show');
 	}
 	if (!show) {
 		 show = form.insertBefore(
-			_setup('span', { class: 'apply-reactions' }), user);
+			_cnode('span', { className: 'apply-reactions' }), user);
 		for (const r of form.querySelectorAll('.reaction-count'))
 			(Number(r.innerText) > 0 ? show : hide).append(r.parentNode);
 	}
@@ -3051,7 +3058,7 @@ function onReactionClick(e) {
 		break;
 	case 'reaction-show-list':
 		let rlist = parent.querySelector('.reactions-list') || parent.insertBefore(
-			_setup('pre', { class: 'reactions-list msg hidden', style: 'border: 1px solid darkslategrey;' }), btn
+			_cnode('pre', { className: 'reactions-list msg hidden', style: 'border: 1px solid darkslategrey;' }), btn
 		);
 		if (!rlist.classList.toggle('hidden')) {
 			let parts = [];
@@ -3106,11 +3113,11 @@ function handleReplyLinks(msg, cid, refmap = '') {
 		}
 	}
 	if (no_ref && refmap) {
-		const a = _setup('a' , { class: 'link-thread', text: '\nОтветы', href: `${path}/thread/${cid}#comments` }),
-		     li = _setup('li', { class: 'hidden' });
+		const a = _cnode('a' , { className: 'link-thread', textContent: '\nОтветы', href: `${path}/thread/${cid}#comments` }),
+		     li = _cnode('li', { className: 'hidden' });
 		if ( !self_p ) {
 			(msg.querySelector('.reply > ul') || msg.lastElementChild.lastElementChild.appendChild(
-				_setup('ul', { class: 'reply' })
+				_cnode('ul', { className: 'reply' })
 			)).append(li);
 		} else
 			self_p.before(li);
@@ -3341,7 +3348,12 @@ function WebExt() {
 
 function UserScript() {
 
-	let notes, ready, lorypanel, lorylist, loryform, granted = false;
+	let notes = Number(localStorage.getItem('l0rNG-notes')), ready, lorylist, granted = false;
+
+	const loryform = _cnode('form', { id: 'loryform', className: 'tab-gt' });
+	const lorypanel = _cnode('div', { id: 'loryicon', className: 'lorify-settings-panel' });
+
+	const defaults = Object.assign({}, USER_SETTINGS);
 
 	const self = {
 		checkNow: () => void 0,
@@ -3403,11 +3415,11 @@ function UserScript() {
 		}
 	}
 /**
- * @param {HTMLInputElement|HTMLSelectElement} el 
+ * @param {HTMLInputElement|HTMLSelectElement} input 
  */
 	const onValueChange = input => {
 		let { min, max, value:val, id:key } = input;
-		switch (el.type) {
+		switch (input.type) {
 		case 'checkbox'  : val = input.checked; break;
 		case 'select-one': val = input.selectedIndex; break;
 		default          : val = parseInt(val);
@@ -3417,6 +3429,7 @@ function UserScript() {
 		}
 		Dynamic_Style[key] = USER_SETTINGS[key] = val;
 		loryform.classList.add('save-msg');
+		Timer.set('Apply Setts', () => loryform.classList.remove('save-msg'), 2000);
 		self.updStore();
 	}
 
@@ -3424,9 +3437,9 @@ function UserScript() {
 		let empty = true;
 
 		if(!lorylist) {
-			lorylist = _setup('div', { class: 'lorify-notes-panel'});
+			lorylist = _cnode('div', { className: 'lorify-notes-panel'});
 			lorylist.append(
-				_setup('label', { class: 'note-clear lory-btn', for: 'do_reset', text: 'Очистить уведомления' })
+				_cnode('label', { className: 'note-clear lory-btn', htmlFor: 'do_reset', textContent: 'Очистить уведомления' })
 			);
 		} else {
 			let list = lorylist.children.notifications;
@@ -3435,7 +3448,7 @@ function UserScript() {
 		}
 		if (max > 0 && empty) {
 			getDataResponse('/notifications', html => {
-				const doc = new DOMParser().parseFromString(html, 'text/html'),
+				const doc = domParsr.parseFromString(html, 'text/html'),
 					  tab = doc.querySelector('.notifications'),
 					new_rf= doc.forms.reset_form;
 				if (new_rf) {
@@ -3480,10 +3493,7 @@ function UserScript() {
 
 ready = new Promise(resolve => {
 
-	notes = Number(localStorage.getItem('l0rNG-notes'));
-	const defaults = Object.assign({}, USER_SETTINGS);
-
-	loryform = _setup('form', { id: 'loryform', class: 'tab-gt', html: `
+	const form_doc = domParsr.parseFromString(`
 	<div class="tab-row">
 		<span class="tab-cell">Автоподгрузка комментариев:</span>
 		<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
@@ -3544,15 +3554,17 @@ ready = new Promise(resolve => {
 		<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
 			<button type="button" id="reset-setts" title="вернуть настройки по умолчанию">сброс</button>
 		</span>
-	</div>`}, {
-		animationend: () => {
-			loryform.classList.remove('save-msg');
-		},
-		change: ({ target }) => {
+	</div>`, 'text/html');
+
+	const reset_btn = form_doc.getElementById('reset-setts');
+
+	loryform.append( ...form_doc.body.children );
+	loryform.addEventListener('change', ({ target }) => {
 			if (!target.hasAttribute('input-hold'))
 				onValueChange(target);
-		},
-		input : ({ target }) => {
+	});
+	loryform.addEventListener('input', ({ target }) => {
+		{
 			target.setAttribute('input-hold','');
 			Timer.set('Settings on Changed', () => {
 				target.removeAttribute('input-hold');
@@ -3563,13 +3575,7 @@ ready = new Promise(resolve => {
 
 	setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
 
-	//getHLJSStyle('names').then(names => {
-	//	const input = loryform.elements['Code Highlight Style'];
-	//	input.append.apply(input, names.map(text => _setup('option', { text })));
-	//	input.selectedIndex = USER_SETTINGS['Code Highlight Style'];
-	//});
-
-	lorypanel = _setup('div', { class: 'lorify-settings-panel', html: `
+	const panel_doc = domParsr.parseFromString(`
 	<svg id="loriko-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 	  <path id="loriko-belly" fill="snow" d="m14.2 8 9.4-3.2 10.2 2.8 3.7 15-1.9 12.8-6.4 6-11 .2-5.6-5.5-2.5-10Z"/>
 	  <path id="loriko-body" fill="#2a1725" d="M8.8 31.1c.5 3.7 3 7.1 5.6 9.7-1.7 0-3.3 1.3-4.1 2.2-1 1.1 0 1.4 2 1.4 0 1.4.4 1 2.3 1.4 0 2 2.4.5 5.5-1.4a89 89 0 0 1 9-.1c2.7 2.6 4.4 3.2 4.7 1.2 2.5.4 2.6-.3 2.8-2 5 2 .8-3.1-2.6-3.2a16 16 0 0 0 5-9c1.2.5 8.1 3.3 9 1.1.3-.8-.8-2-1.3-2.7-1.5-2.1-6.3-5.3-7.3-7.7-1.7-4.2-1.3-8.8-2.8-13-2.3-6.3-6-9-12.6-9-6.7 0-9.6 2.6-12 9-1.4 4-1.4 8.3-3 12.5-1 2.4-6.2 6.1-7.7 8.2-.5.6-1.6 1.9-1.2 2.7.8 2.2 1.9 1 3.2.5m15-26C21 6.8 22 9.2 24 9.2c1 0 2.1-1.3 3-1.8a5 5 0 0 1 6 1.1c3 3.5 1 7.3 1.4 11.2.2 2 1.5 3.9 1.6 6 .6 7.3-2.5 13.8-10 14.7-8 .8-14-3.7-14.3-12-.1-3 1.4-5.5 1.7-8.3.4-5-2.1-12.3 5.6-13"/>
@@ -3708,25 +3714,28 @@ ready = new Promise(resolve => {
 		#loginGreating, #topProfile { margin-right: 60px!important; }
 		#reset-setts, #loryform:before { position: absolute; right: 0; }
 		#loryform:before {
-			-webkit-animation: 2s ease-in 2 alternate showIn;
-			animation: 2s ease-in 2 alternate showIn;
-			color: #d25555;
-			background-color: white;
-			left: 0; top: 0;
-			z-index: 9;
-		}
-		.save-msg:before {
+			transition: top 1s ease-in;
+			color: white;
+			background-color: #d25555;
+			left: 0; top: -100%;
+			z-index: 1;
 			content: 'Настройки сохранены.';
 			padding: 15px 0;
 			text-align: center;
+		}
+		#loryform.save-msg:before {
+			top: 0;
 		}
 		@media screen and (max-width: 570px) {
 			#loryform, .lorify-notes-panel { right: 0; }
 			#lorynotify.pushed { border-radius: 0 0 5px 5px; padding: 2px 6px; }
 			#loriko-svg { width: 28px; margin: 1px; }
 		}
-	</style>`}, {
-		click: e => {
+	</style>`, 'text/html');
+
+	lorypanel.append( ...panel_doc.body.children );
+	lorypanel.addEventListener('click', e => {
+		{
 			const btn = e.target,
 			   pannel = btn.id === 'lorynotify' ? getNotesList(notes) :
 			            btn.id === 'lorytoggle' ? loryform : null;
@@ -3738,7 +3747,8 @@ ready = new Promise(resolve => {
 			}
 		}
 	});
-	loryform.querySelector('#reset-setts').addEventListener('click', () => {
+	reset_btn.addEventListener('click', () => {
+		Timer.set('Apply Setts', () => loryform.classList.remove('save-msg'), 2000);
 		setValues( defaults );
 		loryform.classList.add('save-msg');
 		self.updStore();
