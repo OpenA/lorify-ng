@@ -96,11 +96,10 @@ const Dynamic_Style = (() => {
 		border-radius: 15px 0 0 0;
 		background: rgba(0,0,0,.5);
 		text-align: center;
-		color: white;
 		cursor: pointer;
 		opacity: .5;
 	}
-	.shrink-line:hover            { opacity: 1; }
+	.shrink-line:before           { color: white!important; }
 	.shrink-line:before           { content: 'Свернуть';   }
 	.cutted > .shrink-line:before { content: 'Развернуть'; }
 	.cutted,`;
@@ -134,7 +133,6 @@ const Dynamic_Style = (() => {
 		},
 		set 'Code Highlight Style' (v) {
 			_lc_.textContent = getHLJSStyle(v).css
-				.replace(/(;|})/g, '!important$1')
 				.replace(/(\.lc code)/, '.lc.cutted > .shrink-line:after,.lc:not(.cutted) > .shrink-line:before,$1')
 				.replace(/(\.lc \.string)/, '.lc.cutted > .shrink-line:before,.lc:not(.cutted) > .shrink-line:after,$1');
 		},
@@ -323,11 +321,24 @@ lory_css.textContent = `
 		right: 15px;
 		bottom: 15px;
 		overflow: hidden;
-		opacity: .5;
 	}
-	.scroll-nav:hover {
-		opacity: .8;
+	.select-lc:before { content: "#S"; }
+	.select-lc.pinned { z-index: 1; }
+	.select-lc {
+		position: absolute;
+		top: 0; right: 0;
+		padding: 6px 9px;
+		border-radius: 0 0 0 10px;
+		background: rgba(0,0,0,.5);
+		text-align: center;
+		color: white;
+		cursor: pointer;
+		font: bolder 1.2em serif;
 	}
+	.select-lc:not(.pinned) { visibility: hidden; }
+	.lc:hover > .select-lc { visibility: visible; }
+	.select-lc, .scroll-nav { opacity: .5; }
+	.select-lc:hover, .scroll-nav:hover, .shrink-line:hover { opacity: 1; }
 	.scroll-up:before   { transform: rotate(90deg); }
 	.scroll-down:before { transform: rotate(-90deg); }
 	.scroll-btn {
@@ -429,12 +440,17 @@ lory_css.textContent = `
 	.central-pic-rotate:hover .svg-circle-arrow {
 		fill: #777;
 	}
-	.tag-list {
-		max-height: 120px;
+	.code-style-item.i-act:before { content: " ◯ "; }
+	.code-style-item.i-act { background-color: #424343; color: thistle; }
+	.code-style-item:hover { background-color: #848080; }
+	.code-styles-list      { background-color: #353333; color: white; }
+	.code-styles-list, .tag-list {
+		max-height: 180px;
 		overflow-y: auto;
 		position: absolute;
 	}
-	.tag-list > .tag {
+	.code-style-item, .tag-list > .tag {
+		cursor: pointer;
 		display: list-item;
 		padding: 4px 1em;
 		list-style: none;
@@ -799,6 +815,23 @@ class TopicNavigation {
 			} else
 				toggleForm(parent, tid, cid, !alter);
 			break;
+		case 'select-lc':
+			if (aClass.toggle('pinned')) {
+				const i = USER_SETTINGS['Code Highlight Style'];
+				const { style, children } = ContentFinder.code_styles_list;
+				style.right = `${window.innerWidth - parent.offsetLeft - parent.offsetWidth}px`;
+				style.top   = `${parent.offsetTop}px`;
+				document.body.appendChild(ContentFinder.code_styles_list).scroll({
+					top: children[i].offsetTop - 28
+				});
+				break;
+			}
+		case 'code-style-item':
+			for(let lc of document.body.querySelectorAll('.select-lc.pinned'))
+				lc.classList.remove('pinned');
+			ContentFinder.code_styles_list.remove();
+			break;
+		case  'topic-image':
 		case 'medium-image': alter = false;
 		case   'link-image':
 			if (USER_SETTINGS['Picture Viewer'] > alter) {
@@ -925,12 +958,10 @@ const Favicon = {
 
 const ContentFinder = {
 
-	get CodeHiglight () {
-		const hl_engine = new HighlightJS({
-			classPrefix: '' /*, noHighlightRe: /(!^)/*/
-		});
-		Object.defineProperty(this, 'CodeHiglight', { value: hl_engine })
-		return hl_engine;
+	get HLJS_API () {
+		const hljs = new HighlightJS({ classPrefix: '' });
+		Object.defineProperty(this, 'HLJS_API', { value: hljs });
+		return hljs;
 	},
 
 	get IMAGE_LINKS () {
@@ -939,38 +970,87 @@ const ContentFinder = {
 		return img_links;
 	},
 
-	check: function(comment) {
+	get code_styles_list() {
+		const clist = _cnode('div', { className: 'code-styles-list' });
+		clist.onpointerout  = //=>
+		clist.onpointerdown = //=>
+		clist.onpointerover = e => {
+			const el = e.target;
+			let i = el.idxValue, o = USER_SETTINGS['Code Highlight Style'];
+			if ( clist === el || i === o) return;
+			if (e.type === 'pointerout' ) { i = o; } else
+			if (e.type === 'pointerdown') {
+				USER_SETTINGS['Code Highlight Style'] = i;
+				App.updStore({'Code Highlight Style': i });
+				for(const it of clist.children)
+					it.classList.remove('i-act');
+				el.classList.add('i-act');
+			}
+			Dynamic_Style['Code Highlight Style'] = i;
+		};
+		// add items from style names list 
+		clist.append( ...getHLJSStyle().map(({name}, i ) => _cnode('div', {
+			className: `code-style-item${i === USER_SETTINGS['Code Highlight Style'] ? ' i-act' : ''}`,
+			textContent: name,
+			idxValue: i
+		})));
+		Object.defineProperty(this, 'code_styles_list', { value: clist })
+		return clist;
+	},
 
-		const { IMAGE_LINKS, CodeHiglight } = this;
+/**
+ * @param {HTMLElement} code
+ */
+	hlCodeBlock(code, MAX_H = USER_SETTINGS['Code Block Short Size'] ) {
 
-		const MAX_H = USER_SETTINGS['Code Block Short Size'];
+		const code_txt   = code.textContent;
+		const parent_pre = code.parentNode;
+		const parent_div = parent_pre.parentNode;
 
+		const is_msg = parent_div.classList[0] === 'msg_body';
+		const not_c  = parent_div.classList[0] !== 'code';
+
+		const hl_lng = /lang(?:uage)?-([\w-]+)|(no)-?highlight/.exec(`${parent_pre.className} ${code.className}`);
+		const hl_res = hl_lng && hl_lng[1]  ? this.HLJS_API.highlight(hl_lng[1], code_txt, true) :
+		/* - - - - */!(hl_lng && hl_lng[2]) ? this.HLJS_API.highlightAuto(code_txt) : null;
+
+		const select_lc   = hl_res ? _cnode('div', { className: 'select-lc' }) : '';
+		const shrink_line = /*~~~~*/ _cnode('div', { className: 'shrink-line' });
+		const code_block  = is_msg ? _cnode('div', { className: 'icode' }) : not_c ? parent_pre : parent_div;
+
+		if (is_msg) {
+			parent_pre.before(code_block);
+			code_block.append(parent_pre);
+		}
+		if (hl_res) {
+			const doc = domParsr.parseFromString(hl_res.value, 'text/html');
+			code_block.classList.add('lc');
+			code.textContent = '';
+			code.append(...doc.body.childNodes);
+		}
+		let offset_h = code.offsetHeight;
+		if (offset_h > 0 && MAX_H > 35 && MAX_H >= offset_h)
+			shrink_line.classList.add('hidden');
+		code_block.classList.add('cutted');
+		code_block.prepend( select_lc, shrink_line );
+	},
+
+/**
+ * @param {HTMLElement} comment
+ */
+	check(comment) {
 		for (const code of comment.querySelectorAll('pre > code')) {
-
-			const highlight     = CodeHiglight.apply(code);
-			const shrink_line   = _cnode('div', { className: 'shrink-line' });
-			const offset_height = code.offsetHeight;
-			const parent_pre    = code.parentNode;
-
-			let block = parent_pre.parentNode;
-			if (block.classList[0] === 'msg_body') {
-				block = block.insertBefore(_cnode('div', { className: 'icode' }), parent_pre);
-				block.append(parent_pre);
-			} else
-			if (block.classList[0] !== 'code')
-				block = parent_pre;
-			if (highlight)
-				block.classList.add('lc');
-			if (offset_height > 0 && MAX_H > 35 && MAX_H >= offset_height)
-				shrink_line.classList.add('hidden');
-			block.classList.add('cutted');
-			block.prepend( shrink_line );
+			this.hlCodeBlock(code);
 		}
 		for (const a of comment.querySelectorAll('.msg_body > *:not(.reply):not(.sign) a[href*="?cid="], a[class^="event-unread"]')) {
 			a.className = `link-navs${ a.className ? ' '+ a.className : ''}`;
 		}
-		for (const a of comment.querySelectorAll(IMAGE_LINKS)) {
-			a.className = 'link-image';
+		for (const a of comment.querySelectorAll(this.IMAGE_LINKS)) {
+			const img = a.firstElementChild;
+			if (img && img.tagName === 'IMG')
+				img.classList.add('topic-image');
+			else
+				a.className = `link-image${ a.className ? ' '+ a.className : ''}`;
 		}
 		for (const t of comment.querySelectorAll('time[data-format]:not(.lory-time)')) {
 			this.localizeTime(t, t.getAttribute('data-format'));
@@ -1144,7 +1224,7 @@ const onDOMReady = () => {
 
 	} else {
 
-		body.addEventListener('click', TopicNavigation.prototype.handleEvent);
+		window.addEventListener('click', TopicNavigation.prototype.handleEvent);
 		ContentFinder.check( body );
 		return;
 	}
@@ -1174,7 +1254,7 @@ const onDOMReady = () => {
 			realtime.after (nav_b);
 	}
 	messages.addEventListener('click', onReactionClick);
-	body.addEventListener('click', Navigation);
+	window.addEventListener('click', Navigation);
 
 	let promisList = [];
 	if (msg_list.length) {
@@ -3791,9 +3871,10 @@ resolve() });
   License: BSD-3-Clause
   Copyright (c) 2006-2020, Ivan Sagalaev
 */
-function HighlightJS(params) {
-	'use strict';
- 
+function HighlightJS(options = {
+	// Global options used when within external APIs. This is modified when
+	classPrefix: 'hljs-',
+}) {
 	const hljs = this;
  
 	class Response {
@@ -3805,7 +3886,6 @@ function HighlightJS(params) {
 	   }
 	}
  
-	const tagName = el => el.localName;
 	const escapeChar = str => new RegExp(str.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'm');
 	const escapeHTML = val => val
 	   .replace(/&/g, '&amp;')
@@ -3843,96 +3923,6 @@ function HighlightJS(params) {
 	   return result;
 	}
  
-	/* Stream merging */
-	function nodeStream(node) {
-	   var result = [];
-	   (function _nodeStream(node, offset) {
-		  for (var child = node.firstChild; child; child = child.nextSibling) {
-			 if (child.nodeType === 3) {
-				offset += child.nodeValue.length;
-			 } else if (child.nodeType === 1) {
-				result.push({
-				   event: 'start',
-				   offset: offset,
-				   node: child
-				});
-				offset = _nodeStream(child, offset);
-				// Prevent void elements from having an end tag that would actually
-				// double them in the output. There are more void elements in HTML
-				// but we list only those realistically expected in code display.
-				if (!tagName(child).match(/br|hr|img|input/)) {
-				   result.push({
-					  event: 'stop',
-					  offset: offset,
-					  node: child
-				   });
-				}
-			 }
-		  }
-		  return offset;
-	   })(node, 0);
-	   return result;
-	}
- 
-	function mergeStreams(original, highlighted, value) {
-	   var processed = 0;
-	   var result = '';
-	   var nodeStack = [];
- 
-	   function selectStream() {
-		  if (!original.length || !highlighted.length) {
-			 return original.length ? original : highlighted;
-		  }
-		  if (original[0].offset !== highlighted[0].offset) {
-			 return (original[0].offset < highlighted[0].offset) ? original : highlighted;
-		  }
-		  //To avoid starting the stream just before it should stop the order is
-		  // ensured that original always starts first and closes last:
-		  return highlighted[0].event === 'start' ? original : highlighted;
-	   }
- 
-	   function open(node) {
-		  function attr_str(attr) {
-			 return ' ' + attr.nodeName + '="' + escapeHTML(attr.value) + '"';
-		  }
-		  result += '<' + tagName(node) + [].map.call(node.attributes, attr_str).join('') + '>';
-	   }
- 
-	   function close(node) {
-		  result += '</' + tagName(node) + '>';
-	   }
- 
-	   function render(event) {
-		  (event.event === 'start' ? open : close)(event.node);
-	   }
- 
-	   while (original.length || highlighted.length) {
-		  var stream = selectStream();
-		  result += escapeHTML(value.substring(processed, stream[0].offset));
-		  processed = stream[0].offset;
-		  if (stream === original) {
-			 /* On any opening or closing tag of the original markup we first close
-			 the entire highlighted node stack, then render the original tag along
-			 with all the following original tags at the same offset and then
-			 reopen all the tags on the highlighted stack.
-			 */
-			 nodeStack.reverse().forEach(close);
-			 do {
-				render(stream.splice(0, 1)[0]);
-				stream = selectStream();
-			 } while (stream === original && stream.length && stream[0].offset === processed);
-			 nodeStack.reverse().forEach(open);
-		  } else {
-			 if (stream[0].event === 'start') {
-				nodeStack.push(stream[0].node);
-			 } else {
-				nodeStack.pop();
-			 }
-			 render(stream.splice(0, 1)[0]);
-		  }
-	   }
-	   return result + escapeHTML(value.substr(processed));
-	}
  
 	//Determines if a node needs to be wrapped in <span>
 	const emitsWrappingTags = (node) => {
@@ -4701,47 +4691,8 @@ function HighlightJS(params) {
 	// safe/production mode - swallows more errors, tries to keep running
 	// even if a single syntax or parse hits a fatal error
 	var SAFE_MODE = true;
-	var fixMarkupRe = /(^(<[^>]+>|\t|)+|\n)/gm;
 	var LANGUAGE_NOT_FOUND = "Could not find the language '{}', did you forget to load/include a language module?";
 	const PLAINTEXT_LANGUAGE = { disableAutodetect: true, name: 'Plain text', contains: [] };
- 
-	// Global options used when within external APIs. This is modified when
-	// calling the `hljs.configure` function.
-	var options = {
-	   noHighlightRe: /^(no-?highlight)$/i,
-	   languageDetectRe: /\blang(?:uage)?-([\w-]+)\b/i,
-	   classPrefix: 'hljs-',
-	   tabReplace: null,
-	   useBR: false,
-	   languages: null,
-	   // beta configuration options, subject to change, welcome to discuss
-	   // https://github.com/highlightjs/highlight.js/issues/1086
-	   __emitter: TokenTreeEmitter
-	};
-	//Tests a language name to see if highlighting should be skipped
-	function shouldNotHighlight(languageName) {
-	   return options.noHighlightRe.test(languageName);
-	}
-	function blockLanguage(block) {
-	   var classes = block.className + ' ';
- 
-	   classes += block.parentNode ? block.parentNode.className : '';
- 
-	   // language-* takes precedence over non-prefixed class names.
-	   const match = options.languageDetectRe.exec(classes);
-	   if (match) {
-		  var language = getLanguage(match[1]);
-		  if (!language) {
-			 console.warn(LANGUAGE_NOT_FOUND.replace("{}", match[1]));
-			 console.warn("Falling back to no-highlight mode for this block.", block);
-		  }
-		  return language ? match[1] : 'no-highlight';
-	   }
- 
-	   return classes
-		  .split(/\s+/)
-		  .find((_class) => shouldNotHighlight(_class) || getLanguage(_class));
-	}
  
 	//Core highlighting function.
 	function highlight(languageName, code, ignoreIllegals, continuation) {
@@ -5048,7 +4999,7 @@ function HighlightJS(params) {
 	   var result = '';
 	   var top = continuation || md;
 	   var continuations = {}; // keep continuations for sub-languages
-	   var emitter = new options.__emitter(options);
+	   var emitter = new TokenTreeEmitter(options);
 	   processContinuations();
 	   var mode_buffer = '';
 	   var relevance = 0;
@@ -5127,7 +5078,7 @@ function HighlightJS(params) {
 	function justTextHighlightResult(code) {
 	   const result = {
 		  relevance: 0,
-		  emitter: new options.__emitter(options),
+		  emitter: new TokenTreeEmitter(options),
 		  value: escapeHTML(code),
 		  illegal: false,
 		  top: PLAINTEXT_LANGUAGE
@@ -5146,8 +5097,8 @@ function HighlightJS(params) {
 	- second_best (object with the same structure for second-best heuristically
 	  detected language, may be absent)
 	*/
-	function highlightAuto(code, languageSubset) {
-	   languageSubset = languageSubset || options.languages || Object.keys(languages);
+	function highlightAuto(code, languageSubset = Object.keys(languages))
+	{
 	   var result = justTextHighlightResult(code);
 	   var secondBest = result;
 	   languageSubset.filter(getLanguage).filter(autoDetection).forEach(function (name) {
@@ -5166,92 +5117,6 @@ function HighlightJS(params) {
 		  result.second_best = secondBest;
 	   }
 	   return result;
-	}
- 
-	/**
-	Post-processing of the highlighted markup:
- 
-	- replace TABs with something more useful
-	- replace real line-breaks with '<br>' for non-pre containers
-	*/
-	function fixMarkup(html) {
-	   if (!(options.tabReplace || options.useBR)) {
-		  return html;
-	   }
- 
-	   return html.replace(fixMarkupRe, match => {
-		  if (match === '\n') {
-			 return options.useBR ? '<br>' : match;
-		  } else if (options.tabReplace) {
-			 return match.replace(/\t/g, options.tabReplace);
-		  }
-		  return match;
-	   });
-	}
-	//Builds new class name for block given the language name
-	function buildClassName(prevClassName, currentLang, resultLang) {
-	   var language = currentLang ? aliases[currentLang] : resultLang;
-	   var result = [prevClassName.trim()];
- 
-	   if (!prevClassName.includes(language)) {
-		  result.push(language);
-	   }
- 
-	   return result.join(' ').trim();
-	}
-	/**
-	 * Applies highlighting to a DOM node containing code. Accepts a DOM node and
-	 * two optional parameters for fixMarkup.
-	*/
-	function highlightBlock(element) {
-	   let node = null;
-	   const language = blockLanguage(element);
- 
-	   if (shouldNotHighlight(language)) return false;
- 
-	   fire("before:highlightBlock",
-		  { block: element, language: language });
- 
-	   if (options.useBR) {
-		  node = document.createElement('div');
-		  node.innerHTML = element.innerHTML.replace(/\n/g, '').replace(/<br[ /]*>/g, '\n');
-	   } else {
-		  node = element;
-	   }
-	   const text = node.textContent;
-	   const result = language ? highlight(language, text, true) : highlightAuto(text);
- 
-	   const originalStream = nodeStream(node);
-	   if (originalStream.length) {
-		  const resultNode = document.createElement('div');
-		  resultNode.innerHTML = result.value;
-		  result.value = mergeStreams(originalStream, nodeStream(resultNode), text);
-	   }
-	   result.value = fixMarkup(result.value);
- 
-	   fire("after:highlightBlock", { block: element, result: result });
- 
-	   element.innerHTML = result.value;
-	   element.className = buildClassName(element.className, language, result.language);
-	   element.result = {
-		  language: result.language,
-		  // TODO: remove with version 11.0
-		  re: result.relevance,
-		  relavance: result.relevance
-	   };
-	   if (result.second_best) {
-		  element.second_best = {
-			 language: result.second_best.language,
-			 // TODO: remove with version 11.0
-			 re: result.second_best.relevance,
-			 relavance: result.second_best.relevance
-		  };
-	   }
-	   return true;
-	}
-	//Updates highlight.js global options with the passed options
-	function configure(userOptions) {
-	   options = inherit(options, userOptions);
 	}
 	//Register a language grammar module
 	function registerLanguage(languageName, languageDefinition) {
@@ -5307,9 +5172,8 @@ function HighlightJS(params) {
 	   });
 	}
 	/* Interface definition */
-	hljs.versionString = "10.1.1";
-	hljs.apply = highlightBlock;
-	configure(params);
+	hljs.highlight = highlight;
+	hljs.highlightAuto = highlightAuto;
 
 
  registerLanguage('python',
@@ -10711,10 +10575,8 @@ function HighlightJS(params) {
 	});
  }
 
-function getHLJSStyle(n) {
-	var  styles = HighlightJS.Styles;
-	if( !styles ) {
-		 styles = [
+function getHLJSStyle(i = -1) {
+	const styles = [
 		{  "name": "LOR Default",
 			"css": ''
 		},
@@ -11002,12 +10864,7 @@ function getHLJSStyle(n) {
 		},
 		{  "name": "School Book",
 			"css": ".code.lc{background:#f6f6ae}.lc .keyword,.lc .literal,.lc .selector-tag{color:#059;font-weight:700}.lc code,.lc .subst{color:#3e5915}.lc .addition,.lc .attribute,.lc .built_in,.lc .builtin-name,.lc .bullet,.lc .link,.lc .section,.lc .string,.lc .symbol,.lc .template-tag,.lc .template-variable,.lc .title,.lc .type,.lc .variable{color:#2c009f}.lc .comment,.lc .deletion,.lc .meta,.lc .quote{color:#e60415}.lc .doctag,.lc .keyword,.lc .literal,.lc .name,.lc .section,.lc .selector-id,.lc .selector-tag,.lc .title,.lc .type{font-weight:700}"
-		}];
-		Object.defineProperty((HighlightJS.Styles = styles), 'names', {
-			get: () => new Promise(resolve => {
-				resolve(styles.map(({ name }) => name));
-			})
-		});
-	}
-	return styles[n];
+		}
+	];
+	return i === -1 ? styles : styles[i];
 }
