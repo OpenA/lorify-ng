@@ -1404,8 +1404,8 @@ const App = new class RealtimeHub {
  - - - */
 	constructor() {
 		this.state = -1;
-		this.to_send = '';
-		this.is_userscript = true;
+		this.to_send = ''; // Firefox runs document before socket messages, and webext don't have time to detection.
+		this.is_userscript = typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id; // we need this for fix it.
 	}
 
 	async init() {
