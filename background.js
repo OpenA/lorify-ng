@@ -14,26 +14,16 @@ const defaults = Object.freeze({ // default settings
 	'Code Highlight Style' : 0
 });
 
-let notes = 0, codestyles = null,
-      wss = 0, need_login = false;
+let notes = 0, notif_mode = 1,
+    value = 0, need_login = false;
 
-const settings  = Object.assign({}, defaults);
 const openPorts = new Set;
 const isFirefox = navigator.userAgent.includes('Firefox');
-const loadStore = isFirefox ?
-	// load settings
-	browser.storage.local.get() : new Promise(resolve => {
-		chrome.storage.local.get(null, resolve)
-	});
-	loadStore.then(items => {
-		for (const key in items) {
-			settings[key] = items[key];
-		}
-		setNotifCheck();
-	});
 
+// load settings
+chrome.storage.local.get().then(setNotifCheck);
 chrome.notifications.onClicked.addListener(() => {
-	const ismob = Number(settings['Desktop Notification']) === 2;
+	const ismob = notif_mode === 2;
 	openTab(`${ ismob ? '#' : 'lor://' }notifications`,
 	            ismob ? 'notes-show' : 'rel');
 });
@@ -48,10 +38,15 @@ chrome.runtime.onConnect.addListener(port => {
 			if (p.name === 'lory-wss')
 				return;
 		}
-		setNotifCheck(5e4);
+		if (notif_mode > 0) {
+			chrome.alarms.create('T-chk-notes', {
+				when: Date.now() + 5e4, periodInMinutes: 5 });
+		}
 	});
 	openPorts.add(port);
-	loadStore.then(() => port.postMessage({ action: 'connection-resolve', data: settings }));
+	port.postMessage({ action: 'connection-resolve', data: defaults });
+	if (port.name === 'lory-menu')
+		port.postMessage({ action: 'notes-count-update', data: notes });
 });
 
 const setBadge = chrome.browserAction && chrome.browserAction.setBadgeText ? (
@@ -73,12 +68,13 @@ const setBadge = chrome.browserAction && chrome.browserAction.setBadgeText ? (
 
 chrome.alarms.onAlarm.addListener(getNotifications);
 
-function setNotifCheck(sec = 4e3) {
-	if (settings['Desktop Notification']) {
+function setNotifCheck(items, has_wss = false) {
+	console.log(items, has_wss);
+	if ('Desktop Notification' in items)
+		notif_mode = items['Desktop Notification'];
+	if (!has_wss && notif_mode > 0)
 		chrome.alarms.create('T-chk-notes', {
-			when: Date.now() + sec, periodInMinutes: 4
-		});
-	}
+			when: Date.now() + 4e3, periodInMinutes: 4 });
 }
 
 const queryScheme = isFirefox
@@ -148,30 +144,29 @@ function openTab(uri = '', action = '') {
 function messageHandler({ action, data }, port) {
 	// check
 	switch (action) {
-		case 'l0rNG-setts-reset':
+		case 'reset-all':
 			changeSettings(defaults);
 			break;
-		case 'l0rNG-setts-change':
+		case 'upd-setts':
 			changeSettings(data, port);
 			break;
-		case 'l0rNG-notes-chk':
+		case 'chk-notes':
 			chrome.alarms.clear('Q-chk-notes');
 			chrome.alarms.create('Q-chk-notes', {
 				when: Date.now() + 1e3
 			});
 			break;
-		case 'l0rNG-open-tab':
+		case 'open-tab':
 			openTab(data, 'scroll-to-comment');
 			break;
-		case 'l0rNG-notes-set':
+		case 'set-notes':
 			if ( notes < data || notes > data ) {
 				chrome.alarms.clear('Q-chk-notes');
 				updNoteStatus(data);
 			}
 			break;
-		case 'l0rNG-extra-sets':
-			if (notes)
-				port.postMessage({ action: 'notes-count-update', data: notes });
+		case 'extra-params':
+			// no extra params
 	}
 }
 
@@ -196,7 +191,7 @@ function getNotifications(alm) {
 }
 
 function updNoteStatus(count = 0) {
-	if ( count > notes && settings['Desktop Notification'] ) {
+	if ( count > notes && notif_mode > 0 ) {
 		chrome.notifications.create('lorify-ng', {
 			type    : 'basic',
 			title   : 'LINUX.ORG.RU',
@@ -210,14 +205,13 @@ function updNoteStatus(count = 0) {
 	}
 }
 function changeSettings(newSetts, exclupe = null) {
-	let hasChecks = 0;
+	let hasWss = false;
 	for (const port of openPorts) {
-		hasChecks += Number(port.name === 'lory-wss');
+		if (port.name === 'lory-wss')
+			hasWss = true;
 		if ( port !== exclupe )
 			port.postMessage({ action: 'settings-change', data: newSetts });
 	}
-	Object.assign(settings, newSetts);
-	if (!hasChecks)
-		setNotifCheck();
+	setNotifCheck(newSetts, hasWss);
 	chrome.storage.local.set(newSetts);
 }

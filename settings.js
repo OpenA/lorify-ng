@@ -4,9 +4,8 @@ const n_count  = document.getElementById('note-count');
 const note_lst = document.getElementById('note-list');
 const rst_btn  = document.getElementById('reset-settings');
 
-let busy_id    = -1, not_ld = true,
-	cnt_new    =  0,
-	my_connect = new Promise(createPort);
+let busy_id = -1, not_ld  = true,
+	cnt_new =  0, my_port = null;
 
 const showNotifications = () => {
 	history.replaceState(null, null, location.pathname +'#notifications');
@@ -33,7 +32,7 @@ loryform.addEventListener('input', ({ target }) => {
 	}, 750);
 });
 
-rst_btn.addEventListener('click', () => applyAnim('l0rNG-setts-reset', null, true));
+rst_btn.addEventListener('click', () => sendCommand('reset-all'));
 n_count.addEventListener('click', showNotifications);
 note_lst.addEventListener('click', e => {
 	let el = e.target;
@@ -49,7 +48,7 @@ note_lst.addEventListener('click', e => {
 				body: new FormData( document.forms.reset_form )
 			}).then(({ ok }) => {
 				if (ok) {
-					applyAnim('l0rNG-notes-set', 0);
+					sendCommand('set-notes', 0);
 					document.forms.reset_form.remove();
 				}
 				el.id = 'reset-notes';
@@ -59,18 +58,12 @@ note_lst.addEventListener('click', e => {
 	}
 });
 
-function createPort(resolve) {
-	const port = chrome.runtime.connect();
+const createPort = () => new Promise(resolve => {
+	const port = chrome.runtime.connect({ name: 'lory-menu' });
 	port.onMessage.addListener(({ action, data }) => {
 		switch (action) {
 		case 'notes-show':
 			showNotifications();
-			break;
-		case 'code-styles-list':
-			const input = loryform.elements['Code Highlight Style'];
-			for (const cname of data) {
-				input.appendChild( document.createElement('option') ).textContent = cname;
-			}
 			break;
 		case 'notes-count-update':
 			n_count.setAttribute('cnt-new', data);
@@ -79,25 +72,34 @@ function createPort(resolve) {
 				updNotifications(cnt_new);
 			break;
 		case 'connection-resolve':
-			port.postMessage({ action: 'l0rNG-extra-sets', data: null })
-			resolve(port);
+			my_port = port;
+			resolve(data);
+			break;
 		case 'settings-change':
 			setValues(data);
 		}
 	});
 	port.onDisconnect.addListener(() => {
-		my_connect = null;
+		my_port = null;
 	});
-}
+});
 
-function applyAnim(action = '', data = null, anim = false) {
-	if (anim)
-		loryform.classList.add('save-msg');
-	if(!my_connect)
-		my_connect = new Promise(createPort)
-	my_connect.then(
-		port => port.postMessage({ action, data })
-	);
+// init settings
+Promise.all([createPort(), chrome.storage.local.get()]).then(([defs, vals]) => {
+	setValues( Object.assign(defs, vals) );
+});
+
+const sendCommand = (action = '', data = null, anim = true) => {
+	if (anim) {
+		loryform.classList.remove('hide-msg');
+		if (busy_id !== -1)
+			clearTimeout(busy_id);
+		busy_id = setTimeout(() => loryform.classList.add('hide-msg'), 2e3);
+	}
+	if (my_port)
+		my_port.postMessage({ action, data });
+	else
+		createPort().then(() => my_port.postMessage({ action, data }));
 }
 
 function updNotifications(count = 0) {
@@ -133,7 +135,7 @@ function onValueChange(input) {
 		if (min && (min = Number(min)) > changes[k]) input.value = changes[k] = min; else
 		if (max && (max = Number(max)) < changes[k]) input.value = changes[k] = max;
 	}
-	applyAnim('l0rNG-setts-change', changes, true);
+	sendCommand('upd-setts', changes);
 }
 
 function setValues(items) {
@@ -224,7 +226,7 @@ function pullNotes(html) {
 		item.onclick = e => {
 			e.preventDefault()
 			e.stopPropagation();
-			applyAnim('l0rNG-open-tab', 'lor:/'+ item.getAttribute('href'));
+			sendCommand('open-tab', 'lor:/'+ item.getAttribute('href'), false);
  		}
 	}
 }

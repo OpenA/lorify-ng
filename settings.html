@@ -60,24 +60,25 @@
 			#note-list {
 				background-color: white;
 			}
-			.save-msg:before, #note-list {
+			#loryform:before, #note-list {
 				position: absolute;
 				left: 0; top: 0; right: 0;
 				z-index: 9;
 			}
-			.save-msg:before {
+			#loryform:before {
 				content: 'Настройки сохранены.';
-				-webkit-animation: 2s linear 2 alternate apply;
-				animation: 2s linear 2 alternate apply;
+				transition: top .7s linear;
+				text-align: center;
 				font: bold italic 20px serif;
 				padding: 15px 0;
 			}
-			.nav-menu, .save-msg:before {
-				text-align: center;
+			#loryform.hide-msg:before {
+				top: -100%;
 			}
 			.nav-menu {
 				border-bottom: 1px dashed #aaa;
 				padding-bottom: 6px;
+				text-align: center;
 			}
 			.nav-txt-btn {
 				color: #68b;
@@ -94,7 +95,7 @@
 				font: normal 20px sans;
 				display: inline-block;
 			}
-			#go-back:hover, #reset-notes:hover, .save-msg:before {
+			#go-back:hover, #reset-notes:hover, #loryform:before {
 				background-color: #369e1b;
 				border-radius: 3px;
 				color: white;
@@ -171,7 +172,7 @@
 		</style>
 	</head>
 	<body>
-		<form id="loryform" class="info-line">
+		<form id="loryform" class="info-line hide-msg">
 			<div id="note-count" class="nav-menu nav-txt-btn" hidden></div>
 			<div class="tab-row">
 				<span class="tab-cell">Автоподгрузка комментариев:</span>
