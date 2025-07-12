@@ -1,5 +1,5 @@
 
-const { runtime, storage } = window.browser || window.chrome;
+const { runtime, storage } = typeof browser !== 'undefined' ? browser : chrome;
 
 let port = null;
 

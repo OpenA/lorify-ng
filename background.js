@@ -19,9 +19,10 @@ let notes = 0, notif_mode = 1,
 
 const openPorts = new Set;
 const isFirefox = navigator.userAgent.includes('Firefox');
+const {storage} = isFirefox ? browser : chrome;
 
 // load settings
-chrome.storage.local.get().then(setNotifCheck);
+storage.local.get().then(setNotifCheck);
 chrome.notifications.onClicked.addListener(() => {
 	const ismob = notif_mode === 2;
 	openTab(`${ ismob ? '#' : 'lor://' }notifications`,
@@ -69,7 +70,6 @@ const setBadge = chrome.browserAction && chrome.browserAction.setBadgeText ? (
 chrome.alarms.onAlarm.addListener(getNotifications);
 
 function setNotifCheck(items, has_wss = false) {
-	console.log(items, has_wss);
 	if ('Desktop Notification' in items)
 		notif_mode = items['Desktop Notification'];
 	if (!has_wss && notif_mode > 0)
@@ -213,5 +213,5 @@ function changeSettings(newSetts, exclupe = null) {
 			port.postMessage({ action: 'settings-change', data: newSetts });
 	}
 	setNotifCheck(newSetts, hasWss);
-	chrome.storage.local.set(newSetts);
+	storage.local.set(newSetts);
 }
