@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.3.9
+// @version     3.4.0
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/master/lorify-ng.user.js?raw=true
@@ -142,28 +142,89 @@ const Dynamic_Style = (() => {
 	}
 })();
 
-const App = typeof chrome !== 'undefined'&& chrome.runtime && chrome.runtime.id ? WebExt() : UserScript();
+class RealtimeWS {
 
-lory_js.textContent = `
+	constructor() {
+		this._hasErr = false;
+		this._buff = [];
+		this._wt = -1;
+		this._wS = null;
+	}
+	start() {
+		const LOR_WS = 'wss://www.linux.org.ru:9000/ws';
 
-	const $ = _c => {_c()}, _Void = () => void 0;
+		this._wS = new WebSocket(LOR_WS);
+		this._wS.onmessage = ({ data }) => {
+			const [key,val] = data.split(' ');
+			if (key === 'comment') {
+				if (this._wt !== -1)
+					clearTimeout(this._wt);
+				this._buff.push(val);
+				this._wt = setTimeout(() => {
+					this.boubble('new-comments', this._buff.splice(0));
+					this._wt = -1;
+				}, 1e3);
+			} else {
+				this.boubble(key, val);
+			}
+		}
+		this._wS.onopen = () => {
+			console.info(`Установлено соединение c ${LOR_WS}`);
+			this.boubble('stat-change', 0);
+		}
+		this._wS.onclose = ({ code, reason }) => {
+			let err = 1 + Number(this._hasErr);
+			if (code === 1000 || code === 1001) {
+				console.info(`Закрыто соединение c ${LOR_WS} (${reason})`);
+				err = -2;
+			} else {
+				console.warn(`Соединение c ${LOR_WS} было прервано "${reason}" [код: ${code}]`);
+			}
+			this.boubble('stat-change', err);
+		}
+		this._wS.onerror = () => { this._hasErr = true; };
+	}
+/**
+ * @param {String} name
+ * @param {String|Number|String[]|Number[]} dat
+ */
+	boubble(name, dat) {
+		window.postMessage({ wsEvent: name, wsData: dat }, location.origin);
+	}
+/**
+ * @param {MessageEvent}
+ */
+	handleEvent({ origin, data }) {
 
-	var initNextPrevKeys,  initStarPopovers,  fixTimezone;
-	    initNextPrevKeys = initStarPopovers = fixTimezone = _Void;
+		if (origin !== location.origin || !data.wsRequest)
+			return;
+		switch(data.wsRequest) {
+		case 'restart':
+			if (this._wS && this._wS.readyState !== WebSocket.CLOSED)
+				this._wS.close(1000, 'restarting...');
+			this.start();
+			break;
+		case 'stop': this._wS.close(1000, data.wsText); break;
+		case 'send': this._wS.send       (data.wsText); break;
+		}
+	}
+}
 
-	const tag_memories_form_setup = (t,c) => {
+const lorStub = (_wsRt) => {
+	const _Void = () => void 0;
+
+	const initTagBtns = (t,c) => {
 		let a = document.getElementById('tagFavAdd'); a.setAttribute('data-mtag', t); a.setAttribute('data-csrf', c);
 		let b = document.getElementById('tagIgnore'); b.setAttribute('data-mtag', t); b.setAttribute('data-csrf', c);
 	};
-	const topic_memories_form_setup = (t,m,n,c) => {
+	const initFavBtns = (t,m,n,c) => {
 		let el = document.getElementById(m ? 'memories_button' : 'favs_button');
 		if (t) el.classList.add('selected');
 		el.setAttribute('data-mtag', t);
 		el.setAttribute('data-csrf', c);
 	};
 
-	const $script = function(src, name = '_') {
-		const { _resol, _loads } = $script;
+	const _script = (src, name = '_') => {
 		const ok = resolve => {
 			const hd = document.getElementsByTagName('head')[0] || document.documentElement;
 			const js = document.createElement('script');
@@ -178,11 +239,11 @@ lory_js.textContent = `
 			delete _resol[name];
 		}
 	};
-	const is_user  = ${/^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname)};
-	$script._resol = Object.create(null);
-	$script._loads = { lorjs: !is_user, hljs: false, realtime: false, plugins: is_user, jquery: is_user, jqueryui: false, _: false };
-	$script.ready  = (names, call) => {
-		const { _resol, _loads } = $script;
+	const is_usr = /^\/people\/[\w_-]+\/(?:profile)$/.test(location.pathname);
+	const _resol = Object.create(null);
+	const _loads = { lorjs: !is_usr, hljs: false, realtime: false, plugins: is_usr, jquery: is_usr, jqueryui: false, _: false };
+
+	_script.ready = (names, call) => {
 		const ok = n => (
 			n in _loads ? _loads[n] : (_loads[n] = new Promise(r => {_resol[n] = r}))
 		);
@@ -196,8 +257,20 @@ lory_js.textContent = `
 			m.charAt(0) === 'M' ? { month: 'long' } : { weekday: 'short', day: 'numeric', month: '2-digit', year: 'numeric' }
 		)).format(date)
 	}); moment.locale = _Void;
-`;
 
+	Object.defineProperties(window, {
+		$: { value: _c => {_c()} },
+
+		initNextPrevKeys: { value: _Void }, fixTimezone  : { value: _Void }, init_interpage_adv: { value: _Void },
+		initStarPopovers: { value: _Void }, initLoginForm: { value: _Void },
+
+		  tag_memories_form_setup: { value: initTagBtns }, $script: { value: _script }, 
+		topic_memories_form_setup: { value: initFavBtns },  moment: { value:  moment },
+	});
+	window.addEventListener('message', _wsRt);
+};
+
+lory_js .textContent = `(${lorStub.toString()})(new ${RealtimeWS.toString()})`;
 lory_css.textContent = `
 	.newadded  { border: 1px solid #006880; }
 	.msg-error { color: red; font-weight: bold; }
@@ -783,7 +856,7 @@ class TopicNavigation {
 		case 'link-rthub':
 			if (parent.classList.contains('ws-warn') && USER_SETTINGS['Realtime Loader']) {
 				parent.style.display = 'none';
-				RealtimeHub.restart();
+				App.wsRestart();
 			} else
 				location.href = aPath + aSearch;
 			break;
@@ -1149,7 +1222,7 @@ const onDOMReady = () => {
 		});
 		handleRegForm(document.forms.regform);
 	} else
-		RealtimeHub.init();
+		App.wsRestart(-1);
 
 	if ((CommentForm = document.forms.commentForm || document.forms.messageForm)) {
 
@@ -1272,11 +1345,11 @@ const onDOMReady = () => {
 			lastp.then(({ ref_map }) => {
 				const last = Object.keys(ref_map).reduce(
 					(a,b) => Number(a) > Number(b) ? a : b, 0);
-				RealtimeHub.watch(topic, last);
+				App.watch(topic, last);
 			});
 			promisList.push( lastp );
 		} else {
-			RealtimeHub.watch(topic,
+			App.watch(topic,
 				msg_list.length ? msg_list[msg_list.length - 1].id.substring('comment-'.length) : ''
 			);
 		}
@@ -1305,7 +1378,7 @@ const onDOMReady = () => {
 	window.addEventListener('dblclick', resetNavBoubbles);
 };
 
-window.addEventListener('keydown', e => {
+const onKeyHandler = e => {
 	const { target, key, ctrlKey } = e;
 	const c = ['ArrowLeft', 'ArrowRight'].indexOf(key);
 
@@ -1319,9 +1392,9 @@ window.addEventListener('keydown', e => {
 	} else if (key === 'Escape') {
 		resetNavBoubbles(true);
 	}
-});
+};
 
-const RealtimeHub = {
+const App = new class RealtimeHub {
 /* - - - 
   -2: onhold
   -1: oninit
@@ -1329,18 +1402,18 @@ const RealtimeHub = {
    1: stopped
    2: crushed
  - - - */
-	state: -1, to_send: '',
+	constructor() {
+		this.state = -1;
+		this.to_send = '';
+		this.is_userscript = true;
+	}
 
-	init() {
-		const id = 'lorify_realtime_js';
-
-		window.addEventListener('message', this);
-		document.getElementById(id) || document.head.appendChild(
-			_cnode('script', { id, textContent: 'const startRealtimeWS = '+
-				this.start.toString().replace('RealtimeHub.start', 'startRealtimeWS')  +'; startRealtimeWS();'
-			})
-		);
-	},
+	async init() {
+		for (let key in USER_SETTINGS)
+			Dynamic_Style[key] = USER_SETTINGS[key];
+		if (this.is_userscript)
+			initUserSettings();
+	}
 	watch(topic_id = '', last_id = '') {
 
 		const wsText = topic_id + (last_id ? ' '+ last_id : '');
@@ -1348,77 +1421,39 @@ const RealtimeHub = {
 
 		if (this.state === 0)
 			window.postMessage({ wsRequest: 'send', wsText });
-	},
-	start: () => {
+	}
+	checkNow  () { window.postMessage({ l0rNG_Act: 'chk-notes', l0rNG_Dat: '' }) }
+	openUrl (al) { window.postMessage({ l0rNG_Act: 'open-tab' , l0rNG_Dat: 'lor:/'+ al }) }
+	updStore(sc) { window.postMessage({ l0rNG_Act: 'upd-setts', l0rNG_Dat: sc }) }
+	setNotes(nc) { window.postMessage({ l0rNG_Act: 'set-notes', l0rNG_Dat: nc }) }
 
-		let buffer = [], ct = -1, err = false;
-
-		const wS = new WebSocket('wss://www.linux.org.ru:9000/ws');
-		const _handler  = ({ origin, data }) => {
-			if (origin !== location.origin || !data.wsRequest)
-				return;
-			switch(data.wsRequest) {
-			case 'restart':
-				if (wS.readyState === wS.CLOSED)
-					window.removeEventListener('message', _handler);
-				else
-					wS.close(1000, 'restarting...');
-				RealtimeHub.start();
-				break;
-			case 'stop':
-				wS.close(1000, data.wsText);
-				break;
-			case 'send':
-				wS.send(data.wsText);
-				break;
-			}
-		}
-		wS.onmessage = ({ data }) => {
-			let evt = data.split(' ');
-			if (evt[0] === 'comment') {
-				clearTimeout(ct),
-				buffer.push(evt[1]),
-				ct = setTimeout(() => {
-					window.postMessage({ wsEvent: 'new-comments', wsData: buffer }, location.origin);
-					buffer = [];
-				}, 1e3);
-			} else {
-				window.postMessage({ wsEvent: evt[0], wsData: evt[1] }, location.origin);
-			}
-		}
-		wS.onopen = () => {
-			console.info('Установлено соединение c '+ wS.url);
-			window.addEventListener('message', _handler);
-			window.postMessage({ wsEvent: 'stat-change', wsData: 0 }, location.origin);
-		}
-		wS.onclose = ({ code, reason }) => {
-			let wsData = 1 + err;
-			if (code === 1000 || code === 1001) {
-				console.info('Закрыто соединение c '+ wS.url +' ('+ reason +')');
-				wsData = -2;
-			} else {
-				console.warn('Соединение c '+ wS.url +' было прервано "'+ reason +'" [код: '+ code +']');
-			}
-			if (wsData === -2)
-				window.removeEventListener('message', _handler);
-			window.postMessage({ wsEvent: 'stat-change', wsData }, location.origin);
-		}
-		wS.onerror = () => { err = true; };
-	},
-	restart() {
-		this.state = 1;
+	wsRestart(_s = 1) {
+		this.state = _s;
 		window.postMessage({ wsRequest: 'restart', wsText: '' });
-	},
+	}
 	handleEvent({ origin, data }) {
 		if (origin !== location.origin || !data.wsEvent)
-			return;
+			return; 
 		let wd = data.wsData;
 		switch ( data.wsEvent ) {
 		case 'new-comments':
 			onWSData(wd);
 			break;
 		case 'events-refresh':
-			App.checkNow(wd);
+			this.checkNow(wd);
+			break;
+		case 'web-ext-ready':
+			this.is_userscript = false;
+			break;
+		case 'scroll-to-comment':
+			Navigation.goToCommentPage(wd.split('?cid=')[1]);
+			break;
+		case 'settings-change':
+			for (const key in wd)
+				Dynamic_Style[key] = USER_SETTINGS[key] = wd[key];
+			break;
+		case 'notes-count-update':
+			Dynamic_Style.main_counter = wd;
 			break;
 		case 'stat-change':
 			if (wd === -2)
@@ -1428,7 +1463,7 @@ const RealtimeHub = {
 			if ((this.state = wd) === 0 && this.to_send)
 				window.postMessage({ wsRequest: 'send', wsText: this.to_send });
 		}
-	},
+	}
 	terminate(wasStop = false, reason = '') {
 		this.to_send = '';
 		if (wasStop)
@@ -1734,7 +1769,7 @@ const onWSData = (cids) => {
 	};
 	rtime.children[0].textContent = `Добавлено ${count} новых.\n`;
 	rtime.children[1].search = search;
-	RealtimeHub.to_send =`${LOR.topic} ${cids[count-1]}`;
+	App.to_send =`${LOR.topic} ${cids[count-1]}`;
 
 	if (!USER_SETTINGS['Realtime Loader']) {
 		rtime.style.display = null;
@@ -1882,7 +1917,7 @@ const updTopicContent = (new_top, t_info = '') => {
 		info.textContent = t_info;
 		// stop watch if topic deleted
 		if (t_info.includes('Тема удалена'))
-			RealtimeHub.terminate();
+			App.terminate();
 	}
 	// update topic body if modifed
 	updCommentContent(old_top, new_top, 1);
@@ -3363,6 +3398,9 @@ function domToMarkdown({childNodes}, deep = 0) {
 	return text;
 }
 
+window.addEventListener('message', App);
+window.addEventListener('keydown', onKeyHandler);
+
 if (document.readyState === 'loading') {
 	const _scrollTo = () => {
 		let alt = location.hash.substring(1);
@@ -3375,76 +3413,19 @@ if (document.readyState === 'loading') {
 } else
 	onDOMReady();
 
-function WebExt() {
 
-	let opened;
+function initUserSettings() {
 
-	const portConnect = resolve => {
-		const port = chrome.runtime.connect({ name: 'lory-wss' });
-		port.onMessage.addListener(({ action, data }) => {
-			switch (action) {
-			case 'notes-count-update':
-				Dynamic_Style.main_counter = data;
-				break;
-			case 'scroll-to-comment':
-				Navigation.goToCommentPage(data.split('?cid=')[1]);
-				break;
-			case 'need-codestyles':
-				getHLJSStyle('names').then(names => {
-					port.postMessage({ action: 'l0rNG-codestyles', data: names });
-				});
-				break;
-			case 'connection-resolve':
-				console.info('WebExt Runtime Connected!');
-				resolve(port);
-			case 'settings-change':
-				for (const key in data) {
-					Dynamic_Style[key] = USER_SETTINGS[key] = data[key];
-				}
-			}
-		});
-		port.onDisconnect.addListener(() => {
-			console.info('WebExt Runtime Disconnected!');
-			opened = null;
-		});
-	}
-	opened = new Promise(portConnect);
-
-	const sendMessage = (action, data) => {
-		if(!opened)
-			opened = new Promise(portConnect)
-		opened.then(
-			port => port.postMessage({ action, data })
-		);
-	}
-	return {
-		checkNow : () => sendMessage( 'l0rNG-notes-chk' ),
-		openUrl  : al => sendMessage( 'l0rNG-open-tab', 'lor:/'+ al ),
-		updStore : sc => sendMessage( 'l0rNG-setts-change', sc),
-		setNotes : nc => sendMessage( 'l0rNG-notes-set', nc),
-		init     : () => opened
-	}
-}
-
-function UserScript() {
-
-	let notes = Number(localStorage.getItem('l0rNG-notes')), ready, lorylist, granted = false;
+	let notes = 0, lstor, lorylist, granted = false;
 
 	const loryform = _cnode('form', { id: 'loryform', className: 'tab-gt' });
 	const lorypanel = _cnode('div', { id: 'loryicon', className: 'lorify-settings-panel' });
 
 	const defaults = Object.assign({}, USER_SETTINGS);
 
-	const self = {
-		checkNow: () => void 0,
-		openUrl : () => true,
-		updStore: () => localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS)),
-		setNotes: () => void 0,
-		init    : () => {
-			document.body.append(lorypanel);
-			return ready;
-		}
-	}
+	App.updStore = () => localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS)),
+	App.openUrl  = () => true;
+	document.body.append(lorypanel);
 
 	const sendNotify = count => {
 		if (USER_SETTINGS['Desktop Notification'] && granted) {
@@ -3465,7 +3446,7 @@ function UserScript() {
 				sendNotify(count);
 			setNotes(count);
 		}),
-	1300); /*  */ self.checkNow = checkNow;
+	1300); /*  */ App.checkNow = checkNow;
 
 	const setNotes = (count, save = true) => {
 		const lorynotify = lorypanel.children.lorynotify;
@@ -3481,7 +3462,7 @@ function UserScript() {
 				getNotesList(count);
 			lorynotify.setAttribute('cnt-new', count);
 		}
-	}; /*  */ self.setNotes = setNotes;
+	}; /*  */ App.setNotes = setNotes;
 
 	const setValues = items => {
 		for (const key in items) {
@@ -3510,7 +3491,7 @@ function UserScript() {
 		Dynamic_Style[key] = USER_SETTINGS[key] = val;
 		loryform.classList.add('save-msg');
 		Timer.set('Apply Setts', () => loryform.classList.remove('save-msg'), 2000);
-		self.updStore();
+		App.updStore();
 	}
 
 	const getNotesList = (max) => {
@@ -3571,7 +3552,8 @@ function UserScript() {
 		return lorylist;
 	}
 
-ready = new Promise(resolve => {
+	notes = Number( localStorage.getItem('l0rNG-notes') );
+	lstor = JSON.parse(localStorage.getItem('lorify-ng'));
 
 	const form_doc = domParsr.parseFromString(`
 	<div class="tab-row">
@@ -3653,7 +3635,7 @@ ready = new Promise(resolve => {
 		}
 	});
 
-	setValues( JSON.parse(localStorage.getItem('lorify-ng')) );
+	if (lstor) setValues( lstor );
 
 	const panel_doc = domParsr.parseFromString(`
 	<svg id="loriko-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
@@ -3794,7 +3776,7 @@ ready = new Promise(resolve => {
 		#loginGreating, #topProfile { margin-right: 60px!important; }
 		#reset-setts, #loryform:before { position: absolute; right: 0; }
 		#loryform:before {
-			transition: top 1s ease-in;
+			transition: top .7s linear;
 			color: white;
 			background-color: #d25555;
 			left: 0; top: -100%;
@@ -3831,7 +3813,7 @@ ready = new Promise(resolve => {
 		Timer.set('Apply Setts', () => loryform.classList.remove('save-msg'), 2000);
 		setValues( defaults );
 		loryform.classList.add('save-msg');
-		self.updStore();
+		App.updStore();
 	});
 	window.addEventListener('storage', ({ key, newValue }) => {
 		switch(key) {
@@ -3857,9 +3839,6 @@ ready = new Promise(resolve => {
 		}
 	})( window.Notification ? Notification.permission : 'denied' );
 
-resolve() });
-
-	return self;
 }
 
 
