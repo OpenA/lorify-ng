@@ -5,7 +5,7 @@ const note_lst = document.getElementById('note-list');
 const rst_btn  = document.getElementById('reset-settings');
 
 let busy_id = -1, not_ld  = true,
-	cnt_new =  0, my_port = null;
+	anim_id = -1, cnt_new = 0, my_port = null;
 
 const showNotifications = () => {
 	history.replaceState(null, null, location.pathname +'#notifications');
@@ -17,15 +17,23 @@ const showNotifications = () => {
 if (location.hash === '#notifications')
 	note_lst.hidden = false;
 
-loryform.addEventListener('animationend', () => {
-	loryform.classList.remove('save-msg');
-});
+const showAnimBanner = () => {
+	if (anim_id !== -1)
+		clearTimeout(anim_id);
+	anim_id = setTimeout(() => {
+		anim_id = -1;
+		loryform.classList.add('hide-msg');
+	}, 2e3);
+	loryform.classList.remove('hide-msg');
+}
+
 loryform.addEventListener('change', ({ target }) => {
 	if (busy_id === -1)
 		onValueChange(target);
 });
 loryform.addEventListener('input', ({ target }) => {
-	clearTimeout(busy_id);
+	if (busy_id !== -1)
+		clearTimeout(busy_id);
 	busy_id = setTimeout(() => {
 		busy_id = -1;
 		onValueChange(target);
@@ -76,6 +84,7 @@ const createPort = () => new Promise(resolve => {
 			resolve(data);
 			break;
 		case 'settings-change':
+			showAnimBanner();
 			setValues(data);
 		}
 	});
@@ -89,13 +98,7 @@ Promise.all([createPort(), chrome.storage.local.get()]).then(([defs, vals]) => {
 	setValues( Object.assign(defs, vals) );
 });
 
-const sendCommand = (action = '', data = null, anim = true) => {
-	if (anim) {
-		loryform.classList.remove('hide-msg');
-		if (busy_id !== -1)
-			clearTimeout(busy_id);
-		busy_id = setTimeout(() => loryform.classList.add('hide-msg'), 2e3);
-	}
+const sendCommand = (action = '', data = null) => {
 	if (my_port)
 		my_port.postMessage({ action, data });
 	else
@@ -135,6 +138,7 @@ function onValueChange(input) {
 		if (min && (min = Number(min)) > changes[k]) input.value = changes[k] = min; else
 		if (max && (max = Number(max)) < changes[k]) input.value = changes[k] = max;
 	}
+	showAnimBanner();
 	sendCommand('upd-setts', changes);
 }
 
