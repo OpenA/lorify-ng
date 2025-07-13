@@ -11,7 +11,7 @@
 Что бы переключиться на manifest-v2 для тестирования в Firefox,
 необходимо выполнить в терминале следующее:
 
-    cd /pth/to/lorify-ng
+    cd /path/to/lorify-ng
     git checkout manifest_v2
 
 Если нужно обратно:
@@ -21,6 +21,6 @@
 Для упаковки расширения Firefox
 
     mkdir dist
-    zip -T dist/lorify-ng.xpi lorify-ng.user.js settings.html settings.js background.js LICENSE icons/*
+    zip -T dist/lorify-ng.xpi lorify-ng.user.js settings.html settings.js background.js content_script.js manifest.json LICENSE icons/*
 
 В Chromium (для своих расширений) есть встроенная функция упаковки.
