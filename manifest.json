@@ -18,7 +18,7 @@
     "48": "icons/loriko.svg"
   },
   "content_scripts": [ {
-    "world": "MAIN",
+    "all_frames": false,
     "run_at": "document_start",
     "matches": ["*://www.linux.org.ru/*"],
     "js": ["lorify-ng.user.js"]
