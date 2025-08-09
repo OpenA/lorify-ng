@@ -19,8 +19,10 @@ const USER_SETTINGS = {
 	'Delay Open Preview'   : 50,
 	'Delay Close Preview'  : 800,
 	'Desktop Notification' : true,
+	'Сlear Notifications'  : true,
 	'Preloaded Pages Count': 1,
 	'Picture Viewer'       : 2,
+	'Save Topic Pos'       : false,
 	'Scroll Top View'      : true,
 	'Upload Post Delay'    : 3,
 	'Code Block Short Size': 15,
@@ -405,7 +407,6 @@ lory_css.textContent = `
 		background: rgba(0,0,0,.5);
 		text-align: center;
 		color: white;
-		cursor: pointer;
 		font: bolder 1.2em serif;
 	}
 	.select-lc:not(.pinned) { visibility: hidden; }
@@ -414,14 +415,12 @@ lory_css.textContent = `
 	.select-lc:hover, .scroll-nav:hover, .shrink-line:hover { opacity: 1; }
 	.scroll-up:before   { transform: rotate(90deg); }
 	.scroll-down:before { transform: rotate(-90deg); }
-	.scroll-btn {
-		cursor: pointer;
-		padding: 6px;
-	}
+	.scroll-btn, .select-lc, .lory-btn { cursor: pointer; }
 	.scroll-btn:before {
 		font-size: 22px;
 		font-weight: bold;
 		display: block;
+		padding: 6px;
 	}
 	.link-self:before, .scroll-btn:before {
 		content: 'R';
@@ -869,19 +868,13 @@ class TopicNavigation {
 			if (parent)
 				parent.classList.toggle('zero-reactions');
 			break;
-		case 'link-navs':
-			if (aPath !== LOR.path) {
-				if (App.openUrl(aPath + aSearch)) {
-					return;
-				} else
-					break;
-			}
-		case 'link-self':
+
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length);
 			Timer.delete('Close Preview', 'Open Preview', cid);
 			Timer.drops = 1, clearPreviews();
-			this.goToCommentPage(cid);
+		case 'link-self':
+			this.goToCommentPage(aSearch.substring('?cid='.length));
 			break;
 		case 'link-thread':
 			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
@@ -1129,11 +1122,19 @@ const ContentFinder = {
 
 		switch (el.classList[0]) {
 		case 'link-rthub':
-			if (parent.classList.contains('ws-warn') && USER_SETTINGS['Realtime Loader']) {
+			if (parent.classList.contains('ws-warn')) {
 				parent.style.display = 'none';
 				App.wsRestart();
 			} else
-				location.href = el.href;
+				return;
+			break;
+		case 'link-navs':
+			if (el.pathname === LOR.path) {
+				TopicNavigation.global.goToCommentPage(el.search.substring('?cid='.length));
+			} else {
+				if (App.openUrl(el.pathname + el.search))
+					return;
+			}
 			break;
 		case 'scroll-btn':
 			if (el.classList.contains('scroll-down')) {
@@ -2379,21 +2380,17 @@ const addThreadHandler = (thread, msgcol) => {
 
 		switch(aClass[0]) {
 		case 'link-navs':
-			if (aPath !== LOR.path) {
-				if (App.openUrl(aPath + aSearch)) {
-					return;
-				} else
-					break;
-			}
-		case 'link-self': param = true;
+			if (LOR.path !== aPath)
+				return;
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length),
 			    msg = msgcol.children[`comment-${cid}`];
-			if (!param && msg) {
+			if (msg) {
 				onOut(e), msg.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				break;
 			}
-			TopicNavigation.global.goToCommentPage(cid);
+		case 'link-self':
+			TopicNavigation.global.goToCommentPage(aSearch.substring('?cid='.length));
 		case 'reply-thread': thread.remove();
 			break;
 		case 'link-quote': param = true;
@@ -2669,14 +2666,14 @@ const handleRegForm = form => {
 
 const handleResetForm = form => {
 	const btn = form.querySelector('button:not([type="button"]), [type="submit"]');
-	btn.className = 'btn btn-danger', btn.id = 'do_reset';
+	btn.className = 'btn btn-danger', btn.id = 'clear_notes';
 	form.onsubmit = e => { e.preventDefault();
 		if (btn.disabled)
 			return;
 		btn.disabled = true;
 		btn.className = 'btn btn-primary', btn.textContent = '...';
-		sendFormData('/notifications-reset', new FormData(form)).then(() => {
-			btn.className = 'btn btn-danger', btn.textContent = 'Сбросить';
+		sendFormData('/notifications-reset', new FormData(e.target)).then(() => {
+			btn.className = 'btn btn-danger', btn.textContent = 'Очистить';
 			btn.disabled = false;
 			App.setNotes(0);
 		});
@@ -3503,16 +3500,21 @@ if (document.readyState === 'loading') {
 
 function initUserSettings() {
 
-	let notes = 0, lstor, lorylist, granted = false;
+	let notes = 0, lstor, granted = false;
 
-	const loryform = _cnode('form', { id: 'loryform', className: 'tab-gt' });
-	const lorypanel = _cnode('div', { id: 'loryicon', className: 'lorify-settings-panel' });
+	const loryform = _cnode('form', { id: 'loryform', className: 'gs-pin' });
+	const loryicon = _cnode('div' , { id: 'loryicon', className: 'gs-pin lory-btn' });
+	const lorynote = _cnode('div' , { id: 'lorynote', className: 'gs-pin' });
+	const lorylist = _cnode('div' , { id: 'lorylist', className: 'notify-list' });
 
 	const defaults = Object.assign({}, USER_SETTINGS);
 
 	App.updStore = () => localStorage.setItem('lorify-ng', JSON.stringify(USER_SETTINGS)),
 	App.openUrl  = () => true;
-	document.body.append(lorypanel);
+
+	document.body.append(loryicon);
+	lorynote.append(
+		_cnode('label', { className: 'note-clear lory-btn', htmlFor: 'clear_notes' }), lorylist );
 
 	const sendNotify = count => {
 		if (USER_SETTINGS['Desktop Notification'] && granted) {
@@ -3536,18 +3538,17 @@ function initUserSettings() {
 	1300); /*  */ App.checkNow = checkNow;
 
 	const setNotes = (count, save = true) => {
-		const lorynotify = lorypanel.children.lorynotify;
 		Dynamic_Style.main_counter = (notes = count);
 		if (save)
 			localStorage.setItem('l0rNG-notes', count);
 		if (!count) {
-			lorynotify.removeAttribute('cnt-new');
-			lorynotify.classList.remove('pushed');
-			getNotesList(-1).remove();
+			loryicon.removeAttribute('cnt-new');
+			loryicon.classList.remove('nl-show');
+			lorynote.remove(); getNotesList(-1);
 		} else {
-			if (lorynotify.classList.contains('pushed'))
+			if (loryicon.classList.contains('nl-show'))
 				getNotesList(count);
-			lorynotify.setAttribute('cnt-new', count);
+			loryicon.setAttribute('cnt-new', count);
 		}
 	}; /*  */ App.setNotes = setNotes;
 
@@ -3582,42 +3583,32 @@ function initUserSettings() {
 	}
 
 	const getNotesList = (max) => {
-		let empty = true;
-
-		if(!lorylist) {
-			lorylist = _cnode('div', { className: 'lorify-notes-panel'});
-			lorylist.append(
-				_cnode('label', { className: 'note-clear lory-btn', htmlFor: 'do_reset', textContent: 'Очистить уведомления' })
-			);
-		} else {
-			let list = lorylist.children.notifications;
-			if (list && (empty = list.children.length !== max))
-				list.remove();
-		}
-		if (max > 0 && empty) {
+		let len = lorylist.children.length;
+		if (len > 0 && len !== max) for (let a of lorylist.children) a.remove();
+		if (max > 0 && max !== len) {
 			getDataResponse('/notifications', html => {
 				const doc = domParsr.parseFromString(html, 'text/html'),
 					  tab = doc.querySelector('.notifications'),
+					 isNf = location.pathname !== '/notifications',
 					new_rf= doc.forms.reset_form;
 				if (new_rf) {
-					const isNf = location.pathname !== '/notifications';
 					let old_rf = document.forms.reset_form;
 					if (old_rf) {
 						old_rf.elements.topId.value = new_rf.elements.topId.value;
 						old_rf.parentNode.hidden = isNf;
 					} else {
-						const bd = isNf ? lorylist : document.getElementById('bd');
+						const bd = document.getElementById('bd');
 						handleResetForm(new_rf);
 						bd.insertBefore(new_rf.parentNode, bd.children[2]).hidden = isNf;
 					}
 				}
-				for (let i = 0; i < max; i++) {
-					const anc = tab.children[i], [,info,warn,user] = anc.children,
+				for (let i = 0, list = Array.from(tab.children); i < max; i++) {
+					const anc = list[i], [,info,warn,user] = anc.children,
 					     tags = warn.firstElementChild,
 					     time = user.firstElementChild.lastElementChild,
 					     ftag = tags && tags.firstElementChild;
 					anc.className = 'link-navs '+ anc.className.replace('notifications-', 'notify-');
-					anc.target = '_blank';
+					anc.target = isNf ? '_blank' : '_self';
 					if (!ftag) {
 						 if(warn.innerText.trim())
 							user.className = 'notifications-mod-warn',
@@ -3625,83 +3616,80 @@ function initUserSettings() {
 					} else if (ftag.className === 'reactions') {
 						info.firstElementChild.appendChild(ftag).style.display = 'block';
 					} else if (ftag.className === 'tag')
-						info.appendChild(tags).className = 'notify-tags';
-						user.appendChild(time).className = 'notify-time';
+						info.prepend(tags); tags.className = 'notify-tags';
+					user.appendChild(time).className = 'notify-time';
 					ContentFinder.localizeTime(time, 'interval');
+					lorylist.append( anc );
 				}
-				tab.id = 'notifications';
-				tab.className = 'notify-list';
-				while (tab.children[max])
-					   tab.children[max].remove();
-				lorylist.append(tab);
 			});
 		}
-		return lorylist;
 	}
 
 	notes = Number( localStorage.getItem('l0rNG-notes') );
 	lstor = JSON.parse(localStorage.getItem('lorify-ng'));
 
 	const form_doc = domParsr.parseFromString(`
-	<div class="tab-row">
-		<span class="tab-cell">Автоподгрузка комментариев:</span>
-		<span class="tab-cell"><input type="checkbox" id="Realtime Loader"></span>
+	<div class="fx-row" aria-ttl="Комментарии">
+		<label class="fx-col" aria-stxt="Подгружать новые">
+			<input type="checkbox" id="Realtime Loader">
+		</label>
+		<label class="fx-col" aria-stxt="Плавные анимации">
+			<input type="checkbox" id="CSS3 Animation">
+		</label>
+		<label class="fx-col" aria-stxt="Запоминать позицию">
+			<input type="checkbox" id="Save Topic Pos">
+		</label>
+		<label class="fx-col" aria-stxt="Перемещать в начало">
+			<input type="checkbox" id="Scroll Top View">
+		</label>
 	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Укорачивать блоки кода свыше:</span>
-		<span class="tab-cell" chr="px"><input type="number" id="Code Block Short Size" min="0" step="1"></span>
+	<div class="fx-row" aria-ttl="Уведомления">
+		<label class="fx-col" aria-stxt="Всплывающие">
+			<input type="checkbox" id="Desktop Notification">
+		</label>
+		<label class="fx-col" aria-stxt="Очищать все">
+			<input type="checkbox" id="Сlear Notifications">
+		</label>
 	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Разметка сообщений:</span>
-		<span class="tab-cell">
+	<div class="fx-row" aria-ttl="Прочее">
+		<gb-r class="fx-col" aria-ttl="Макс. размер блоков кода"></gb-r>
+		<span class="fx-col" aria-stxt="px.">
+			<input type="number" id="Code Block Short Size" min="0" step="1">
+		</span>
+		<gb-r class="fx-col" aria-ttl="Разметка сообщений"></gb-r>
+		<span class="fx-col">
 			<select id="Markup Mode">
 				<option>Markdown</option>
 				<option>LORCODE</option>
 				<option>Line-Break</option>
 			</select>
 		</span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Задержка появления / исчезновения превью:</span>
-		<span class="tab-cell" chr="мс">
+		<gb-r class="fx-col" aria-ttl="Показ / скрытие превью"></gb-r>
+		<span class="fx-col" aria-stxt="мс.">
 			<input type="number" id="Delay Open Preview" min="50" step="25">
 			/
 			<input type="number" id="Delay Close Preview" min="50" step="25">
 		</span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Предзагружаемых страниц:</span>
-		<span class="tab-cell" chr="ст"><input type="number" id="Preloaded Pages Count" min="1" step="1"></span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Оповещения на рабочий стол:</span>
-		<span class="tab-cell"><input type="checkbox" id="Desktop Notification"></span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Просмотр картинок:</span>
-		<span class="tab-cell">
+		<gb-r class="fx-col" aria-ttl="Подгружать ответы с"></gb-r>
+		<span class="fx-col" aria-stxt="страниц">
+			<input type="number" id="Preloaded Pages Count" min="1" step="1">
+		</span>
+		<gb-r class="fx-col" aria-ttl="Просмотр картинок"></gb-r>
+		<span class="fx-col">
 			<select id="Picture Viewer">
 				<option>Откл.</option>
 				<option>Только для превью</option>
 				<option>Для превью и ссылок</option>
 			</select>
 		</span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Задержка перед отправкой:</span>
-		<span class="tab-cell step-line">
+		<gb-r class="fx-col" aria-ttl="Ожидание перед отправкой"></gb-r>
+		<span class="fx-col step-line">
 			<input type="range" min="0" max="9" step="1" id="Upload Post Delay">
 			<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
 		</span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">Перемещать в начало страницы:</span>
-		<span class="tab-cell"><input type="checkbox" id="Scroll Top View"></span>
-	</div>
-	<div class="tab-row">
-		<span class="tab-cell">CSS анимация:</span>
-		<span class="tab-cell"><input type="checkbox" id="CSS3 Animation">
-			<button type="button" id="reset-setts" title="вернуть настройки по умолчанию">сброс</button>
+		<gb-r class="fx-col" aria-ttl="Настройки по умолчанию"></gb-r>
+		<span class="fx-col">
+			<input type="button" id="reset-setts" value="Вернуть">
 		</span>
 	</div>`, 'text/html');
 
@@ -3723,71 +3711,61 @@ function initUserSettings() {
 	});
 
 	if (lstor) setValues( lstor );
+	if (notes) loryicon.setAttribute('cnt-new', notes);
 
-	const panel_doc = domParsr.parseFromString(`
+	const loriko_svg = domParsr.parseFromString(`
 	<svg id="loriko-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 	  <path id="loriko-belly" fill="snow" d="m14.2 8 9.4-3.2 10.2 2.8 3.7 15-1.9 12.8-6.4 6-11 .2-5.6-5.5-2.5-10Z"/>
 	  <path id="loriko-body" fill="#2a1725" d="M8.8 31.1c.5 3.7 3 7.1 5.6 9.7-1.7 0-3.3 1.3-4.1 2.2-1 1.1 0 1.4 2 1.4 0 1.4.4 1 2.3 1.4 0 2 2.4.5 5.5-1.4a89 89 0 0 1 9-.1c2.7 2.6 4.4 3.2 4.7 1.2 2.5.4 2.6-.3 2.8-2 5 2 .8-3.1-2.6-3.2a16 16 0 0 0 5-9c1.2.5 8.1 3.3 9 1.1.3-.8-.8-2-1.3-2.7-1.5-2.1-6.3-5.3-7.3-7.7-1.7-4.2-1.3-8.8-2.8-13-2.3-6.3-6-9-12.6-9-6.7 0-9.6 2.6-12 9-1.4 4-1.4 8.3-3 12.5-1 2.4-6.2 6.1-7.7 8.2-.5.6-1.6 1.9-1.2 2.7.8 2.2 1.9 1 3.2.5m15-26C21 6.8 22 9.2 24 9.2c1 0 2.1-1.3 3-1.8a5 5 0 0 1 6 1.1c3 3.5 1 7.3 1.4 11.2.2 2 1.5 3.9 1.6 6 .6 7.3-2.5 13.8-10 14.7-8 .8-14-3.7-14.3-12-.1-3 1.4-5.5 1.7-8.3.4-5-2.1-12.3 5.6-13"/>
 	  <path id="loriko-nose" fill="#9c6c6c" d="m23 16.2 3 .6.2 3-2.7 1.2-2-2.3z" paint-order="fill markers stroke"/>
 	  <path id="loriko-eyes" fill="none" stroke="#000" d="M16.3 16.6c.9-.2 1.8-.4 2.7-.4m9.6-.4c.7.2 1.9-.3 2.4.2"/>
 	</svg>
-	<div id="lorynotify" class="lory-btn"></div>
-	<div id="lorytoggle" class="lory-btn"></div>
-	<style>
-		#lorynotify {
+	`, 'image/svg+xml').documentElement;
+
+	lory_css.append(`
+		#loryicon:after {
 			top: -5px; left: -3px;
 			color: white;
 			font: bold 16px "Open Sans";
 			background-color: #3e85a8;
 			border-radius: 5px;
-			z-index: 1;
+			padding: 0;
 		}
-		#lorynotify[cnt-new]:before {
+		#loryicon[cnt-new]:after {
 			content: attr(cnt-new);
 			padding: 0 4px;
 		}
-		#lorytoggle {
-			left: 0; top: 0;
-			right: 0; bottom: 0;
+		gb-r {
+			display: inline-block;
+			position: relative;
 		}
 		#loriko-svg {
 			width: 40px;
 			margin: 2px;
 		}
 		#loryform {
-			min-width: 360px;
-			right: 5px;
-			top: 5px;
+			width: 360px;
 			padding: 4px 6px;
 		}
-		#loryform, .lorify-notes-panel {
+		#loryform, #lorynote {
 			background: #eee;
 			border-radius: 5px;
 			box-shadow: -1px 2px 8px rgba(0,0,0,.3);
-			position: fixed;
-		}
-		#loryform .tab-cell {
-			padding: 4px 2px;
-			max-width: 180px;
-		}
-		#loryform .tab-row, .lorify-notes-panel {
+			overflow: hidden;
 			font-size: 85%;
-			color: #666;
+			color: #444;
 		}
-		.lorify-notes-panel {
-			top: 5px;
-			right: 34px;
-			overflow: hidden auto;
+		#lorynote {
+			top: 5px; right: 15px;
+			overflow-y: auto;
 			max-height: 100%;
 		}
-		.lorify-notes-panel > * {
+		.note-clear:hover, .notify-item:hover {
+			background: #dbddd6;
+		}
+		.note-clear:before {
+			content: "Очистить уведомления";
 			padding: 6px 8px;
-		}
-		.lorify-notes-panel > .lory-btn:hover,
-		.notify-item:hover {
-			background: #e1e1e1;
-		}
-		.note-clear {
 			display: block;
 			text-align: center;
 			font-size: 18px;
@@ -3802,19 +3780,21 @@ function initUserSettings() {
 			display: block;
 		}
 		.notify-item > * {
-			padding: 5px 0 0 12px;
+			padding: 0 6px;
 			max-width: 360px;
 		}
 		.notify-item > .notifications-who-when   { color: #03b71f; font-weight: bold; }
 		.notify-item > .notifications-mod-warn p { color: #f00; }
 		.notify-item > .notifications-who-when s { color: #6b747d; }
-		.notify-item,  #notifications a:visited  { color: #31aea8; }
-		.notify-time, .notify-tags {
+		.notify-item,  .notify-list > a:visited  { color: #31aea8; }
+		gb-r.fx-col:after {
+			content: "";
 			position: absolute;
-			margin: 0; bottom: 0;
+			bottom: 1px; right: 4px; top: 1px;
+			border: 1px dashed #b09797;
 		}
 		.notify-item .reaction { font: bold 14px caption; padding: 1px 5px; }
-		.notify-time           { font: bold 14px monospace; background-color: #aa512e; }
+		.notify-time           { font: bold 12px monospace; background-color: #aa512e; }
 		.notify-tags .tag      { font: bold 12px monospace; background-color: slategray; }
 		.notify-tags .tag,
 		.notify-time {
@@ -3823,28 +3803,45 @@ function initUserSettings() {
 			border-radius: 3px 3px 0 0;
 			padding: 1px 3px;
 		}
-		.lorify-settings-panel {
+		.gs-pin {
 			position: fixed;
 			top: 5px;
 			right: 5px;
 		}
-		.lorify-settings-panel:hover #loriko-body, #loryform ~ * #loriko-body { fill: #949494; }
-		.lorify-settings-panel:hover #loriko-belly, #loryform ~ * #loriko-belly { fill: white; }
-		.lory-btn { cursor: pointer; }
+		#loryicon:hover #loriko-body, #loryicon.gs-show #loriko-body { fill: darkgray; }
+		#loryicon:hover #loriko-belly, #loryicon.gs-show #loriko-belly { fill: white; }
 		.tab-gt  , .notify-list    { display: table; }
 		.tab-row , .notify-item    { display: table-row;  position: relative; }
 		.tab-cell, .notify-item >* { display: table-cell; vertical-align: middle; }
 		#loryform select { width: 160px; }
 		#loryform input[type="number"] { width: 60px; }
-		.tab-cell[chr]:after {
-			content: attr(chr) ".";
-			font: italic 14px serif;
+		*[aria-stxt]:after { content: attr(aria-stxt); color: #373b39; font: italic 12px serif; }
+		*[aria-ttl]:before { content: attr(aria-ttl);  color: #686f6c; font: normal 12px sans-serif; }
+		.fx-row {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+		.fx-row[aria-ttl]:before {
+			content: attr(aria-ttl);
+			color: white;
+			font-weight: bold;
+			line-height: 12px;
+			text-align: center;
+			background-color: #b09797;
+			padding-bottom: 2px;
+			flex-basis: 100%;
+		}
+		.fx-col {
+			flex-basis: 50%;
+			min-height: 28px;
+			align-content: center;
 		}
 		.step-line, .step-line > input {
 			counter-reset: stepIdx -1;
 			width: 180px;
 		}
-		st:before, .step-line > input, #lorynotify, #lorytoggle {
+		st:before, .step-line > input, #loryform:before, #loryicon:after {
 			position: absolute;
 		}
 		st + st {
@@ -3861,13 +3858,12 @@ function initUserSettings() {
 			font: italic 10px Arial;
 		}
 		#loginGreating, #topProfile { margin-right: 60px!important; }
-		#reset-setts, #loryform:before { position: absolute; right: 0; }
+		.notify-tags { margin: 0; }
 		#loryform:before {
 			transition: top .7s linear;
 			color: white;
 			background-color: #d25555;
-			left: 0; top: -100%;
-			z-index: 1;
+			left: 0; top: -100%; right: 0;
 			content: 'Настройки сохранены.';
 			padding: 15px 0;
 			text-align: center;
@@ -3876,25 +3872,21 @@ function initUserSettings() {
 			top: 0;
 		}
 		@media screen and (max-width: 570px) {
-			#loryform, .lorify-notes-panel { right: 0; }
-			#lorynotify.pushed { border-radius: 0 0 5px 5px; padding: 2px 6px; }
+			#loryform, #lorynote { right: 0; }
+			#loryicon:after { border-radius: 0 0 5px 5px; padding: 2px 6px; }
 			#loriko-svg { width: 28px; margin: 1px; }
 		}
-	</style>`, 'text/html');
-
-	lorypanel.append( ...panel_doc.body.children );
-	lorypanel.addEventListener('click', e => {
-		{
-			const btn = e.target,
-			   pannel = btn.id === 'lorynotify' ? getNotesList(notes) :
-			            btn.id === 'lorytoggle' ? loryform : null;
-			if (pannel) {
-				if (btn.classList.toggle('pushed')) {
-					ContentFinder.cont.append(pannel);
-				} else
-					pannel.remove();
-			}
+	`);
+	loryicon.append( loriko_svg );
+	loryicon.addEventListener('click', ({ target }) => {
+		const i_cnt = target === loryicon && loryicon.getAttribute('cnt-new');
+		if (  i_cnt  ) {
+			getNotesList( Number(i_cnt) );
 		}
+		if (loryicon.classList.toggle(`${i_cnt ? 'nl' : 'gs' }-show`)) {
+			ContentFinder.cont.append(i_cnt ? lorynote : loryform);
+		} else
+			(i_cnt ? lorynote : loryform).remove();
 	});
 	reset_btn.addEventListener('click', () => {
 		Timer.set('Apply Setts', () => loryform.classList.remove('save-msg'), 2000);
