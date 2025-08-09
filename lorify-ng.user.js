@@ -869,19 +869,13 @@ class TopicNavigation {
 			if (parent)
 				parent.classList.toggle('zero-reactions');
 			break;
-		case 'link-navs':
-			if (aPath !== LOR.path) {
-				if (App.openUrl(aPath + aSearch)) {
-					return;
-				} else
-					break;
-			}
-		case 'link-self':
+
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length);
 			Timer.delete('Close Preview', 'Open Preview', cid);
 			Timer.drops = 1, clearPreviews();
-			this.goToCommentPage(cid);
+		case 'link-self':
+			this.goToCommentPage(aSearch.substring('?cid='.length));
 			break;
 		case 'link-thread':
 			var [ tid, cid ] = parseReplyUrl(aPath + el.hash, 1);
@@ -1129,11 +1123,19 @@ const ContentFinder = {
 
 		switch (el.classList[0]) {
 		case 'link-rthub':
-			if (parent.classList.contains('ws-warn') && USER_SETTINGS['Realtime Loader']) {
+			if (parent.classList.contains('ws-warn')) {
 				parent.style.display = 'none';
 				App.wsRestart();
 			} else
-				location.href = el.href;
+				return;
+			break;
+		case 'link-navs':
+			if (el.pathname === LOR.path) {
+				TopicNavigation.global.goToCommentPage(el.search.substring('?cid='.length));
+			} else {
+				if (App.openUrl(el.pathname + el.search))
+					return;
+			}
 			break;
 		case 'scroll-btn':
 			if (el.classList.contains('scroll-down')) {
@@ -2379,21 +2381,17 @@ const addThreadHandler = (thread, msgcol) => {
 
 		switch(aClass[0]) {
 		case 'link-navs':
-			if (aPath !== LOR.path) {
-				if (App.openUrl(aPath + aSearch)) {
-					return;
-				} else
-					break;
-			}
-		case 'link-self': param = true;
+			if (LOR.path !== aPath)
+				return;
 		case 'link-pref':
 			var cid = aSearch.substring('?cid='.length),
 			    msg = msgcol.children[`comment-${cid}`];
-			if (!param && msg) {
+			if (msg) {
 				onOut(e), msg.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				break;
 			}
-			TopicNavigation.global.goToCommentPage(cid);
+		case 'link-self':
+			TopicNavigation.global.goToCommentPage(aSearch.substring('?cid='.length));
 		case 'reply-thread': thread.remove();
 			break;
 		case 'link-quote': param = true;
@@ -2669,14 +2667,14 @@ const handleRegForm = form => {
 
 const handleResetForm = form => {
 	const btn = form.querySelector('button:not([type="button"]), [type="submit"]');
-	btn.className = 'btn btn-danger', btn.id = 'do_reset';
+	btn.className = 'btn btn-danger', btn.id = 'clear_notes';
 	form.onsubmit = e => { e.preventDefault();
 		if (btn.disabled)
 			return;
 		btn.disabled = true;
 		btn.className = 'btn btn-primary', btn.textContent = '...';
-		sendFormData('/notifications-reset', new FormData(form)).then(() => {
-			btn.className = 'btn btn-danger', btn.textContent = 'Сбросить';
+		sendFormData('/notifications-reset', new FormData(e.target)).then(() => {
+			btn.className = 'btn btn-danger', btn.textContent = 'Очистить';
 			btn.disabled = false;
 			App.setNotes(0);
 		});
