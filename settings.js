@@ -1,30 +1,28 @@
 
-const loryform = document.getElementById('loryform');
-const n_count  = document.getElementById('note-count');
-const note_lst = document.getElementById('note-list');
-const rst_btn  = document.getElementById('reset-settings');
+const [ loryform ] = document.forms;
+const { notes_count, notes_stack } = document.body.children;
 
-let busy_id = -1, not_ld  = true,
-	anim_id = -1, cnt_new = 0, my_port = null;
+let busy_id = -1, ld_open = true,
+	anim_id = -1, my_port = null;
 
 const showNotifications = () => {
 	history.replaceState(null, null, location.pathname +'#notifications');
-	note_lst.hidden = false;
-	if (not_ld)
-		updNotifications(cnt_new);
+	notes_stack.hidden = false;
+	if (ld_open)
+		updNotifications( Number(notes_count.getAttribute('cnt-new')) );
 }
 
 if (location.hash === '#notifications')
-	note_lst.hidden = false;
+	notes_stack.hidden = false;
 
 const showAnimBanner = () => {
 	if (anim_id !== -1)
 		clearTimeout(anim_id);
 	anim_id = setTimeout(() => {
 		anim_id = -1;
-		loryform.classList.add('hide-msg');
-	}, 2e3);
-	loryform.classList.remove('hide-msg');
+		loryform.classList.remove('show-msg');
+	}, 1700);
+	loryform.classList.add('show-msg');
 }
 
 loryform.addEventListener('change', ({ target }) => {
@@ -40,16 +38,18 @@ loryform.addEventListener('input', ({ target }) => {
 	}, 750);
 });
 
-rst_btn.addEventListener('click', () => sendCommand('reset-all'));
-n_count.addEventListener('click', showNotifications);
-note_lst.addEventListener('click', e => {
-	let el = e.target;
+loryform.elements.reset_all.addEventListener('click', () => sendCommand('reset-all'));
+notes_count.addEventListener('click', showNotifications);
+notes_stack.addEventListener('click', e => {
+	const el = e.target, elClass = el.classList;
 	switch (el.id) {
-	case 'go-back'    : note_lst.hidden = true; history.replaceState(null, null, location.pathname);
-	case 'do-wait'    : break;
-	case 'reset-notes':
-		if ('reset_form' in document.forms) {
-			el.id = 'do-wait';
+	case 'goto_setts':
+		notes_stack.hidden = true;
+		history.replaceState(null, null, location.pathname);
+	case 'notes_stack': break;
+	case 'notes_reset':
+		if(!elClass.contains('do-wait') && 'reset_form' in document.forms) {
+			elClass.add('do-wait');
 			fetch('https://www.linux.org.ru/notifications-reset', {
 				credentials: 'same-origin',
 				method: 'POST',
@@ -59,10 +59,21 @@ note_lst.addEventListener('click', e => {
 					sendCommand('set-notes', 0);
 					document.forms.reset_form.remove();
 				}
-				el.id = 'reset-notes';
+				elClass.remove('do-wait');
 			});
 		}
 		break;
+	default:
+		const stk_list = notes_stack.lastElementChild;
+		if (stk_list !== el) {
+			for (const a of stk_list.children) {
+				if (a.contains(el)) {
+					sendCommand('open-tab', 'lor:/'+ a.getAttribute('href'), false);
+					break;
+				}
+			}
+		}
+		e.preventDefault();
 	}
 });
 
@@ -74,10 +85,9 @@ const createPort = () => new Promise(resolve => {
 			showNotifications();
 			break;
 		case 'notes-count-update':
-			n_count.setAttribute('cnt-new', data);
-			n_count.hidden = !(cnt_new = Number(data));
-			if (!note_lst.hidden && not_ld)
-				updNotifications(cnt_new);
+			notes_count.setAttribute('cnt-new', data);
+			if (!notes_stack.hidden && ld_open)
+				updNotifications(Number(data));
 			break;
 		case 'connection-resolve':
 			my_port = port;
@@ -105,23 +115,21 @@ const sendCommand = (action = '', data = null) => {
 		createPort().then(() => my_port.postMessage({ action, data }));
 }
 
-function updNotifications(count = 0) {
-	let tr_lst = note_lst.lastElementChild.children,
-	    do_upd = count > 0 && tr_lst.length < count;
+function updNotifications(cnt_new = 0) {
+	const tr_lst = Array.from(notes_stack.lastElementChild.children),
+	      do_upd = cnt_new > 0 && tr_lst.length !== cnt_new;
 
-	if (tr_lst.length) {
-		for(let i = do_upd ? 0 : count; tr_lst[i];)
-			tr_lst[i].remove();
-	}
 	if (do_upd) {
-		not_ld = false;
+		for (const tr of tr_lst)
+			tr.remove();
+		ld_open = false;
 		fetch('https://www.linux.org.ru/notifications', {
 			credentials: 'same-origin',
 			method: 'GET'
 		}).then(res => {
 			if (res.ok)
 			    res.text().then(pullNotes);
-			not_ld = true;
+			ld_open = true;
 		});
 	}
 }
@@ -160,7 +168,8 @@ function pullNotes(html) {
 
 	const doc = new DOMParser().parseFromString(html, 'text/html'),
 	    items = Array.from(doc.querySelector('.notifications').children),
-	     list = note_lst.lastElementChild,
+	  cnt_new = Number(notes_count.getAttribute('cnt-new')),
+	     list = notes_stack.lastElementChild,
 	    limit = cnt_new > items.length ? items.length : cnt_new;
 
 	const new_rf = doc.forms.reset_form;
@@ -227,10 +236,5 @@ function pullNotes(html) {
 		icon.remove(), detail.remove();
 		item.append(info, title);
 		list.append(item);
-		item.onclick = e => {
-			e.preventDefault()
-			e.stopPropagation();
-			sendCommand('open-tab', 'lor:/'+ item.getAttribute('href'), false);
- 		}
 	}
 }
