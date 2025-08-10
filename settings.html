@@ -5,65 +5,63 @@
 		<meta name="viewport" content="initial-scale=1.0">
 		<title>lorify-ng Options</title>
 		<style>
-			#note-list, body { margin: 0; padding: 8px; background-color: white; }
-			#loriform { display: table; min-width: 360px; margin: 0 auto; }
-			.tab-row  { display: table-row; }
-			.tab-cell { display: table-cell;
+			body                         { min-width: 360px; }
+			#loryform, #notes_count      { max-width: 360px; }
+			#loryform select             { max-width: 160px; }
+			#loryform input[type=number] { max-width:  60px; }
+			gb-r {
+				display: inline-block;
 				position: relative;
-				max-width: 180px;
-				padding: 4px 2px;
-				vertical-align: middle;
 			}
-			.tab-cell select { width: 160px; }
-			.tab-cell input[type="number"] { width: 56px; }
-			.tab-row > .tab-cell:first-child {
-				font: bold 14px sans-serif;
+			.fx-row {
+				display: flex;
+				flex-direction: row;
+				flex-wrap: wrap;
 			}
-			.tab-gr3d {
-				display: grid;
-				grid-template-columns: 1fr 1fr 1fr;
+			.fx-row[aria-ttl]:before {
+				background-color: #97b0b0;
+				padding-bottom: 2px;
+				color: white;
+				font-weight: bold;
+				line-height: 12px;
+				display: block;
+				flex-basis: 100%;
 				text-align: center;
 			}
-			*[txblk]:before {
-				content: attr(txblk);
-				cursor: pointer;
-				font: italic 12px serif;
+			.fx-col {
+				flex-basis: 50%;
+				min-height: 28px;
+				align-content: center;
 			}
-			.note-item-topic, .tab-row > .tab-cell:first-child {
+			.note-item-topic {
 				color: #777;
 			}
-			.step-line, .step-line > input {
-				counter-reset: stepIdx -1;
+			.step-line, .step-line + input {
+				height: auto;
 				width: 180px;
 			}
-			st:before, .step-line > input {
+			.step-line {
 				position: absolute;
 			}
-			st + st {
-				margin-left: 10%;
+			.step-line + input {
+				margin: 6px 0;
+				position: relative;
 			}
-			st {
-				padding: 5px 0;
-				border: 0 solid #ccc;
-				counter-increment: stepIdx;
-				border-left-width: 1px;
+			#sl_range {
+				stroke: #9eb1a5;
+				stroke-width: .5px;
 			}
-			st:before {
-				content: counter(stepIdx);
-				font: italic 10px Arial;
-			}
-			#do-wait:before {
-				-webkit-animation: apply 2s ease-in infinite;
+			#notes_reset.do-wait:before {
+				content: "...";
 				animation: apply 2s ease-in infinite;
 				color: #d25555;
 			}
-			#note-list {
+			#notes_stack {
 				background-color: white;
-			}
-			#loryform:before, #note-list {
+				overflow-y: auto;
 				position: absolute;
-				left: 0; top: 0; right: 0;
-				z-index: 9;
+				left: 0; right: 0;
+				bottom: 0; top: 0;
 			}
 			#loryform:before {
 				content: 'Настройки сохранены.';
@@ -71,45 +69,47 @@
 				text-align: center;
 				font: bold italic 20px serif;
 				padding: 15px 0;
+				top: -100%; left: 0; right: 0;
+				position: absolute;
+				background-color: #54b3b3;
+				color: white;
 			}
-			#loryform.hide-msg:before {
-				top: -100%;
+			#loryform.show-msg:before {
+				top: 0;
 			}
 			.nav-menu {
 				border-bottom: 1px dashed #aaa;
-				padding-bottom: 6px;
+				padding: 6px;
 				text-align: center;
 			}
 			.nav-txt-btn {
 				color: #68b;
 				cursor: pointer;
-				user-select: none;
-			}
-			#reset-settings {
-				position: absolute;
-				right: 0;
 			}
 			.nav-cell {
 				margin: 0 10%;
 				padding: 2px 10px;
-				font: normal 20px sans;
+				font: bold 20px sans-serif;
 				display: inline-block;
 			}
-			#go-back:hover, #reset-notes:hover, #loryform:before {
+			#goto_setts:hover, #notes_reset:not(.do-wait):hover {
 				background-color: #369e1b;
 				border-radius: 3px;
 				color: white;
 			}
-			#do-wait:before     { content: "..."; }
-			#go-back:before     { content: "←";   }
-			#reset-notes:before { content: "✓";   }
-			#note-count:before  {
-				content: "Уведомлений: " attr(cnt-new);
-				font: italic 16px serif;
+			*[aria-stxt]:after  { content: attr(aria-stxt); color: #373b39; font: italic 12px serif; }
+			*[aria-ttl ]:before { content: attr(aria-ttl);  color: #686f6c; font: normal 12px sans-serif; }
+
+			#goto_setts:before  { content: "◄"; }
+			#notes_reset:before { content: "✓"; }
+			#notes_count:before {
+				content: "‟ " attr(cnt-new) " „ новых сообщений";
+				font: bold italic 16px serif;
+				animation: ivent 6s ease-in infinite;
+				color: #0ea9e1;
 			}
-			#note-list {
-				bottom: 0;
-				overflow-y: auto;
+			#notes_count[cnt-new="0"], [hidden] {
+				display: none;
 			}
 			.note-item {
 				border-bottom: 1px dashed #cce0e0;
@@ -161,10 +161,10 @@
 				text-overflow: ellipsis;
 			}
 			@keyframes apply {
-				from { opacity: 0; } to { opacity: 1; }
+				0% { opacity: 1; } 50% { opacity: 0; }
 			}
-			@-webkit-keyframes apply {
-				from { opacity: 0; } to { opacity: 1; }
+			@keyframes ivent {
+				0% { filter: invert(0); } 50% { filter: invert(100%); }
 			}
 			@media screen and (max-width: 960px) {
 				#loriform, .note-item { width: 100%; }
@@ -172,91 +172,89 @@
 		</style>
 	</head>
 	<body>
-		<form id="loryform" class="info-line hide-msg">
-			<div id="note-count" class="nav-menu nav-txt-btn" hidden></div>
-			<div class="tab-row">
-				<span class="tab-cell">Автоподгрузка комментариев:</span>
-				<span class="tab-cell">
-					<input type="checkbox" name="Realtime Loader">
+		<div id="notes_count" class="nav-menu nav-txt-btn" cnt-new="0"></div>
+		<form id="loryform" class="set-panel">
+			<div class="fx-row" aria-ttl="Комментарии">
+				<label class="fx-col" aria-stxt="Подгружать новые">
+					<input type="checkbox" id="Realtime Loader">
+				</label>
+				<label class="fx-col" aria-stxt="Плавные анимации">
+					<input type="checkbox" id="CSS3 Animation">
+				</label>
+				<label class="fx-col" aria-stxt="Запоминать позицию">
+					<input type="checkbox" id="Save Topic Pos">
+				</label>
+				<label class="fx-col" aria-stxt="Перемещать в начало">
+					<input type="checkbox" id="Scroll Top View">
+				</label>
+			</div>
+			<div class="fx-row" aria-ttl="Уведомления">
+				<label class="fx-col" aria-stxt="Очищать все">
+					<input type="checkbox" id="Сlear Notifications">
+				</label>
+				<span class="fx-col">
+					<label aria-stxt="Откл.">  <input name="Desktop Notification" type="radio" value="0"></label>
+					<label aria-stxt="LOR">    <input name="Desktop Notification" type="radio" value="1"></label>
+					<label aria-stxt="Mobile"> <input name="Desktop Notification" type="radio" value="2"></label>
 				</span>
 			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Укорачивать блоки кода свыше:</span>
-				<span class="tab-cell" data-chr="px">
-					<input type="number" name="Code Block Short Size" min="0" step="1">
+			<div class="fx-row" aria-ttl="Прочее">
+				<gb-r class="fx-col" aria-ttl="Макс. размер блоков кода"></gb-r>
+				<span class="fx-col" aria-stxt="px.">
+					<input type="number" id="Code Block Short Size" min="0" step="1">
 				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Разметка сообщений:</span>
-				<span class="tab-cell">
-					<select name="Markup Mode">
+				<gb-r class="fx-col" aria-ttl="Разметка сообщений"></gb-r>
+				<span class="fx-col">
+					<select id="Markup Mode">
 						<option>Markdown</option>
 						<option>LORCODE</option>
 						<option>Line-Break</option>
 					</select>
 				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Задержка появления / исчезновения превью:</span>
-				<span class="tab-cell" data-chr="мс">
-					<input type="number" name="Delay Open Preview" min="50" step="25">
+				<gb-r class="fx-col" aria-ttl="Показ / скрытие превью"></gb-r>
+				<span class="fx-col" aria-stxt="мс.">
+					<input type="number" id="Delay Open Preview" min="50" step="25">
 					/
-					<input type="number" name="Delay Close Preview" min="50" step="25">
+					<input type="number" id="Delay Close Preview" min="50" step="25">
 				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Предзагружаемых страниц:</span>
-				<span class="tab-cell" data-chr="ст">
-					<input type="number" name="Preloaded Pages Count" min="1" step="1">
+				<gb-r class="fx-col" aria-ttl="Подгружать ответы с"></gb-r>
+				<span class="fx-col" aria-stxt="страниц">
+					<input type="number" id="Preloaded Pages Count" min="1" step="1">
 				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Оповещения на рабочий стол:</span>
-				<span class="tab-gr3d">
-					<label for="notes_off" txblk="Откл."></label>
-					<label for="notes_lor" txblk="LOR"></label>
-					<label for="notes_mob" txblk="Mobile"></label>
-					<input id="notes_off" name="Desktop Notification" type="radio" value="0">
-					<input id="notes_lor" name="Desktop Notification" type="radio" value="1">
-					<input id="notes_mob" name="Desktop Notification" type="radio" value="2">
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Просмотр картинок:</span>
-				<span class="tab-cell">
-					<select name="Picture Viewer">
+				<gb-r class="fx-col" aria-ttl="Просмотр картинок"></gb-r>
+				<span class="fx-col">
+					<select id="Picture Viewer">
 						<option>Откл.</option>
 						<option>Только для превью</option>
 						<option>Для превью и ссылок</option>
 					</select>
 				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Задержка перед отправкой:</span>
-				<span class="tab-cell step-line">
-					<input type="range" min="0" max="9" step="1" name="Upload Post Delay">
-					<st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st><st></st>
+				<gb-r class="fx-col" aria-ttl="Ожидание перед отправкой"></gb-r>
+				<span class="fx-col">
+					<svg class="step-line" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 10">
+						<text id="sl_steps" y="4" font-size="4">
+							<tspan x="1" >0</tspan><tspan x="11">1</tspan>
+							<tspan x="21">2</tspan><tspan x="31">3</tspan>
+							<tspan x="41">4</tspan><tspan x="51">5</tspan>
+							<tspan x="61">6</tspan><tspan x="71">7</tspan>
+							<tspan x="81">8</tspan><tspan x="91">9</tspan>
+						</text>
+						<path id="sl_range" d="M 0,10 H 10 V 0 10 H 20 V 0 10 H 30 V 0 10 H 40 V 0 10 H 50 V 0 10 H 60 V 0 10 H 70 V 0 10 H 80 V 0 10 H 90 V 10 0 10 h 10"/>
+					</svg>
+					<input type="range" min="0" max="9" step="1" id="Upload Post Delay">
 				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">Перемещать в начало страницы:</span>
-				<span class="tab-cell"><input type="checkbox" name="Scroll Top View">
-				</span>
-			</div>
-			<div class="tab-row">
-				<span class="tab-cell">CSS анимация:</span>
-				<span class="tab-cell">
-					<input type="checkbox" name="CSS3 Animation">
-					<input type="button" id="reset-settings" value="сброс" title="вернуть настройки по умолчанию">
+				<gb-r class="fx-col" aria-ttl="Настройки по умолчанию"></gb-r>
+				<span class="fx-col">
+					<input type="button" id="reset_all" value="Вернуть">
 				</span>
 			</div>
 		</form>
-		<div id="note-list" hidden>
+		<div id="notes_stack" hidden>
 			<div class="nav-menu">
-				<span id="go-back" class="nav-txt-btn nav-cell" title="к настройкам"></span>
-				<span id="reset-notes" class="nav-txt-btn nav-cell" title="отметить как прочитанные"></span>
+				<span id="goto_setts" class="nav-txt-btn nav-cell" title="к настройкам"></span>
+				<span id="notes_reset" class="nav-txt-btn nav-cell" title="отметить как прочитанные"></span>
 			</div>
-			<div></div>
+			<div class="stk-list"></div>
 		</div>
 		<script type="text/javascript" src="settings.js"></script>
 	</body>
