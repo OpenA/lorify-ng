@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "lorify-ng",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "description": "Расширение для сайта linux.org.ru поддерживающее загрузку комментариев через технологию WebSocket, а так же уведомления об ответах через системные оповещения и многое другое.",
   "options_ui": {
     "open_in_tab": true,
