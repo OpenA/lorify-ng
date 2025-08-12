@@ -189,21 +189,21 @@
 		<form id="loryform" class="set-panel">
 			<div class="fx-row" aria-ttl="Комментарии">
 				<label class="fx-col" aria-stxt="Подгружать новые">
-					<input type="checkbox" id="Realtime Loader">
+					<input type="checkbox" name="Realtime Loader">
 				</label>
 				<label class="fx-col" aria-stxt="Плавные анимации">
-					<input type="checkbox" id="CSS3 Animation">
+					<input type="checkbox" name="CSS3 Animation">
 				</label>
 				<label class="fx-col" aria-stxt="Запоминать позицию">
-					<input type="checkbox" id="Save Topic Pos">
+					<input type="checkbox" name="Save Topic Pos">
 				</label>
 				<label class="fx-col" aria-stxt="Перемещать в начало">
-					<input type="checkbox" id="Scroll Top View">
+					<input type="checkbox" name="Scroll Top View">
 				</label>
 			</div>
 			<div class="fx-row" aria-ttl="Уведомления">
 				<label class="fx-col" aria-stxt="Очищ. по нажатию">
-					<input type="checkbox" id="Сlear Notifications">
+					<input type="checkbox" name="Сlear Notifications">
 				</label>
 				<span class="fx-col">
 					<label aria-stxt="Откл.">  <input name="Desktop Notification" type="radio" value="0"></label>
@@ -214,11 +214,11 @@
 			<div class="fx-row" aria-ttl="Прочее">
 				<gb-r class="fx-col" aria-ttl="Макс. размер блоков кода"></gb-r>
 				<span class="fx-col" aria-stxt="px.">
-					<input type="number" id="Code Block Short Size" min="0" step="1">
+					<input type="number" name="Code Block Short Size" min="0" step="1">
 				</span>
 				<gb-r class="fx-col" aria-ttl="Разметка сообщений"></gb-r>
 				<span class="fx-col">
-					<select id="Markup Mode">
+					<select name="Markup Mode">
 						<option>Markdown</option>
 						<option>LORCODE</option>
 						<option>Line-Break</option>
@@ -226,17 +226,17 @@
 				</span>
 				<gb-r class="fx-col" aria-ttl="Показ / скрытие превью"></gb-r>
 				<span class="fx-col" aria-stxt="мс.">
-					<input type="number" id="Delay Open Preview" min="50" step="25">
+					<input type="number" name="Delay Open Preview" min="50" step="25">
 					/
-					<input type="number" id="Delay Close Preview" min="50" step="25">
+					<input type="number" name="Delay Close Preview" min="50" step="25">
 				</span>
 				<gb-r class="fx-col" aria-ttl="Подгружать ответы с"></gb-r>
 				<span class="fx-col" aria-stxt="страниц">
-					<input type="number" id="Preloaded Pages Count" min="1" step="1">
+					<input type="number" name="Preloaded Pages Count" min="1" step="1">
 				</span>
 				<gb-r class="fx-col" aria-ttl="Просмотр картинок"></gb-r>
 				<span class="fx-col">
-					<select id="Picture Viewer">
+					<select name="Picture Viewer">
 						<option>Откл.</option>
 						<option>Только для превью</option>
 						<option>Для превью и ссылок</option>
@@ -254,7 +254,7 @@
 						</text>
 						<path id="sl_range" d="M 0,10 H 10 V 0 10 H 20 V 0 10 H 30 V 0 10 H 40 V 0 10 H 50 V 0 10 H 60 V 0 10 H 70 V 0 10 H 80 V 0 10 H 90 V 10 0 10 h 10"/>
 					</svg>
-					<input type="range" min="0" max="9" step="1" id="Upload Post Delay">
+					<input type="range" min="0" max="9" step="1" name="Upload Post Delay">
 				</span>
 				<gb-r class="fx-col" aria-ttl="Настройки по умолчанию"></gb-r>
 				<span class="fx-col">

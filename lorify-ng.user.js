@@ -4,7 +4,7 @@
 // @namespace   https://github.com/OpenA
 // @include     https://www.linux.org.ru/*
 // @include     http://www.linux.org.ru/*
-// @version     3.4.1
+// @version     3.4.2
 // @grant       none
 // @homepageURL https://github.com/OpenA/lorify-ng
 // @updateURL   https://github.com/OpenA/lorify-ng/blob/manifest_v3/lorify-ng.user.js?raw=true
@@ -2679,7 +2679,7 @@ const handleResetForm = form => {
 		btn.disabled = true;
 		btn.className = 'btn btn-primary', btn.textContent = '...';
 		sendFormData('/notifications-reset', new FormData(form)).then(() => {
-			btn.className = 'btn btn-danger', btn.textContent = 'Очистить';
+			form.parentNode.hidden = true;
 			App.setNotes(0);
 		});
 	}

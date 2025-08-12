@@ -1,10 +1,11 @@
 
-const { runtime, storage } = typeof browser !== 'undefined' ? browser : chrome;
+if (typeof browser === 'undefined')
+	var browser = chrome;
 
 let port = null;
 
 const portConnect = () => new Promise(resolve => {
-	const p = runtime.connect({ name: 'lory-wss' });
+	const p = browser.runtime.connect({ name: 'lory-wss' });
 	p.onMessage.addListener(({ action, data }) => {
 		if (action === 'connection-resolve') {
 			console.info('WebExt Runtime Connected!');
@@ -29,7 +30,7 @@ window.addEventListener('message', ({ origin, data }) => {
 	}
 });
 
-Promise.all([portConnect(), storage.local.get()]).then(([defs, vals]) => {
+Promise.all([portConnect(), browser.storage.local.get()]).then(([defs, vals]) => {
 	window.postMessage({
 		wsEvent: 'settings-change', wsData: Object.assign(defs, vals) });
 });
