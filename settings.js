@@ -5,15 +5,20 @@ const { notes_count, notes_stack } = document.body.children;
 let busy_id = -1, ld_open = true,
 	anim_id = -1, my_port = null;
 
-const showNotifications = () => {
-	history.replaceState(null, null, location.pathname +'#notifications');
-	notes_stack.hidden = false;
-	if (ld_open)
-		updNotifications( Number(notes_count.getAttribute('cnt-new')) );
-}
+const notesReset = form => fetch('https://www.linux.org.ru/notifications-reset', {
+	credentials: 'same-origin',
+	method: 'POST',
+	body: new FormData( form )
+}).then(({ ok }) => {
+	if (ok) {
+		form.remove();
+		notes_count.setAttribute('cnt-new', '0');
+		sendCommand('set-notes', 0);
+	}
+});
 
 if (location.hash === '#notifications')
-	notes_stack.hidden = false;
+	notes_count.classList.add('ns-show');
 
 const showAnimBanner = () => {
 	if (anim_id !== -1)
@@ -39,42 +44,41 @@ loryform.addEventListener('input', ({ target }) => {
 });
 
 loryform.elements.reset_all.addEventListener('click', () => sendCommand('reset-all'));
-notes_count.addEventListener('click', showNotifications);
-notes_stack.addEventListener('click', e => {
-	const el = e.target, elClass = el.classList;
+notes_count.addEventListener('click', e => {
+	const el = e.target, rf = document.forms.reset_form;
 	switch (el.id) {
-	case 'goto_setts':
-		notes_stack.hidden = true;
-		history.replaceState(null, null, location.pathname);
-	case 'notes_stack': break;
-	case 'notes_reset':
-		if(!elClass.contains('do-wait') && 'reset_form' in document.forms) {
-			elClass.add('do-wait');
-			fetch('https://www.linux.org.ru/notifications-reset', {
-				credentials: 'same-origin',
-				method: 'POST',
-				body: new FormData( document.forms.reset_form )
-			}).then(({ ok }) => {
-				if (ok) {
-					sendCommand('set-notes', 0);
-					document.forms.reset_form.remove();
-				}
-				elClass.remove('do-wait');
-			});
+	case 'notes_nlupd':
+		if(!el.classList.contains('do-wait')) {
+			el.classList.add('do-wait');
+			updNotifications(true).then(() => el.classList.remove('do-wait'));
 		}
 		break;
-	default:
-		const stk_list = notes_stack.lastElementChild;
-		if (stk_list !== el) {
-			for (const a of stk_list.children) {
-				if (a.contains(el)) {
-					sendCommand('open-tab', 'lor:/'+ a.getAttribute('href'), false);
-					break;
-				}
-			}
+	case 'notes_reset':
+		if(!el.classList.contains('do-wait') && rf) {
+			el.classList.add('do-wait');
+			notesReset(rf).then(() => el.classList.remove('do-wait'));
 		}
-		e.preventDefault();
+		break;
+	case 'notes_count':
+		if (notes_count.classList.contains('ns-show'))
+			break;
+	case 'setts_gback':
+		if (notes_count.classList.toggle('ns-show')) {
+			history.replaceState(null, null, '#notifications');
+			updNotifications();
+		} else
+			history.replaceState(null, null, location.pathname);
 	}
+});
+
+notes_stack.addEventListener('click', e => {
+	for (const a of notes_stack.children) {
+		if (a.contains(e.target)) {
+			sendCommand('open-tab', 'lor:/'+ a.getAttribute('href'), false);
+			break;
+		}
+	}
+	e.preventDefault();
 });
 
 const createPort = () => new Promise(resolve => {
@@ -82,12 +86,15 @@ const createPort = () => new Promise(resolve => {
 	port.onMessage.addListener(({ action, data }) => {
 		switch (action) {
 		case 'notes-show':
-			showNotifications();
+			if(!notes_count.classList.contains('ns-show')) {
+				notes_count.classList.add('ns-show');
+				history.replaceState(null, null, '#notifications');
+				updNotifications();
+			}
 			break;
 		case 'notes-count-update':
 			notes_count.setAttribute('cnt-new', data);
-			if (!notes_stack.hidden && ld_open)
-				updNotifications(Number(data));
+			notes_count.classList.add('upd-need');
 			break;
 		case 'connection-resolve':
 			my_port = port;
@@ -115,23 +122,27 @@ const sendCommand = (action = '', data = null) => {
 		createPort().then(() => my_port.postMessage({ action, data }));
 }
 
-function updNotifications(cnt_new = 0) {
-	const tr_lst = Array.from(notes_stack.lastElementChild.children),
-	      do_upd = cnt_new > 0 && tr_lst.length !== cnt_new;
+const updNotifications = (do_upd = false) => {
+	const tr_lst = Array.from(notes_stack.children);
+	let  cnt_new = Number(notes_count.getAttribute('cnt-new'))
+	let is_empty = tr_lst.length === 0;
 
-	if (do_upd) {
+	if (do_upd && tr_lst.length !== 0) {
 		for (const tr of tr_lst)
 			tr.remove();
-		ld_open = false;
-		fetch('https://www.linux.org.ru/notifications', {
+		is_empty = true;
+	}
+	if (is_empty && cnt_new > 0) {
+		notes_count.classList.remove('upd-need');
+		return fetch('https://www.linux.org.ru/notifications', {
 			credentials: 'same-origin',
 			method: 'GET'
 		}).then(res => {
 			if (res.ok)
-			    res.text().then(pullNotes);
-			ld_open = true;
+			    res.text().then(h => pullNotes(h, cnt_new));
 		});
-	}
+	} else
+		return Promise.resolve();
 }
 
 function onValueChange(input) {
@@ -164,23 +175,23 @@ function setValues(items) {
 	}
 }
 
-function pullNotes(html) {
-
+function pullNotes(html, cnt_new = 0) {
 	const doc = new DOMParser().parseFromString(html, 'text/html'),
 	    items = Array.from(doc.querySelector('.notifications').children),
-	  cnt_new = Number(notes_count.getAttribute('cnt-new')),
-	     list = notes_stack.lastElementChild,
+	   do_clr = loryform.elements['Сlear Notifications'].checked,
 	    limit = cnt_new > items.length ? items.length : cnt_new;
 
 	const new_rf = doc.forms.reset_form;
 	const old_rf = document.forms.reset_form;
 
 	if (new_rf) {
-		new_rf.hidden = true;
+		new_rf.style.display = 'none';
 		if (old_rf) {
 			document.body.replaceChild(new_rf, old_rf);
 		} else
 			document.body.appendChild(new_rf);
+		if (do_clr)
+			notesReset(new_rf);
 	}
 
 	for (let i = 0; i < limit; i++) {
@@ -235,6 +246,6 @@ function pullNotes(html) {
 
 		icon.remove(), detail.remove();
 		item.append(info, title);
-		list.append(item);
+		notes_stack.append(item);
 	}
 }
