@@ -51,17 +51,8 @@
 				stroke: #9eb1a5;
 				stroke-width: .5px;
 			}
-			#notes_reset.do-wait:before {
-				content: "...";
-				animation: apply 2s ease-in infinite;
-				color: #d25555;
-			}
-			#notes_stack {
-				background-color: white;
-				overflow-y: auto;
-				position: absolute;
-				left: 0; right: 0;
-				bottom: 0; top: 0;
+			#notes_count.ns-show {
+				max-width: 100%;
 			}
 			#loryform:before {
 				content: 'Настройки сохранены.';
@@ -88,27 +79,45 @@
 			}
 			.nav-cell {
 				margin: 0 10%;
-				padding: 2px 10px;
+				padding: 0 10px;
 				font: bold 20px sans-serif;
-				display: inline-block;
-			}
-			#goto_setts:hover, #notes_reset:not(.do-wait):hover {
-				background-color: #369e1b;
 				border-radius: 3px;
+				line-height: 30px;
+			}
+			#setts_gback:hover, #notes_reset:not(.do-wait):hover {
+				background-color: #369e1b;
 				color: white;
 			}
 			*[aria-stxt]:after  { content: attr(aria-stxt); color: #373b39; font: italic 12px serif; }
 			*[aria-ttl ]:before { content: attr(aria-ttl);  color: #686f6c; font: normal 12px sans-serif; }
-
-			#goto_setts:before  { content: "◄"; }
+			#notes_nlupd:before { content: "⟲"; }
+			#setts_gback:before { content: "🠄"; }
 			#notes_reset:before { content: "✓"; }
-			#notes_count:before {
-				content: "‟ " attr(cnt-new) " „ новых сообщений";
+			#notes_count:not(.ns-show):before {
+				content: "⟮ " attr(cnt-new) " ⟯ новых сообщений";
+				cursor: pointer;
 				font: bold italic 16px serif;
 				animation: ivent 6s ease-in infinite;
 				color: #0ea9e1;
 			}
-			#notes_count[cnt-new="0"], [hidden] {
+			#notes_count > .do-wait:before {
+				content: "...";
+				animation: apply 2s ease-in infinite;
+			}
+			#notes_nlupd, .do-wait, .do-wait:hover {
+				background-color: white;
+				color: #d25555;
+			}
+			#notes_nlupd:not(.do-wait):hover {
+				background-color: #d25555;
+				color: white;
+			}
+			#notes_count[cnt-new="0"]:not(.ns-show),
+			#notes_count:not(.upd-need) > #notes_nlupd,
+			#notes_count:not(.ns-show) ~ #notes_stack,
+			#notes_count:not(.ns-show) > .nav-cell,
+			#notes_count.upd-need > #notes_reset,
+			#notes_count.ns-show + #loryform {
 				display: none;
 			}
 			.note-item {
@@ -172,7 +181,11 @@
 		</style>
 	</head>
 	<body>
-		<div id="notes_count" class="nav-menu nav-txt-btn" cnt-new="0"></div>
+		<div id="notes_count" class="nav-menu" cnt-new="0">
+			<gb-r id="setts_gback" class="nav-txt-btn nav-cell" title="к настройкам"></gb-r>
+			<gb-r id="notes_reset" class="nav-txt-btn nav-cell" title="отметить как прочитанные"></gb-r>
+			<gb-r id="notes_nlupd" class="nav-txt-btn nav-cell" title="обновить список"></gb-r>
+		</div>
 		<form id="loryform" class="set-panel">
 			<div class="fx-row" aria-ttl="Комментарии">
 				<label class="fx-col" aria-stxt="Подгружать новые">
@@ -189,7 +202,7 @@
 				</label>
 			</div>
 			<div class="fx-row" aria-ttl="Уведомления">
-				<label class="fx-col" aria-stxt="Очищать все">
+				<label class="fx-col" aria-stxt="Очищ. по нажатию">
 					<input type="checkbox" id="Сlear Notifications">
 				</label>
 				<span class="fx-col">
@@ -249,13 +262,7 @@
 				</span>
 			</div>
 		</form>
-		<div id="notes_stack" hidden>
-			<div class="nav-menu">
-				<span id="goto_setts" class="nav-txt-btn nav-cell" title="к настройкам"></span>
-				<span id="notes_reset" class="nav-txt-btn nav-cell" title="отметить как прочитанные"></span>
-			</div>
-			<div class="stk-list"></div>
-		</div>
+		<div id="notes_stack"></div>
 		<script type="text/javascript" src="settings.js"></script>
 	</body>
 </html>

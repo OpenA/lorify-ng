@@ -164,7 +164,7 @@ function messageHandler({ action, data }, port) {
 		case 'set-notes':
 			if ( notes < data || notes > data ) {
 				chrome.alarms.clear('Q-chk-notes');
-				updNoteStatus(data);
+				updNoteStatus(data, port);
 			}
 			break;
 		case 'extra-params':
@@ -192,7 +192,7 @@ function getNotifications(alm) {
 	);
 }
 
-function updNoteStatus(count = 0) {
+function updNoteStatus(count = 0, ex_port = null) {
 	if ( count > notes && notif_mode > 0 ) {
 		chrome.notifications.create('lorify-ng', {
 			type    : 'basic',
@@ -203,15 +203,16 @@ function updNoteStatus(count = 0) {
 	}
 	setBadge({ text: (notes = count) ? count.toString() : '' });
 	for (const port of openPorts) {
-		port.postMessage({ action: 'notes-count-update', data: count });
+		if (port !== ex_port )
+			port.postMessage({ action: 'notes-count-update', data: count });
 	}
 }
-function changeSettings(newSetts, exclupe = null) {
+function changeSettings(newSetts, ex_port = null) {
 	let hasWss = false;
 	for (const port of openPorts) {
 		if (port.name === 'lory-wss')
 			hasWss = true;
-		if ( port !== exclupe )
+		if (port !== ex_port )
 			port.postMessage({ action: 'settings-change', data: newSetts });
 	}
 	setNotifCheck(newSetts, hasWss);
