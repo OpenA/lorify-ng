@@ -2679,7 +2679,7 @@ const handleResetForm = form => {
 		btn.disabled = true;
 		btn.className = 'btn btn-primary', btn.textContent = '...';
 		sendFormData('/notifications-reset', new FormData(form)).then(() => {
-			btn.className = 'btn btn-danger', btn.textContent = 'Очистить';
+			form.parentNode.hidden = true;
 			App.setNotes(0);
 		});
 	}

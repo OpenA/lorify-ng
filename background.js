@@ -21,10 +21,12 @@ let notes = 0, notif_mode = 1,
 
 const openPorts = new Set;
 const isFirefox = navigator.userAgent.includes('Firefox');
-const {storage} = isFirefox ? browser : chrome;
+
+if (typeof browser === 'undefined')
+	var browser = chrome;
 
 // load settings
-storage.local.get().then(setNotifCheck);
+browser.storage.local.get().then(setNotifCheck);
 chrome.notifications.onClicked.addListener(() => {
 	const ismob = notif_mode === 2;
 	openTab(`${ ismob ? '#' : 'lor://' }notifications`,
@@ -216,5 +218,5 @@ function changeSettings(newSetts, ex_port = null) {
 			port.postMessage({ action: 'settings-change', data: newSetts });
 	}
 	setNotifCheck(newSetts, hasWss);
-	storage.local.set(newSetts);
+	browser.storage.local.set(newSetts);
 }

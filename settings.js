@@ -1,4 +1,7 @@
 
+if (typeof browser === 'undefined')
+	var browser = chrome;
+
 const [ loryform ] = document.forms;
 const { notes_count, notes_stack } = document.body.children;
 
@@ -89,8 +92,8 @@ const createPort = () => new Promise(resolve => {
 			if(!notes_count.classList.contains('ns-show')) {
 				notes_count.classList.add('ns-show');
 				history.replaceState(null, null, '#notifications');
-				updNotifications();
 			}
+			updNotifications();
 			break;
 		case 'notes-count-update':
 			notes_count.setAttribute('cnt-new', data);
@@ -111,7 +114,7 @@ const createPort = () => new Promise(resolve => {
 });
 
 // init settings
-Promise.all([createPort(), chrome.storage.local.get()]).then(([defs, vals]) => {
+Promise.all([createPort(), browser.storage.local.get()]).then(([defs, vals]) => {
 	setValues( Object.assign(defs, vals) );
 });
 
