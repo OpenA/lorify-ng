@@ -1534,6 +1534,7 @@ const App = new class RealtimeHub {
 		if (this.state === 0)
 			window.postMessage({ wsRequest: 'send', wsText });
 	}
+	sendNotify() {}
 	checkNow  () { window.postMessage({ l0rNG_Act: 'chk-notes', l0rNG_Dat: '' }) }
 	openUrl (al) { window.postMessage({ l0rNG_Act: 'open-tab' , l0rNG_Dat: 'lor:/'+ al }) }
 	updStore(sc) { window.postMessage({ l0rNG_Act: 'upd-setts', l0rNG_Dat: sc }) }
@@ -2630,6 +2631,9 @@ const resetNavBoubbles = (all = false) => {
 	Favicon.draw( (Favicon.index = ncnt) );
 };
 
+/**
+ * @param {HTMLFormElement} form
+*/
 const handleRegForm = form => {
 	const cel = form.elements.hide_loginbutton;
 	const snd = form.querySelector('button:not([type="button"]), [type="submit"]');
@@ -2647,7 +2651,7 @@ const handleRegForm = form => {
 			return;
 		snd.disabled = true;
 
-		const uri  = form.action.substr(form.action.lastIndexOf('/'));
+		const uri  = form.action.substrring(form.action.lastIndexOf('/'));
 		let signal = null;
 		if (window.AbortController) {
 			const control = new AbortController;
@@ -2664,20 +2668,23 @@ const handleRegForm = form => {
 	};
 };
 
+/**
+ * @param {HTMLFormElement} form
+*/
 const handleResetForm = form => {
 	const btn = form.querySelector('button:not([type="button"]), [type="submit"]');
 	btn.className = 'btn btn-danger', btn.id = 'clear_notes';
-	form.onsubmit = e => { e.preventDefault();
-		if (btn.disabled)
-			return;
+	form.onsubmit = e => { e.preventDefault(); if (!btn.disabled) _submit(); }
+	const _submit = () => {
 		btn.disabled = true;
 		btn.className = 'btn btn-primary', btn.textContent = '...';
-		sendFormData('/notifications-reset', new FormData(e.target)).then(() => {
+		sendFormData('/notifications-reset', new FormData(form)).then(() => {
 			btn.className = 'btn btn-danger', btn.textContent = 'Очистить';
-			btn.disabled = false;
 			App.setNotes(0);
 		});
 	}
+	if (USER_SETTINGS['Сlear Notifications'])
+		_submit();
 }
 
 /**
@@ -3500,7 +3507,7 @@ if (document.readyState === 'loading') {
 
 function initUserSettings() {
 
-	let notes = 0, lstor, granted = false;
+	let notes = 0, lstor, ihold = false;
 
 	const loryform = _cnode('form', { id: 'loryform', className: 'gs-pin' });
 	const loryicon = _cnode('div' , { id: 'loryicon', className: 'gs-pin lory-btn' });
@@ -3517,12 +3524,16 @@ function initUserSettings() {
 		_cnode('label', { className: 'note-clear lory-btn', htmlFor: 'clear_notes' }), lorylist );
 
 	const sendNotify = count => {
-		if (USER_SETTINGS['Desktop Notification'] && granted) {
+		if (USER_SETTINGS['Desktop Notification']) {
 			const notif = new Notification('LINUX.ORG.RU', {
 				icon: 'data:image/webp;base64,UklGRoIDAABXRUJQVlA4THUDAAAvL8ALELXIsm3btJ36pD5OFYw/2zx77vtabNu2vmzbtn3w1kMBdjzSzB2nsW0kSXGyntlFl/k/5NC2duzRsm3bTiqjs23bTpWUrIyxbbuzZzrbjPXpTECoDsXMiXMqnR7p/+PVO2ll7CpHO6pOidwWWciVl38ShhXnWcsdiss3SamoAczlHeUVSeoq5iEV5xrlF8VJqxCvEEtZFKcKmEhN3pngnKoAyQOG+7nawm7sxFRkjMcmnMYprPV7oBUBntrJLQaRDuMh0n9KwGMt7uMhYow3MBkgN80c21+e9Dxmn8efM4jZNzDYlkAiyMqrYJpX0XIbAZw+K2c7O3w0uQNPQK5ayV2ukEziED+R1YnUbB5SkSXuwWa8/5Bws0nYC54cbaeQoCS5yADmXnFfxjkSA+XahInYgRjjGIB0FZFe5J/TPpFahlcB9xEvozZqoD5ijItbFnbsaLgaE2Mz1EQnxBgHA2RHEWkG5LbnnnKG4Xt8gNHYip8xHito+NPg522fhZj9AB4CcqeIEwAgq15LO6ohyBW4iZitibdv37a8yPkOyEKRIDdJy30JD/IT7iDrXkDXjbdv336+E5J1DwAlrkW8hAyQt1CGB8iKV2I6HDT4afEwY+RuQFYcCkCqijykIs+zgAmI+RcSFrXciIj5cwHIhSJB0gssR4HiewDIludQ5CEVeZR3AEZ3MQCA7C8SnMScf3dgFN8DOBlFgtzJmopovR4p+S9+RRJhomSsg9kepJBPZewKBNmdsQVme5GBvBjAqEAZS1lI/Tfbhyzkdk96ecFpT22F2cccfg+jnTeRmlwF1sBsHTEP7+hDKjmhL2O5IjCXaDbLAsg3kTJwevKClwoDCPdhNdAmOLmetbT9FgEQKRGdlzCUDTgMo7MA/ocQfkm6DHpzTwcwzwtyEBbAaBVAHgXL/jxEhBMwuY2BACkwCV9hEt5YrAV4r9tRt/ntfIeFMDhOEZlfJbHB2IkXBV48QHnOkwdYAGc4mHsDwFRcRbFjhJJVkJMTqdkFZwYYiNW4jLwrWE76BfJ5CINgL6Gyh7TH8xXYjj02d1vdaXWtjUk2PpKWNwlfsxIvETCVJVmRMbN2NJ0G6Zf7ObIqv+S9/P/xQ2TkpbxDhkKFOnHvnHs888YHMA/ZXrCc9goH0OjPox31igkhYS9dnk+oXgEA',
 				body: `\n${ count } новых сообщений`,
 			});
-			notif.onclick = () => { window.focus() };
+			notif.onclick = () => {
+				if (!lorynote.parentNode)
+					togglePannel(loryicon);
+				window.focus();
+			};
 		}
 	}
 
@@ -3532,7 +3543,7 @@ function initUserSettings() {
 		( response ) => {
 			let count = Number(response);
 			if (count > notes)
-				sendNotify(count);
+				App.sendNotify(count);
 			setNotes(count);
 		}),
 	1300); /*  */ App.checkNow = checkNow;
@@ -3543,11 +3554,9 @@ function initUserSettings() {
 			localStorage.setItem('l0rNG-notes', count);
 		if (!count) {
 			loryicon.removeAttribute('cnt-new');
-			loryicon.classList.remove('nl-show');
-			lorynote.remove(); getNotesList(-1);
+			lorynote.removeAttribute('upd-need');
 		} else {
-			if (loryicon.classList.contains('nl-show'))
-				getNotesList(count);
+			lorynote.setAttribute('upd-need','');
 			loryicon.setAttribute('cnt-new', count);
 		}
 	}; /*  */ App.setNotes = setNotes;
@@ -3582,10 +3591,15 @@ function initUserSettings() {
 		App.updStore();
 	}
 
-	const getNotesList = (max) => {
+	const getNotesList = (max = 0, upd = false) => {
 		let len = lorylist.children.length;
-		if (len > 0 && len !== max) for (let a of lorylist.children) a.remove();
-		if (max > 0 && max !== len) {
+		if (len > 0 && upd) {
+			for (const anc of Array.from(lorylist.children))
+				anc.remove();
+			len = 0;
+		}
+		if (max > 0 && len === 0) {
+			lorynote.removeAttribute('upd-need');
 			getDataResponse('/notifications', html => {
 				const doc = domParsr.parseFromString(html, 'text/html'),
 					  tab = doc.querySelector('.notifications'),
@@ -3594,13 +3608,13 @@ function initUserSettings() {
 				if (new_rf) {
 					let old_rf = document.forms.reset_form;
 					if (old_rf) {
-						old_rf.elements.topId.value = new_rf.elements.topId.value;
-						old_rf.parentNode.hidden = isNf;
+						new_rf.parentNode.hidden = isNf;
+						old_rf.parentNode.replaceWith(new_rf.parentNode);
 					} else {
 						const bd = document.getElementById('bd');
-						handleResetForm(new_rf);
 						bd.insertBefore(new_rf.parentNode, bd.children[2]).hidden = isNf;
 					}
+					handleResetForm(new_rf);
 				}
 				for (let i = 0, list = Array.from(tab.children); i < max; i++) {
 					const anc = list[i], [,info,warn,user] = anc.children,
@@ -3647,7 +3661,7 @@ function initUserSettings() {
 		<label class="fx-col" aria-stxt="Всплывающие">
 			<input type="checkbox" id="Desktop Notification">
 		</label>
-		<label class="fx-col" aria-stxt="Очищать все">
+		<label class="fx-col" aria-stxt="Очищaть по нажатию">
 			<input type="checkbox" id="Сlear Notifications">
 		</label>
 	</div>
@@ -3697,17 +3711,14 @@ function initUserSettings() {
 
 	loryform.append( ...form_doc.body.children );
 	loryform.addEventListener('change', ({ target }) => {
-			if (!target.hasAttribute('input-hold'))
-				onValueChange(target);
+		if (!ihold)
+			onValueChange(target);
 	});
 	loryform.addEventListener('input', ({ target }) => {
-		{
-			target.setAttribute('input-hold','');
-			Timer.set('Settings on Changed', () => {
-				target.removeAttribute('input-hold');
-				onValueChange(target);
-			}, 750)
-		}
+		ihold = true;
+		Timer.set('Settings on Changed', () => {
+			onValueChange(target), ihold = false;
+		}, 750)
 	});
 
 	if (lstor) setValues( lstor );
@@ -3764,13 +3775,19 @@ function initUserSettings() {
 			background: #dbddd6;
 		}
 		.note-clear:before {
-			content: "Очистить уведомления";
+			content: "Очистить и закрыть";
 			padding: 6px 8px;
 			display: block;
 			text-align: center;
 			font-size: 18px;
 			color: #299a7b;
 			text-decoration: underline dashed;
+		}
+		#lorynote[upd-need] > .note-clear:hover  { opacity: .7; }
+		#lorynote[upd-need] > .note-clear:before {
+			content: "Обновить список";
+			background-color: #ba6247;
+			color: white;
 		}
 		.notify-item:before {
 			content:"";
@@ -3877,17 +3894,33 @@ function initUserSettings() {
 			#loriko-svg { width: 28px; margin: 1px; }
 		}
 	`);
-	loryicon.append( loriko_svg );
-	loryicon.addEventListener('click', ({ target }) => {
-		const i_cnt = target === loryicon && loryicon.getAttribute('cnt-new');
-		if (  i_cnt  ) {
-			getNotesList( Number(i_cnt) );
-		}
-		if (loryicon.classList.toggle(`${i_cnt ? 'nl' : 'gs' }-show`)) {
-			ContentFinder.cont.append(i_cnt ? lorynote : loryform);
+	const togglePannel = btn => {
+		const y_upd = lorynote.hasAttribute('upd-need');
+		const i_cnt = loryicon.getAttribute('cnt-new');
+
+		let panel = lorynote, to_show = false, to_add = false;
+
+		if (btn === lorynote.firstElementChild)
+			to_show = to_add = y_upd;  
+		else if (btn === loryicon && i_cnt)
+			to_show = to_add = !lorynote.parentNode;
+		else
+			to_show = loryicon.classList.toggle('gs-show'), panel = loryform;
+
+		if (to_show) {
+			if (to_add)
+				getNotesList(parseInt(i_cnt), y_upd);
+			ContentFinder.cont.append(panel);
 		} else
-			(i_cnt ? lorynote : loryform).remove();
-	});
+			panel.remove();
+		return to_show;
+	}
+	loryicon.append( loriko_svg );
+	loryicon.onclick = //=>
+	lorynote.firstElementChild.onclick = e => {
+		if (togglePannel(e.target))
+			e.preventDefault();
+	}
 	reset_btn.addEventListener('click', () => {
 		Timer.set('Apply Setts', () => loryform.classList.remove('save-msg'), 2000);
 		setValues( defaults );
@@ -3908,12 +3941,14 @@ function initUserSettings() {
 
 	(permission => {
 		// Определяем статус оповещений:
-		granted = (permission === 'granted'); // - разрешены
-
+		if (permission === 'granted') { // - разрешены
+			App.sendNotify = sendNotify;
+		} else
 		if (permission === 'default') {
 			// - требуется подтверждение
 			Notification.requestPermission(p => {
-				granted = (p === 'granted');
+				if (p === 'granted')
+					App.sendNotify = sendNotify;
 			});
 		}
 	})( window.Notification ? Notification.permission : 'denied' );
