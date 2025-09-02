@@ -808,7 +808,7 @@ class TopicNavigation {
 				resolve(msg);
 			}
 			if (comm) {
-				let num = cid ? Number(comm.parentNode.id.substr('pcont_'.length)) : prev;
+				let num = cid ? Number(comm.parentNode.id.substring('pcont_'.length)) : prev;
 				if (num === prev)
 					_jmpMsg(comm, prev);
 				else
@@ -1279,13 +1279,13 @@ const ContentFinder = {
 			let [wday, gmt = ''] = date.toLocaleString('ru', formaZ).split(/,?\s+/),
 			    [caln, tim = ''] = date.toLocaleString(lang, format).split(/,?\s+/);
 
-			short_d = `\n${wday}:`+ caln.substr(0, caln.length - 4) + caln.substr(-2);
+			short_d = `\n${wday}:`+ caln.substring(0, caln.length - 4) + caln.substring(caln.length - 2);
 			 time_c = tim;
 			if (simple) {
 				time_c += short_d, short_d = '';
 			} else {
 				offs_t = '\n'+ gmt;
-				full_d = `\n${wday.charAt(0).toUpperCase() + wday.substr(1) } ${caln}`;
+				full_d = `\n${wday.charAt(0).toUpperCase() + wday.substring(1) } ${caln}`;
 			}
 		}
 		el.textContent = time_c;
@@ -2067,11 +2067,11 @@ const updCommentContent = (old_msg, new_msg, si = 0) => {
 		if (old_reacts) {
 			const val = {}, [show, hide] = preferReactions(old_emj);
 			for (const r of new_reation) {
-				let c  =  r.value.substr(0, r.value.indexOf('-'));
+				let c  =  r.value.substring(0, r.value.indexOf('-'));
 				val[c] = [r.value, r.lastElementChild.innerText, r.title];
 			}
 			for (const r of Array.from(old_reacts)) {
-				let [f,c,t] = val[r.value.substr(0, r.value.indexOf('-'))],
+				let [f,c,t] = val[r.value.substring(0, r.value.indexOf('-'))],
 				       cont = f.endsWith('false') ? show : hide;
 				r.value = f, r.lastElementChild.textContent = c;
 				r.title = t, !cont.contains(r) && cont.append(r);
@@ -2651,7 +2651,7 @@ const handleRegForm = form => {
 			return;
 		snd.disabled = true;
 
-		const uri  = form.action.substrring(form.action.lastIndexOf('/'));
+		const uri  = form.action.substring(form.action.lastIndexOf('/'));
 		let signal = null;
 		if (window.AbortController) {
 			const control = new AbortController;
@@ -3240,7 +3240,7 @@ const submitReaction = (btn) => {
 		const data = new FormData(form); data.append('reaction', value);
 		const p = sendFormData('/reactions/ajax', data, 1),
 		      i = value.indexOf('-') + 1,
-		      f = value.substr(i) !== 'true';
+		      f = value.substring(i) !== 'true';
 
 		const [show, hide] = preferReactions(form);
 
@@ -3249,7 +3249,7 @@ const submitReaction = (btn) => {
 				return console.warn(errors.join('\n'));
 
 			btn.lastElementChild.textContent = count.toString();
-			btn.value = value.substr(0, i) + f;
+			btn.value = value.substring(0, i) + f;
 
 			if (f) btn.classList.remove('btn-primary');
 			else   btn.classList.add('btn-primary');
@@ -3271,8 +3271,8 @@ const showUserReacts = (parent) => {
 	if (lshow) {
 		let parts = [];
 		for (let { value, title } of parent.querySelectorAll('.reaction[title*=":"]')) {
-			value = value.substr(0,value.indexOf('-'));
-			title = title.substr(title.indexOf(':')).trim();
+			value = value.substring(0,value.indexOf('-'));
+			title = title.substring(  title.indexOf(':')).trim();
 			parts.push(value + title);
 		}
 		rlist.textContent = parts.join('\n');
@@ -3483,7 +3483,7 @@ function domToMarkdown({childNodes}, deep = 0) {
 			break;
 		default:
 			text += (
-				tag.charAt(0) === 'H' ? '#'.repeat(Number(tag.substr(1))) +` ${ str }\n\n` : str
+				tag.charAt(0) === 'H' ? '#'.repeat(Number(tag.substring(1))) +` ${ str }\n\n` : str
 			);
 		}
 	}
@@ -4847,7 +4847,7 @@ function HighlightJS(options = {
 			 last_index = top.keywordPatternRe.lastIndex;
 			 match = top.keywordPatternRe.exec(mode_buffer);
 		  }
-		  buf += mode_buffer.substr(last_index);
+		  buf += mode_buffer.substring(last_index);
 		  emitter.addText(buf);
 	   }
  
@@ -4969,7 +4969,7 @@ function HighlightJS(options = {
 	   //Handle the potential end of mode
 	   function doEndMatch(match) {
 		  var lexeme = match[0];
-		  var matchPlusRemainder = codeToHighlight.substr(match.index);
+		  var matchPlusRemainder = codeToHighlight.substring(match.index);
  
 		  var end_mode = endOfMode(top, match, matchPlusRemainder);
 		  if (!end_mode) { return NO_MATCH; }
@@ -5121,7 +5121,7 @@ function HighlightJS(options = {
 			 const processedCount = processLexeme(beforeMatch, match);
 			 index = match.index + processedCount;
 		  }
-		  processLexeme(codeToHighlight.substr(index));
+		  processLexeme(codeToHighlight.substring(index));
 		  emitter.closeAllNodes();
 		  emitter.finalize();
 		  result = emitter.toHTML();
